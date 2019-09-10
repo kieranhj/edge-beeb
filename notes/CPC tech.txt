@@ -1,0 +1,51 @@
+Offline Axelay
+6128 Plus
+******
+ 
+Posts: 545
+Country: au
+Liked: 345
+Likes Given: 82
+
+Re: Edge Grinder released (really - DKS inside) - NEW GAME! WHAAAAAA!
+« Reply #63 on: 17:56, 24 September 11 »
+As requested, I've tried to write a bit of an explanation to the code for two of the main sets of routines in Edge Grinder, plus add some 'references' and things that didn't turn out quite as well as I'd have liked. No idea if it's going to be remotely interesting, but those who would rather gnaw off their own legs than read about coding might wish to stop now.  ;) 
+
+
+For the tile writing, I wanted to use the C64 tile and level data without modification as much as possible.  That meant approaching things a little differently to how I had handled backgrounds before, as I have previously used less versatile but faster "blocks" rather than "characters" and tiles. 
+
+
+The scrolling relies on two screens byte scrolled every other frame, at a 1 pixel offset from each other, so I needed to write two pixels, a byte column, to the right of the screen each frame.  As a side note, the mechanics of handling the Register 3 scrolling under interrupt are heavily based on Executioner's 2007 source example.  This meant after modifying it to suit 25fps and a different screen layout, I already had screen addresses being generated for the clear and write columns, the column clearing being handled under interrupt to utilise some unused CPU time, and I just needed to handle the column writing, essentially.
+
+
+The play area is 20 characters high, so at 8 bytes high per character a buffer 160 bytes long is used.  Each frame, the bytes in the buffer have the right hand pixel shifted to the left hand position, and the new right pixel is masked in.  For the character data itself there were 256 characters, amounting to 4kb at 16 bytes each.  As there are also 256 bytes to a full page of memory, I thought it would be beneficial to try and store the character data such that the low byte was the "character id", and the high byte was the "byte pointer" within each character.  That way I could avoid any kind of multiplication to get a 16bit pointer to the character.  For example, with the character data starting at &6000, grabbing tile 1 would initially point to &6001, and the next byte would be at &6101, then &6201 and so on, meaning no multiplication and still an 8 bit inc to get the next byte.  I then used the same approach for the tile data, as there were over 200 of those and they were also 16 bytes each.
+
+
+The character data is also not sequential top to bottom, but stored in a sequence that makes each pixel line a single set or reset after the next, the same way I described here.  I initially toyed with the idea of storing character data at a pixel per byte so no shifting or masking would be required for the data being read, but this would make the character data take 8kb in total, and only save about 10 scan lines of CPU, so I did not implement this.  With storing two pixels to a byte, there was the small issue whereby one frame would require the right pixel of the source byte, and another frame would require the left pixel and an initial shift right, meaning one frame would be a little slower (160 nops) if left as it was.  I remembered someone mentioning that Gryzor used alternately flipped bytes for it's sprites, so the left and right facing frames were stored as one with half the pixel pairs being flipped, and either facing taking the same CPU time to print. I used this same idea to 'even out' the CPU load of the tile writer.  In all, the tile writer takes around 70 scan lines to fill the buffer and then copy it to the screen.
+
+
+The sprites were a more complicated prospect than the tile writer of course, and take the vast majority of the CPU time (almost 75%) with not only printing, but save and restore of background for all sprites required.  And this all needs to occur on a screen being horizontally scrolled in hardware, so with the length of the level I faced the dreaded screen address reset problem!  Something I avoided in Star Sabre by putting breaks in the background and resetting the screen base address before sprites crossing the reset point would be a problem.
+
+
+In my last couple of projects, I have been using screen address list lookup tables that only store every other address (so sprite y does not need to be doubled and the lookup table fits on a single page of memory), and then using a sprite print routine that does two lines at once.  This seemed like it would be helpful in approaching the address reset, as it looked like it would be a lot easier handling address reset only when incrementing the screen  address pointer when the pixel line was 1,3,5 & 7 so the "overflow" was always bit 3 of the high byte becoming set.  ie, going from &c7ff to &c800, or &d7ff to &d800 have a much simpler fix than going from &cfff to &d000 or &dfff to &e000.  Of course, one inconvenience to handling sprites in line pairs was that the C64 sprites are 21 lines high but that really just meant extra code to handle the last line.
+
+
+Also like my previous projects, the sprite printing is partially 'unrolled' (repeating some code X times rather than putting one instance of the code in loop that repeats X times, trading memory for a bit more speed) In Edge Grinder two pixel rows of sprite printing, 12 bytes, are handled inside a loop that repeats only 10 times.  There are also separate printing routines to handle all possible cases of sprites being partially on screen at the left and right edges.
+
+
+My first approach had been to have two sprite print routines for fully visible sprites.  One 'fast print', which would start at the bottom left of the pixel line pair, then move up, then right, then down then right and so on, as in a square wave with the minimum of changes to the screen pointer.  Then there would be a routine for determining whether sprites were crossing the reset point, where I would use a 'safe print' routine (the screen edge routines would always be handled this 'safe' way).  This followed the same path, but it detoured through the top line of the pixel pair so that a single set or reset would ensure it was pointing where it was supposed to be afterwards.  I tried an alternative way where spare registers were used to 'save' the high byte of the pointer for the second pixel line's increment, but after all the masking required it was no faster.
+
+
+However, by ordering the bytes differently, I found I could have a faster 'safe' version that started from the bottom left, moved to the byte above, then moved to the byte below and right to that one and continued in a kind of saw tooth path.  The speed difference between this and the original fast routine was sufficiently small after allowing for up to 2 of the slower 'safe prints', that I thought it would be preferable to use this second approach from the perspective of keeping the code simpler, and at a reasonably small cost in scan lines.
+
+
+Saying that, I still maintained a screen address reset point as I found the speed improvement for using 'fast' and 'safe' versions of the background save & restore were quite a bit more significant (around 30 scan lines) because the fast versions could simply use ldi lists.
+
+
+Something else I implemented and then took out was checking for background for all the sprites and then doing a save & restore only if background was covered by the sprite, or else a simple clear of the sprite otherwise.  This 'saved' around 120 scan lines when no sprites crossed background, but then I realised that when the player collided with background and all the other sprites were commandeered for the explosion, all sprites would be over background and so if I used any of this 'saved' CPU time at all there would be guaranteed slow down when the player died in a background collision!  An idea for another time perhaps.
+
+
+The final change I made to the sprites was to convert the player and player bullet sprites to compiled sprites, as well as make a special routine for the player bullet that was a smaller sprite and only saving background that could be covered - the centre of the sprite collides with background so will never obscure it.  This saved an additional 25-30 scan lines all up, and basically meant the difference between being able to have the 50hz music it has instead of 25hz music.
+
+
+Now having gone a tad over a 'couple of paragraphs', I shall end it there!  However, if anyone reading the source code has questions about it, please feel free to ask or PM me here or at Format War.

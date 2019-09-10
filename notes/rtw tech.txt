@@ -1,0 +1,17 @@
+Rich Talbot-Watkins [4:55 PM]
+I spoke at length with the CPC author back around 2012.  The CPC has modes like Beeb modes 0, 1, 2, but the difference is that it has a 1MHz CRTC, so the lower bit of the screen address doesn't come from the CRTC.  That means they're more limited than we are, only able to scroll at 2 bytes' coarseness horizontally.
+
+The CPC version uses CPC Mode 0 (like MODE 2 for us), with a double buffered screen, one buffer offset by 1 pixel, and _then_ uses the CRTC R3 trick to scroll by 2 pixels.  That covers all 4 pixel positions within the hardware scrolling limitations.  The reason there's a big gap between the screen and the HUD is that he resets R3 there and the display needs time to stabilise!
+
+He scrolls at 25Hz, which then ends up matching the C64 scrolling speed (which is at 50Hz, but at MODE 1 pixel granularity).
+
+I got as far as writing tools to convert all the C64 data into something Beeb friendly, and a basic demo to scroll the map using two screen buffers (so no need for the R3 trick).  I remember thinking that, extracting the C64 game logic code, and replacing the display/sound stuff with Beeb code, it ought to be a fairly quick job.  But I went off the idea when I saw how much memory it was going to need (minimium acceptable spec for me back then was BBC B + 16k SRAM).
+
+I was looking for all this stuff a while back, and it's vanished into the ether.  I honestly have no idea where it all went, which is a shame because there were some handy tools there for processing the .ctm and .spd files :disappointed: (edited) 
+I've also lost this entire conversation as it was in the PMs of the Format War forums, which seems to have disappeared forever. :disappointed: :disappointed:
+
+Rich Talbot-Watkins [5:09 PM]
+I remember now, I also had a tool which compressed the map!  To try and pack in more stuff (based on the idea that the middle was normally blank).  It was stored in vertical strips.
+I forget exactly the hierarchy of the graphics definitions now.  At the lowest level you have tiles (4x8) pieces.  Then I think they were combined to 2x2 tiles, and then _those_ were combined in 2x2 pieces to give the final blocks for each map tile.
+I analysed it all and found an optimal way to store it all, but you'll have all that fun to come :slightly_smiling_face:
+or you can leave it all unpacked if you're just targeting the Master I suspect.

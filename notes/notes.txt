@@ -1,0 +1,41 @@
+Edge Grinder 
+~~~~~~~~~~~~
+
+Characters for bg tiles 256x256 pixels but actually 64x128 wide fat pixels!
+Each char is 4x8 wide pixels so 16x16 bg tile chars
+
+Map is 9664x160 pixels so actually 4832x160 wide pixels
+Entire map is 1208x20 characters in size
+
+Rich says the format for the tile scheme is something like
+"At the lowest level you have tiles (4x8) pieces.  Then I think they were combined to 2x2 tiles, and then _those_ were combined in 2x2 pieces to give the final blocks for each map tile."
+
+Certainly made up of 32 pixel = 16 wide pixel sized blocks so 16/4 = 4 tiles across a large block
+
+Loading into the original CharPad editing tool reveals:
+Map is 5 tiles high vertically and 256 tiles wide = 1280 bytes (tiles.map)
+Each tile is made up of 4x4 characters and there are 211 in total = 3376 bytes (16 bytes each) (tiles.til)
+Characters are 4x8 wide pixels and there are 256 in total = 2048 bytes (8 bytes each @ 2bpp) (tiles.chr)
+
+The C64 datafiles have 2 bytes at the start indicating the load address (e.g. tiles.map starts $9000)
+map_read fn just increments internal pointer to load next map byte
+This is used to update tile_read[1-5] fns which then load a byte indexed by X from that tile definition
+So we can look up by column from that data by incrementing by 4 (which it does)
+When 'tile_cnt' is incremented beyond 4 then the map read is updated. Nice and simple.
+
+Tile definitions are 16 bytes in row order (horizontally arranged chars)
+Tile chars are 8 bytes in row order (one byte is 4 pixels AaBbCcDd format)
+
+So for Beeb, assuming MODE 2 as same fat pixels. One MODE 2 byte = 2x fat pixels, so two bytes = 1x C64 char
+Scroll speed is 8x frames per C64 char so on Beeb would have to be 2x frames per fat pixel using 2x buffers
+
+Steps
+1/ Convert char data to MODE 5 2bpp format (can allow Exile style palette change later) AaBbCcDd -> ABCDabcd
+( or temporarily convert from C64 data to MODE 2 pixels using a table)
+2/ Plot map from tile data using chars in MODE 5 at one byte granularity across all 256 tiles (no scroll)
+3/ Plot map in MODE 2 with one byte scrolling per 4 frames (single buffer)
+4/ Plot map in MODE 2 with one pixel scrolling per 2 frames (double buffer)
+
+CPC approach is to maintain a 160 byte buffer for the right-hand edge of the screen
+Each frame shift all right-hand pixels to the left-side then mask in the new right-hand pixel for all 160 bytes
+Then copy this 160 byte buffer to the non-visible screen and swap. This takes ~70 scanlines on CPC.
