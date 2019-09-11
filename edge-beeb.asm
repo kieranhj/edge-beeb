@@ -43,7 +43,7 @@ BG_COL_3 = PAL_green          ; PAL_red or PAL_cyan also look OK
 \ *	GLOBAL constants
 \ ******************************************************************
 
-screen_addr = &5800
+screen_addr = &3000
 
 \ ******************************************************************
 \ *	ZERO PAGE
@@ -54,6 +54,9 @@ GUARD &9F
 
 .tile_cnt       skip 1
 .char_col       skip 1
+
+.col_addr       skip 2
+.scroll_addr    skip 2
 
 \ ******************************************************************
 \ *	CODE START
@@ -76,7 +79,7 @@ GUARD screen_addr
 
 	lda #22
 	jsr oswrch
-	lda #5
+	lda #2
 	jsr oswrch
 
 	\\ Turn off cursor
@@ -85,13 +88,26 @@ GUARD screen_addr
 	lda #32: sta &FE01
 
     \\ Set palette
-
+IF 0
     ldx #15
     .pal_loop
     lda mode5_palette, X
     sta &FE21
     dex
     bpl pal_loop
+ENDIF
+
+    \\ 
+
+    lda #LO(screen_addr + 79*8)
+    sta col_addr
+    lda #HI(screen_addr + 79*8)
+    sta col_addr+1
+
+    lda #LO(screen_addr/8)
+    sta scroll_addr
+    lda #HI(screen_addr/8)
+    sta scroll_addr+1
 
     \\ Initialise variables
 
@@ -105,7 +121,37 @@ GUARD screen_addr
 
     .loop
     stx char_col
-    jsr set_char_column
+    jsr set_col_addr
+
+    lda char_col
+    and #1
+    bne map_right
+    \\ map left
+
+    LDA #HI(map_c64_to_beeb_L)
+    STA char_byte_map+2
+    BNE map_cont
+
+    .map_right
+    LDA #HI(map_c64_to_beeb_R)
+    STA char_byte_map+2
+
+    .map_cont
+
+    \\ Wait for vsync
+    lda #19
+    jsr osbyte
+
+    \\ Set scroll address
+    lda #12:sta &fe00
+    lda scroll_addr+1:sta &fe01
+
+    lda #13:sta &fe00
+    lda scroll_addr:sta &fe01
+
+    \\ Wait for vsync again (25Hz scroll)
+    lda #19
+    jsr osbyte
 
     \\ Column reader for tile 1
 
@@ -246,24 +292,58 @@ GUARD screen_addr
     jsr tile_read_5
     jsr plot_char_y
 
+    \\ Plot a cheeky blank to separate scroll wrap around garbage
+    
+    ldy #255
+    jsr plot_char_y
+
+    \\ Increment column
+
+    ldx char_col
+    inx
+
+    \\ Two columns per character
+
+    txa
+    and #1
+    bne no_bump
+
     \\ Bump the tile_cnt
 
     jsr tile_cnt_bump
 
-    \\ Stop when completed 10 tiles...
+    .no_bump
 
-    ldx char_col
-    inx
-    cpx #40
-    bcs done
+    \\ Increment scroll
+
+    clc
+    lda scroll_addr
+    adc #1
+    sta scroll_addr
+    lda scroll_addr+1
+    adc #0
+    cmp #HI(&8000/8)
+    bcc scroll_ok
+    sbc #HI(&5000/8)
+    .scroll_ok
+    sta scroll_addr+1
+
+    lda col_addr
+    adc #8
+    sta col_addr
+    lda col_addr+1
+    adc #0
+    cmp #HI(&8000)
+    bcc col_ok
+    sbc #HI(&5000)
+    .col_ok
+    sta col_addr+1
+
+;    jsr osrdch
+
     jmp loop
 
     .done
-
-    jsr osrdch
-
-    ldx #0
-    jmp loop
 
     rts
 }
@@ -388,14 +468,14 @@ GUARD screen_addr
 ; Specific case checks for scrolling
 .tile_cnt_bump
 {
-    	ldx tile_cnt
-		inx
-		cpx #$04
+    	ldy tile_cnt
+		iny
+		cpy #$04
 		bne tcb_out
 		jsr tile_update
-		ldx #$00
+		ldy #$00
     .tcb_out
-    	stx tile_cnt
+    	sty tile_cnt
 		rts
 }
 
@@ -420,7 +500,8 @@ GUARD screen_addr
     .read_char_data
     ldy &FFFF, X
 
-    lda map_c64_to_beeb, y
+    .char_byte_map
+    lda map_c64_to_beeb_L, y
 
     .write_beeb_data
     sta &3000, X
@@ -432,10 +513,14 @@ GUARD screen_addr
 
     clc
     lda write_beeb_data+1
-    adc #LO(320)
+    adc #LO(640)
     sta write_beeb_data+1
     lda write_beeb_data+2
-    adc #HI(320)
+    adc #HI(640)
+    cmp #HI(&8000)
+    bcc row_ok
+    sbc #HI(&5000)
+    .row_ok
     sta write_beeb_data+2
 
     rts
@@ -453,6 +538,15 @@ GUARD screen_addr
     rol a
     clc
     adc #HI(screen_addr)
+    sta write_beeb_data+2
+    rts
+}
+
+.set_col_addr
+{
+    lda col_addr
+    sta write_beeb_data+1
+    lda col_addr+1
     sta write_beeb_data+2
     rts
 }
@@ -512,7 +606,7 @@ INCBIN "source_c64/data/tiles.map"
 map_data = map_bin+2
 PRINT "MAP data =", ~map_data
 
-.map_c64_to_beeb
+.map_c64_to_beeb_L
 FOR p,0,255,1
     A=(p>>7)AND1
     a=(p>>6)AND1
@@ -523,7 +617,24 @@ FOR p,0,255,1
     D=(p>>1)AND1
     d=(p>>0)AND1
 
-    EQUB (A<<7) OR (B<<6) OR (C<<5) OR (D<<4) OR (a<<3) OR (b<<2) OR (c<<1) OR (d<<0)
+;   EQUB (A<<7) OR (B<<6) OR (C<<5) OR (D<<4) OR (a<<3) OR (b<<2) OR (c<<1) OR (d<<0)
+    EQUB (A<<3) OR (B<<2) OR (a<<1) OR (b<<0)
+
+NEXT
+
+.map_c64_to_beeb_R
+FOR p,0,255,1
+    A=(p>>7)AND1
+    a=(p>>6)AND1
+    B=(p>>5)AND1
+    b=(p>>4)AND1
+    C=(p>>3)AND1
+    c=(p>>2)AND1
+    D=(p>>1)AND1
+    d=(p>>0)AND1
+
+;   EQUB (A<<7) OR (B<<6) OR (C<<5) OR (D<<4) OR (a<<3) OR (b<<2) OR (c<<1) OR (d<<0)
+    EQUB (C<<3) OR (D<<2) OR (c<<1) OR (d<<0)
 
 NEXT
 
