@@ -39,3 +39,8 @@ Steps
 CPC approach is to maintain a 160 byte buffer for the right-hand edge of the screen
 Each frame shift all right-hand pixels to the left-side then mask in the new right-hand pixel for all 160 bytes
 Then copy this 160 byte buffer to the non-visible screen and swap. This takes ~70 scanlines on CPC.
+
+0: display buffer A at offset 0, write buffer B at column 80
+1: display buffer B at offset 1, write buffer A at column 80
+2: display buffer A at offset 1, write buffer B at column 81
+3: display buffer B at offset 2, write buffer A at column 81
