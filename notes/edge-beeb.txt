@@ -44,3 +44,24 @@ Then copy this 160 byte buffer to the non-visible screen and swap. This takes ~7
 1: display buffer B at offset 1, write buffer A at column 80
 2: display buffer A at offset 1, write buffer B at column 81
 3: display buffer B at offset 2, write buffer A at column 81
+
+Sprites
+~~~
+118 sprites
+Each one 12x21 wide pixels
+Sheet is 8x15 sprites so 192x315 png pixels (actually doubled to 384x630 pp)
+All 2bpp - white, black, transparent and a sprite colour
+Again, might as well give John full 4bpp for sprites
+
+Each sprite 6x21=126 bytes x 119 = 14994 bytes ~14.7k
+Could preshift these although many go to the edge of the sprite
+So max RAM requirements 2x7x21x119 = 34986 bytes ~34.2k
+
+sprites.spr file 7618 bytes, first two bytes are load address ($5800)
+7616 bytes in file = 119 * 64
+At 2bpp on C64 this is 3x21 = 63 bytes each
+Bytes are in rows standard 2bpp colour format: AaBbCcDd
+With colours 0=transparent, 1=black, 2=sprite colour, 3=white
+
+RAM requirements
+~~~
