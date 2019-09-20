@@ -65,3 +65,32 @@ With colours 0=transparent, 1=black, 2=sprite colour, 3=white
 
 RAM requirements
 ~~~
+There are 119 sprites in the game total so 119x 6x 21 = 14994 bytes as full 4bpp MODE2.
+I was thinking to just reserve colour 15 as transparent for the mask, assuming we're
+(I'm) still pondering a NULA version. RTW says use 0 as transparent.
+
+If these were to be stored preshifted that would be 2x full SWRAM banks!
+Map data is a bit better - currently 6934 bytes but this is 2bpp for the chars so this
+will blow out to 8932 bytes at 4bpp. This is also assuming that the chars are mapped
+1:1 which probably won't be the case as we'll want some variation in the colour for
+the background, which I'm guessing came from a per-char palette byte on the C64
+version.
+
+It would be nice to reserve a full 16K bank of SWRAM for the map as we want it to
+look as nice as possible. I'd also like to reserve a full 16K bank for the music as
+this is also something that makes the game stand out.
+
+TODO
+~~~
+1. Import pipeline for sprite sheet -> MODE 2 (including pre-shifted?)
+2. Import pipeline for map.png -> MODE 2 chars + tiles
+3. Refactor prototype to more code modules
+    a. Main loop
+    b. Game logic
+    c. Graphics & plot code
+    d. Audio
+    e. System stuff (inc. IRQ etc.)
+    f. (eventually) frontend
+
+
+
