@@ -1,2 +1,24 @@
-
+# ---- Build output ----
+# build.ps1 puts everything it produces in build/: the disc image, the 200K
+# padded copy for jsbeeb, and beebasm's assembly listing
+build/
+*.ssd
+*.SSD
+*.dsd
 compile.txt
+
+# beebasm's SAVE writes a loose host file whenever it has no disc image to
+# put it in, so any run without a working -do drops these in the project root
+/Edge
+/BANK0
+/!BOOT
+
+# ---- Third-party tools (beebasm lives in ..\..\Bin; a local copy is optional) ----
+bin/
+
+# ---- Python ----
+__pycache__/
+*.pyc
+
+# ---- Local editor / agent settings ----
+.claude/settings.local.json

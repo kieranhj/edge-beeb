@@ -1,0 +1,18 @@
+# Decisions of record
+
+The table every deviation from the C64 original, and every choice the hardware forced, gets a row in.
+Per-layer detail lives in that layer's `docs/layer-*.md`; this is the index. Nothing here is
+re-litigated without a new row saying why.
+
+| # | Date | Decision | Where |
+|---|---|---|---|
+| 1 | 2026-09-02 | **Target is the BBC Master 128 only.** The 1-pixel scroll needs two full 16K screens inside a hardware wrap region (main and shadow RAM at `&4000-&7FFF`), which a Model B cannot provide. Paradroid costed sub-4-pixel scrolling on a B and rejected every option. A B+128 has shadow RAM with different paging and is not planned | `PROPOSAL.md` §2 |
+| 2 | 2026-09-02 | **Sprites are clipped at the play-area edges, not culled.** Enemies enter from the right and the bullet leaves it; Paradroid's whole-sprite cull would make them pop. Edge culling is the fallback only if clipping cannot fit the frame budget | `PROPOSAL.md` §3.7 |
+| 3 | 2026-09-02 | **Hand-authored MODE 2 art is a free redraw inside the existing tile boundaries.** All eight colours, gradients and fat-pixel dithering; tile outlines, the 4 × 4 character grid, the 211 tile definitions and the map stay the C64's. `reference/beeb-artwork-example.jpg` is the target look | `PROPOSAL.md` §5.2 |
+| 4 | 2026-09-02 | **Art is exchanged by shared folder or email**, mirrored into `assets/` by a script; we commit. No git on the artist's side | `PROPOSAL.md` §5.2 |
+| 5 | 2026-09-02 | **Music is converted automatically from the CPC Arkos tune** with the nova-invite toolchain (`Repos/nova-invite/bin`: Arkos Tracker 2 → `SongToYm.exe` → `ym2sn.py` → `vgmpacker.py`, played by `lib/vgcplayer.asm`). Not a commission | `PROPOSAL.md` §7 |
+| 6 | 2026-09-02 | **Keep the 2019 scroll scheme**: two phase-offset shadow screens, one byte column per frame through a 160-byte column buffer. It is the CPC's tile writer and it works at 1 px / 25 Hz. Paradroid's tranche split and window A/B scheduling are *not* adopted; they exist only because Paradroid is single-buffered | `PROPOSAL.md` §1, §3 |
+| 7 | 2026-09-02 | **Sprite engine v2 follows Paradroid's model**: slot table, save area mirroring screen geometry, mask derived from the data byte (transparent = logical 0, black inside sprites = logical 8), two pre-shifted copies, deferred-carry `SCANSTEP`, restore replays the draw. Only the player and bullet are compiled; enemies are interpreted with bounding boxes | `PROPOSAL.md` §3 |
+| 8 | 2026-09-02 | **The status bar is a CRTC rupture** (panel cycle at a fixed address below `&3000`, play cycle at the scrolling address), lifted from Paradroid's `rupture.asm` with its register-window rules. Not MODE 7 mixing | `PROPOSAL.md` §4 |
+| 9 | 2026-09-02 | **Layer 0 keeps the binary identical.** The source split, build script and `!BOOT` change nothing in `Edge` or `BANK0`; verified by extracting both files from the old and new disc images | `docs/layer-0-toolchain.md` |
+| 10 | 2026-09-02 | **`bin/` is gone.** `convert_sprites.py` was an unfinished stub (syntax errors) that the old `make.bat` ran and ignored; `bbc.py`, `png.py` and `png2bbc.py` were not part of the build. New tools go in `tools/` and use Pillow. The old files are in git history (commit `53af281`) and `bbc.py`'s MODE 2 packing survives in `Repos/nova-invite/bin` | `docs/layer-0-toolchain.md` |

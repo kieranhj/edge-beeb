@@ -1,3 +1,9 @@
-python bin\convert_sprites.py --quiet -o build/sprites.mode2.bin --160 --transparent-output 0 --transparent-rgb 96 96 96 --total-sprites 119 ./assets/sprite-sheet.png 2 12 21
-
-..\..\Bin\beebasm.exe -i edge-beeb.asm -do edge-beeb.ssd -boot Edge -v > compile.txt
+@echo off
+rem make.bat - the build, for anyone who types `make`. A thin wrapper over
+rem build.ps1, which is the build itself. `make run` and `make -Run` both
+rem assemble and launch b-em; `make -Release` is the build for other people.
+setlocal
+set "ARGS=%*"
+if /i "%~1"=="run" set "ARGS=-Run"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build.ps1" %ARGS%
+exit /b %ERRORLEVEL%

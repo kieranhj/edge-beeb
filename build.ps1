@@ -1,0 +1,60 @@
+# Build Edge Grinder (BBC Master 128) -> build/EDGE.SSD
+#
+#   .\build.ps1            assemble into build/
+#   .\build.ps1 -Run       assemble and launch in b-em as a Master 128
+#   .\build.ps1 -Release   the build for other people: every DEBUG_ flag off
+#
+# make.bat is a thin wrapper over this file (`make`, `make run`, `make -Release`).
+param([switch]$Run, [switch]$Release)
+
+$ErrorActionPreference = 'Stop'
+
+# RELEASE is a command-line symbol because beebasm has no IFDEF and refuses a
+# symbol defined twice, so main.asm cannot carry a default of its own. It is
+# passed on EVERY build; a bare beebasm invocation must pass it too.
+$relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
+
+$root    = $PSScriptRoot
+$build   = Join-Path $root 'build'
+$ssd     = Join-Path $build 'EDGE.SSD'
+$padded  = Join-Path $build 'EDGE-200K.SSD'
+$listing = Join-Path $build 'EDGE.lst'
+
+# beebasm lives in the shared BEEB\Bin folder two levels up; a local bin\
+# copy wins if one is present.
+$beebasm = Join-Path $root 'bin\beebasm.exe'
+if (-not (Test-Path $beebasm)) { $beebasm = Join-Path $root '..\..\Bin\beebasm.exe' }
+if (-not (Test-Path $beebasm)) { throw "beebasm.exe not found at $beebasm" }
+
+$bem = 'C:\Users\khcon\OneDrive\BEEB\B-Em\b-em-42f6597-w64\b-em.exe'
+
+if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-Null }
+
+# beebasm resolves INCLUDE and INCBIN relative to the working directory, so it
+# runs from the project root. -v (the listing) goes to STDOUT and is captured;
+# the progress messages go to STDERR and are deliberately NOT redirected -
+# in PowerShell that wraps each line in an ErrorRecord and trips
+# $ErrorActionPreference even when the assembly succeeded. Check the exit code.
+# -opt 3 makes the disc *EXEC !BOOT on SHIFT+BREAK; main.asm assembles its own
+# !BOOT (with the build kind stamped in it) rather than using -boot.
+Push-Location $root
+try {
+    & $beebasm -i 'src\main.asm' -do $ssd -opt 3 -title EDGE -D $relDef -v |
+        Out-File -FilePath $listing -Encoding utf8
+    if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE) - see $listing" }
+} finally { Pop-Location }
+
+# Pad a copy to 200K (80 tracks x 10 sectors x 256 B). jsbeeb boots an
+# unpadded image, but the padded one is the convention for anything handed to
+# an emulator or published, so a size change signals the wrong file went out.
+$bytes = [System.IO.File]::ReadAllBytes($ssd)
+$full  = New-Object byte[] 204800
+[Array]::Copy($bytes, $full, $bytes.Length)
+[System.IO.File]::WriteAllBytes($padded, $full)
+
+if ($Release) { "RELEASE build: every DEBUG_ flag off" }
+"Built  $ssd"
+"       $padded   padded, for jsbeeb"
+"       $listing   assembly listing"
+
+if ($Run) { & $bem -m3 $ssd }
