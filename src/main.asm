@@ -106,6 +106,11 @@ ENDIF
 ENDMACRO
 
 
+MACRO CRTC r, v
+    lda #r : sta CRTC_ADDR
+    lda #v : sta CRTC_DATA
+ENDMACRO
+
 MACRO PAGE_ALIGN
 H%=P%
 ALIGN &100
@@ -126,6 +131,57 @@ column_size = 160
 
 SWRAM_DATA = 4              ; bank 0: chars, tiles, map, col_decode (resting state)
 SWRAM_SPRITES = 5           ; bank 1: sprite data
+
+\ Hardware
+CRTC_ADDR     = &FE00
+CRTC_DATA     = &FE01
+VIDEO_ULA_PAL = &FE21
+IRQ1V         = &0204
+SYS_VIA_T1CL  = &FE44
+SYS_VIA_T1CH  = &FE45
+SYS_VIA_T1LL  = &FE46
+SYS_VIA_T1LH  = &FE47       ; latch only - does not reload the counter
+SYS_VIA_ACR   = &FE4B
+SYS_VIA_IFR   = &FE4D
+SYS_VIA_IER   = &FE4E
+USR_VIA_IER   = &FE6E
+KBD_PORTB     = &FE40       ; addressable latch: (value << 3) | line
+KBD_DDRA      = &FE43
+KBD_ORA       = &FE4F       ; port A, no handshake
+KBD_LATCH_OFF = &03         ; line 3 = 0: stop the free-run scan
+KBD_LATCH_ON  = &0B         ; line 3 = 1: hand it back
+KBD_DDRA_SCAN = &7F         ; PA0-PA6 out (key number), PA7 in
+
+\ Frame geometry: 39 rows = 312 scanlines, the MODE 2 shape.
+\ Cycle A = the panel, cycle B = play area + everything down to VSync.
+PANEL_ROWS  = 5             ; C64 status bar: rows 0-4
+PLAY_ROWS   = 20            ; C64 playfield: rows 5-24
+PANEL_R4    = PANEL_ROWS - 1
+PLAY_R4     = 39 - PANEL_ROWS - 1          ; 33
+PLAY_R7     = 34 - PANEL_ROWS              ; VSync at absolute row 34, as MODE 2
+\ The panel lives INSIDE the shadow-switched region and is drawn into both
+\ banks (decision 17). It was at &2000 first, which jsbeeb displayed under
+\ both shadow states and b-em showed as garbage every other frame: what the
+\ video circuit fetches below &3000 with the D bit set is emulator-dependent,
+\ so nothing displayed may live there. Every write to the panel goes to both
+\ banks: see panel_init.
+PANEL_ADDR  = &3000
+PANEL_BYTES = PANEL_ROWS * row_stride      ; 3200, to &3C7F
+ASSERT PANEL_ADDR + PANEL_BYTES <= screen_start
+CODE_TOP    = &2000         ; &2000-&2FFF is reserved for the Layer 3 sprite saves
+
+\ T1 runs at 1 MHz: one scanline = 64 ticks. Fire 1 lands on A row 2,
+\ fire 2 on B row 2 (see rupture.asm). -4 scanlines for the CA1 service
+\ latency measured in Paradroid; the windows are 4 and 33 rows wide.
+SL      = 64
+T1_TUNE = -4 * SL
+T1_I1   = (5 + 2) * 8 * SL - 2 + T1_TUNE   ; VSync (row 34) -> A row 2
+T1_I2   = 5 * 8 * SL - 2                   ; A row 2 -> B row 2
+T1_I3   = 250 * SL                         ; B row 2 -> never (VSync restarts T1 first)
+ASSERT T1_I3 > (PLAY_R7 - 2) * 8 * SL
+ASSERT T1_I3 < 65536
+
+FRAME_LOCK = 2              ; fields per game frame: 25 Hz
 
 sprite_total = 119
 sprite_stride = 64
@@ -165,11 +221,19 @@ GUARD &9F
 
 .plane_hi       skip 1      ; HI(char_data) + 8 * (char_col AND 3): this frame's column plane
 
+.frame_count    skip 1      ; game frames (25 Hz), for animation timing
+.field_count    skip 1      ; fields (50 Hz), incremented by the VSync IRQ
+.flip_field     skip 1      ; field_count at the last bank flip
+.frame_ready    skip 1      ; main loop -> IRQ: hidden bank is drawn, flip at next VSync
+.crtc_park      skip 2      ; scroll address for the bank being drawn (main loop writes)
+.crtc_live      skip 2      ; scroll address the IRQ programs at fire 1
+.rupt_state     skip 1      ; 0 = fire 1 pending, 1 = fire 2 pending, 2 = done
+
 \ ******************************************************************
 \ *	CODE START
 \ ******************************************************************
 ORG &E00
-GUARD screen_start
+GUARD CODE_TOP
 
 .start
 
@@ -183,18 +247,12 @@ GUARD screen_start
 {
     txs
 
-    \\ Set interrupts
-
-    SEI
-	LDA #&7F		; A=01111111
-	STA &FE4E		; R14=Interrupt Enable (disable all interrupts)
-
-	LDA #0			; A=00000000
-	STA &FE4B		; R11=Auxillary Control Register (timer 1 one shot mode)
-
-	LDA #&C2		; A=11000010
-	STA &FE4E		; R14=Interrupt Enable (enable main_vsync and timer interrupt)
-    CLI
+    \\ Blank the display until setup_display has cleared everything: the
+    \\ banks stage through &4000, which is on screen if the machine booted in
+    \\ a graphics mode. R8 skew bits (Paradroid's R8_BLANK); VDU 22 resets R8
+    \\ and setup_display writes it again after the clears.
+    CRTC 8, &30
+    CRTC 10, &20                ; and the MOS cursor, which R8 does not hide
 
     \\ Wipe ZP
 
@@ -206,12 +264,6 @@ GUARD screen_start
     cpx #&a0
     bcc zp_loop
 
-	\\ Set MODE
-
-	lda #22
-	jsr oswrch
-	lda #2
-	jsr oswrch
 
     \\ Load the SWRAM banks: 0 = chars/tiles/map (slot 4), 1 = sprites (slot 5).
     \\ Bank 0 is the resting state; only plot_sprite pages bank 1 in.
@@ -230,37 +282,22 @@ GUARD screen_start
     sta &f4
     sta &fe30
 
-	\\ Turn off cursor
+    \ Mode change LAST, after every load: the banks stage through &4000,
+    \ which is on screen the moment MODE 2 is selected.
+	\\ Set MODE
 
-	lda #10: sta &FE00
-	lda #32: sta &FE01
+	lda #22
+	jsr oswrch
+	lda #2
+	jsr oswrch
+    CRTC 8, &30                 ; VDU 22 turned the display back on; off again
+    jsr setup_display           ; until the buffers and panel are drawn
 
-    \\ Visibile lines = 20 (to blank scroll garbage for now)
-
-    lda #6: sta &fe00
-    lda #20: sta &fe01
-
-    \\ Set 16K wraparound
-
-    SEI
-    LDA #&0F					; A=00001111
-	STA &FE42					; R2=Data Direction Register "B" (set addressable latch for writing)
-
-	LDA #&00 + 4				; A=00000100	; B4
-	STA &FE40					; R0=Output Register "B" (write) (write 0 in to bit 4)
-
-	LDA #&00 + 5				; A=00001101	; B5
-	STA &FE40					; R0=Output Register "B" (write) (write 0 in to bit 5)
-    CLI
-
-\ Setup SHADOW buffers for double buffering
-
-IF  _DOUBLE_BUFFER
+    \\ Shadow state: display main (D=0), CPU writes shadow (X=1)
     lda &fe34
-    and #255-1  ; set D to 0
-    ora #4    	; set X to 1
+    and #255-1
+    ora #4
     sta &fe34
-ENDIF
 
     \\ Set scroll addresses
 
@@ -298,29 +335,18 @@ ENDIF
     stx tile_total
     jsr tile_update
 
+    lda crtc_addr
+    sta crtc_live
+    lda crtc_addr+1
+    sta crtc_live+1
+    jsr install_irq
+
+    \\ The loop draws into the hidden bank (the &FE34 X bit already points
+    \\ at it), parks the scroll address, and hands the frame to the VSync
+    \\ IRQ, which flips the banks on a FRAME_LOCK-field cadence.
+
     .loop
     stx char_col
-
-    \\ Wait for vsync
-    lda #19
-    jsr osbyte
-
-    \\ Wait for vsync again (25Hz scroll)
-    lda #19
-    jsr osbyte
-
-    \\ Swap screen buffers here!
-
-    lda &fe34
-    eor #5
-    sta &fe34
-
-    \\ Set scroll address
-    lda #12:sta &fe00
-    lda crtc_addr+1:sta &fe01
-
-    lda #13:sta &fe00
-    lda crtc_addr:sta &fe01
 
     \\ Remove sprites from frame
 
@@ -509,7 +535,7 @@ ENDIF
 
     \\ Animate sprite
 
-    lda char_col            ; definitely need a frame flag!
+    lda frame_count
     and #1
     beq skip_anim
 
@@ -589,6 +615,21 @@ ELSE
     .no_scroll
 ENDIF
 
+    inc frame_count
+
+    \\ Hand the frame over and wait for the flip
+    sei
+    lda crtc_addr
+    sta crtc_park
+    lda crtc_addr+1
+    sta crtc_park+1
+    lda #1
+    sta frame_ready
+    cli
+    .wait_flip
+    lda frame_ready
+    bne wait_flip
+
     jmp loop
 
     .done
@@ -664,6 +705,7 @@ INCLUDE "src/scroll.asm"
 
 INCLUDE "src/sprite.asm"
 INCLUDE "src/keyboard.asm"
+INCLUDE "src/rupture.asm"
 INCLUDE "src/tables.asm"
 
 \ ******************************************************************

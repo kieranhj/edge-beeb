@@ -31,6 +31,7 @@ PRINT "TILE data =", ~tile_data
 PAGE_ALIGN
 .map_data
 INCBIN "src/data/map.bin"
+.map_end
 PRINT "MAP data =", ~map_data
 
 \\ The C64 col_decode table: low 3 bits per-char colour (already applied to

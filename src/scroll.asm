@@ -9,8 +9,22 @@
 {
    	    lda map_data
 	    inc map_read+$01
-	    bne mr_out
+	    bne mr_chk
 	    inc map_read+$02
+        .mr_chk
+
+        \\ Wrap at the end of the 302-column map (decision 14). The C64
+        \\ never gets here: its wave table sets comp_flag first (Layer 5).
+        ldy map_read+$01
+        cpy #LO(map_end)
+        bne mr_out
+        ldy map_read+$02
+        cpy #HI(map_end)
+        bne mr_out
+        ldy #LO(map_data)
+        sty map_read+$01
+        ldy #HI(map_data)
+        sty map_read+$02
         .mr_out
 	    rts
 }
@@ -139,17 +153,9 @@
 		cpy #$04
 		bne tcb_out
 
-    \\ Completed a tile - check for looping the map
+    \\ Completed a tile. The map wraps inside map_read now, not here.
 
-        ldy tile_total
-        iny
-        bne no_loop
-
-        \\ Reset our map reader to start of data
-        jsr map_read_rst
-
-        .no_loop
-        sty tile_total
+        inc tile_total
 
 		jsr tile_update
 

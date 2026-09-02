@@ -8,7 +8,7 @@ ruled out. Index first, detail below.
 | 1 | open, suspected non-bug | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`) |
 | 2 | open | No sprite clipping: `x_pos >= 80` indexes past `mult8_*` into the following tables and produces an arbitrary write pointer |
 | 3 | open | `read_keyboard` has no bounds; the C64 clamps x to `$10-$9b` and y to `$5a-$e5` |
-| 4 | open | The map loops after 256 tiles (`tile_total` is 8-bit); `map2_data` is loaded but never reached |
+| 4 | fixed (Layer 2) | The map looped after 256 tiles; `map_read` now wraps at the 302-column end (decision 14) |
 
 ## 1. The `eor #1` that TODO.md wanted re-enabled
 
