@@ -124,6 +124,9 @@ row_stride = 640
 column_buffer = &400        ; 160 bytes for right hand column
 column_size = 160
 
+SWRAM_DATA = 4              ; bank 0: chars, tiles, map, col_decode (resting state)
+SWRAM_SPRITES = 5           ; bank 1: sprite data
+
 sprite_total = 119
 sprite_stride = 64
 sprite_width_bytes = 3
@@ -159,6 +162,8 @@ GUARD &9F
 .num            skip 1      ; sprite frame
 
 .bg_ptrs        skip 4      ; pointers to sprite plot address on screen for stash
+
+.plane_hi       skip 1      ; HI(char_data) + 8 * (char_col AND 3): this frame's column plane
 
 \ ******************************************************************
 \ *	CODE START
@@ -208,25 +213,22 @@ GUARD screen_start
 	lda #2
 	jsr oswrch
 
-    \\ Load SWRAM bank
+    \\ Load the SWRAM banks: 0 = chars/tiles/map (slot 4), 1 = sprites (slot 5).
+    \\ Bank 0 is the resting state; only plot_sprite pages bank 1 in.
 
-    \\ Set SWRAM slot 4
-    lda #4
-    sta &fe30
+    lda #LO(bank0_filename)
+    ldy #HI(bank0_filename)
+    ldx #SWRAM_DATA
+    jsr load_bank
+
+    lda #LO(bank1_filename)
+    ldy #HI(bank1_filename)
+    ldx #SWRAM_SPRITES
+    jsr load_bank
+
+    lda #SWRAM_DATA
     sta &f4
-
-     \ Ask OSFILE to load our file
-	LDX #LO(osfile_params)
-	LDY #HI(osfile_params)
-	LDA #&FF
-    JSR osfile
-
-    \\ Copy up to SWRAM
-
-    lda #HI(&4000)
-    ldx #HI(&8000)
-    ldy #HI(&4000)
-    jsr move_pages
+    sta &fe30
 
 	\\ Turn off cursor
 
@@ -328,13 +330,14 @@ ENDIF
 
     jsr set_corner_addr
 
-    \\ Set lookup for this pixel
+    \\ Select this frame's column plane (2K per plane, pixel column = char_col AND 3)
 
     lda char_col
     and #3
+    asl a: asl a: asl a
     clc
-    adc #HI(map_c64_to_beeb_p0)
-    sta char_byte_map+2
+    adc #HI(char_data)
+    sta plane_hi
 
     \\ Rotate right hand column
 
@@ -489,12 +492,20 @@ ENDIF
     ldy y_pos
     jsr stash_background
 
-    \\ Plot a sprite
+    \\ Plot a sprite (raw C64 data lives in bank 1)
+
+    lda #SWRAM_SPRITES
+    sta &f4
+    sta &fe30
 
     lda num
     ldx x_pos
     ldy y_pos
     jsr plot_sprite
+
+    lda #SWRAM_DATA
+    sta &f4
+    sta &fe30
 
     \\ Animate sprite
 
@@ -587,6 +598,40 @@ ENDIF
 
 INCLUDE "src/scroll.asm"
 
+\\ Load a 16K bank file: A/Y = filename ptr, X = SWRAM slot.
+\\ OSFILE loads it to &4000 (below the mode-7 screen the MOS is showing)
+\\ and move_pages copies it up to &8000 in the selected slot, wiping the
+\\ staging copy. Must run before the mode change and before any IRQ takeover.
+.load_bank
+{
+    sta osfile_nameaddr
+    sty osfile_nameaddr+1
+    stx &f4
+    stx &fe30
+
+    \\ OSFILE writes the file's catalogue addresses back into the block
+    \\ after a load, so the second call would honour BANK1's &8000 load
+    \\ address and land in the DFS ROM. Reset load = &4000, exec = 0
+    \\ (exec low byte 0 = "use the block's load address") every call.
+    lda #0
+    sta osfile_loadaddr
+    sta osfile_loadaddr+2
+    sta osfile_loadaddr+3
+    sta osfile_execaddr
+    lda #HI(&4000)
+    sta osfile_loadaddr+1
+
+	LDX #LO(osfile_params)
+	LDY #HI(osfile_params)
+	LDA #&FF
+    JSR osfile
+
+    lda #HI(&4000)
+    ldx #HI(&8000)
+    ldy #HI(&4000)
+    jmp move_pages
+}
+
 \\ A=from page, X=to page, Y=num pages
 .move_pages
 {
@@ -671,3 +716,4 @@ PRINT "FREE =", ~screen_start-P%
 PRINT "------"
 
 INCLUDE "src/bank0.asm"
+INCLUDE "src/bank1.asm"

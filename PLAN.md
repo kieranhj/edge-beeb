@@ -17,19 +17,21 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layer 0 is done (2026-09-02).** The 2019 scroller assembles from `src/` through `build.ps1` into
-`build/EDGE.SSD`, byte-identical in `Edge` and `BANK0` to the old monolithic build. What runs: a
-1-pixel-per-frame 25 Hz horizontal scroller in MODE 2 on a Master 128 (two phase-offset shadow
-screens, hardware 16K wrap, one byte column a frame through a 160-byte column buffer), and one
-player sprite moved by Z/X/:/? with a background stash. Nothing else of the game exists yet.
+**Layers 0 and 1 are done (2026-09-02).** The scroller assembles from `src/` through `build.ps1`
+into `build/EDGE.SSD` and boots in jsbeeb as a Master. What runs: a 1-pixel-per-frame 25 Hz
+horizontal scroller in MODE 2 (two phase-offset shadow screens, hardware 16K wrap, one byte column
+a frame through a 160-byte column buffer) drawing from an offline-converted charset with the C64's
+per-character colours, and one player sprite moved by Z/X/:/? with a background stash. Nothing
+else of the game exists yet. The sprite still reads raw C64 data from bank 1; `src/data/sprites.bin`
+is exported in the Layer 3 format but unused until then.
 
 **The frame budget** is 79,872 cycles at 25 Hz. The scroll column costs about 9,000 (estimated,
 not yet measured). The current sprite plotter is estimated at 17-18,000 per sprite per frame,
 which is why Layer 3 replaces it before any second sprite is added.
 
-**Main RAM** (from the Layer 0 build): code `&0E00-&1396`, tables to `&1BEE`, `&2412` bytes free
-below the screen at `&4000`. **SWRAM bank 0** high water `&B9C0`, `&640` free. Take live figures
-from the build listing, not from here.
+**Main RAM** (Layer 1 build): code `&0E00-&13C0`, tables to `&1813`, `&27ED` bytes free below the
+screen at `&4000`. **Bank 0** (chars, tiles, map, col_decode) high water `&B500`, `&B00` free;
+**bank 1** (raw sprites) `&9DC0`. Take live figures from the build listing, not from here.
 
 ## What is left
 
@@ -37,18 +39,11 @@ Layers in order. Each is built, seen working in the emulator and written up in `
 next starts. Anything that deviates from the C64 original is a numbered decision agreed with KC
 first.
 
-### Layer 1 — graphics pipeline A (mechanical conversion)
+### Layer 1 — graphics pipeline A — done
 
-Offline Python exporters in `tools/`, committed output in `src/data/`:
-
-- `export_tiles.py`: C64 charset → 4 bpp MODE 2 characters (32 B each) with the per-character
-  colour and the shared `$d022/$d023` colours applied from `col_decode`; tile definitions; both
-  maps concatenated (302 columns).
-- `export_sprites.py`: C64 sprites → MODE 2, per-sprite colour from `sprite_col_dcd`, shared blue
-  and white, two pre-shifted copies (0 and 1 px), bounding boxes, black inside sprites → logical 8.
-- `render_bbc.py`: any converted sheet, tile set or the whole map back to PNG at 2:1 aspect.
-- Data moves to SWRAM in its final form; the at-plot-time nibble tables go. The game must look
-  identical afterwards and the column cost must not rise.
+[`docs/layer-1-graphics-pipeline.md`](docs/layer-1-graphics-pipeline.md). Exporters in `tools/`,
+committed output in `src/data/`, `render_bbc.py` for desktop checks. Sprite data consumption
+deferred to Layer 3.
 
 ### Layer 2 — display
 
@@ -105,8 +100,8 @@ publish.
 | Layer | Doc | State |
 |---|---|---|
 | 0 — toolchain, source split, docs | [`docs/layer-0-toolchain.md`](docs/layer-0-toolchain.md) | done 2026-09-02 |
-| 1 — graphics pipeline A | | next |
-| 2 — display | | |
+| 1 — graphics pipeline A | [`docs/layer-1-graphics-pipeline.md`](docs/layer-1-graphics-pipeline.md) | done 2026-09-02 |
+| 2 — display | | next |
 | 3 — sprite engine v2 | | |
 | 4 — player | | |
 | 5 — enemies | | |

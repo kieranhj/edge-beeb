@@ -172,20 +172,17 @@
     asl read_char_data+1
     rol a
     clc
-    adc #HI(char_data)
+    adc plane_hi                ; this frame's pixel column of every char
     sta read_char_data+2
 
     ldx #7
     .plot_char_loop
 
-    .read_char_data
-    ldy &FFFF, X
-
     .read_column_data
     lda column_buffer, X
 
-    .char_byte_map
-    ora map_c64_to_beeb_p0, y    ; mask in right hand pixel
+    .read_char_data
+    ora &FFFF, X                ; plane byte: colour already in the right pixel
 
     .write_column_data
     sta column_buffer, X

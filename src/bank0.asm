@@ -1,10 +1,8 @@
 \ ******************************************************************
 \ *	bank0.asm
-\ *	Sideways RAM bank 0: C64 charset, tiles, both maps and raw sprite data.
-\ ******************************************************************
-
-\ ******************************************************************
-\ * SWRAM DATA BANK
+\ *	Sideways RAM bank 0 (slot SWRAM_DATA): the converted charset,
+\ *	the C64 tiles, both maps and col_decode. All from tools/export_tiles.py;
+\ *	regenerate with the tool rather than editing src/data.
 \ ******************************************************************
 
 CLEAR 0,&FFFF
@@ -12,38 +10,36 @@ ORG &8000
 GUARD &C000
 .bank0_start
 
-\\ Characters are 4x8 wide pixels and there are 256 in total = 2048 bytes (8 bytes each @ 2bpp) (tiles.chr)
+\\ Characters as four MODE 2 column planes: plane p at char_data + p*2048,
+\\ char c row r at + c*8 + r, colour in the right-pixel bits (6,4,2,0).
+\\ 256 chars x 8 rows x 4 planes = 8192 bytes.
 
-PAGE_ALIGN
 .char_data
-INCBIN "data/tiles.chr.bin"
+INCBIN "src/data/chars.bin"
+ASSERT P% = char_data + 8192
 PRINT "CHARACTER data =", ~char_data
 
-\\ Each tile is made up of 4x4 characters and there are 211 in total = 3376 bytes (16 bytes each) (tiles.til)
+\\ Each tile is 4x4 characters, row-major; 211 tiles x 16 bytes = 3376.
 
 PAGE_ALIGN
 .tile_data
-INCBIN "data/tiles.til.bin"
+INCBIN "src/data/tiles.bin"
 PRINT "TILE data =", ~tile_data
 
-\\ Map is 5 tiles high vertically and 256 tiles wide = 1280 bytes (tiles.map)
+\\ Map is 5 tiles high, column-major, 302 columns (tiles.map + tiles2.map) = 1510 bytes.
 
 PAGE_ALIGN
 .map_data
-INCBIN "data/tiles.map.bin"
+INCBIN "src/data/map.bin"
 PRINT "MAP data =", ~map_data
 
-\\ Map2 is 5 tiles high vertically and 46 tiles wide = 230 bytes (tiles2.map)
-\\ Map2 follows on from Map1 data - it's not a separate level!
-
-.map2_data
-INCBIN "data/tiles2.map.bin"
-PRINT "MAP2 data =", ~map2_data
+\\ The C64 col_decode table: low 3 bits per-char colour (already applied to
+\\ the planes), bit 4 = fatal to the player (Layer 4 reads this).
 
 PAGE_ALIGN
-.sprite_data
-INCBIN "data/sprites.spr.bin"
-PRINT "SPRITE data =", ~sprite_data
+.col_decode
+INCBIN "src/data/col_decode.bin"
+PRINT "COL_DECODE =", ~col_decode
 
 .bank0_end
 
@@ -57,7 +53,3 @@ PRINT "------"
 PRINT "HIGH WATERMARK =", ~P%
 PRINT "FREE =", ~&C000-P%
 PRINT "------"
-
-\ ******************************************************************
-\ *	Any other files for the disc
-\ ******************************************************************

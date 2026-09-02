@@ -22,3 +22,9 @@ __pycache__/
 
 # ---- Local editor / agent settings ----
 .claude/settings.local.json
+
+# ---- Original game binaries (copyright Cosine; keep locally) ----
+*.d64
+
+# ---- Generated previews (tools/render_bbc.py) ----
+tools/output/

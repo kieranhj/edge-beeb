@@ -12,6 +12,7 @@
 .data_start
 
 .bank0_filename EQUS "Bank0",13
+.bank1_filename EQUS "Bank1",13
 
 .osfile_params
 .osfile_nameaddr
@@ -114,50 +115,6 @@ skip 126
 PAGE_ALIGN
 .background_stash_1
 skip 126
-
-PAGE_ALIGN
-.map_c64_to_beeb_p0
-FOR p,0,255,1
-    A=(p>>7)AND1:a=(p>>6)AND1:B=(p>>5)AND1:b=(p>>4)AND1
-    C=(p>>3)AND1:c=(p>>2)AND1:D=(p>>1)AND1:d=(p>>0)AND1
-
-    p0=(A*2)+a:p1=(B*2)+b:p2=(C*2)+c:p3=(D*2)+d
-
-    BG_PIXEL p0
-NEXT
-
-PAGE_ALIGN
-.map_c64_to_beeb_p1
-FOR p,0,255,1
-    A=(p>>7)AND1:a=(p>>6)AND1:B=(p>>5)AND1:b=(p>>4)AND1
-    C=(p>>3)AND1:c=(p>>2)AND1:D=(p>>1)AND1:d=(p>>0)AND1
-
-    p0=(A*2)+a:p1=(B*2)+b:p2=(C*2)+c:p3=(D*2)+d
-
-    BG_PIXEL p1
-NEXT
-
-PAGE_ALIGN
-.map_c64_to_beeb_p2
-FOR p,0,255,1
-    A=(p>>7)AND1:a=(p>>6)AND1:B=(p>>5)AND1:b=(p>>4)AND1
-    C=(p>>3)AND1:c=(p>>2)AND1:D=(p>>1)AND1:d=(p>>0)AND1
-
-    p0=(A*2)+a:p1=(B*2)+b:p2=(C*2)+c:p3=(D*2)+d
-
-    BG_PIXEL p2
-NEXT
-
-PAGE_ALIGN
-.map_c64_to_beeb_p3
-FOR p,0,255,1
-    A=(p>>7)AND1:a=(p>>6)AND1:B=(p>>5)AND1:b=(p>>4)AND1
-    C=(p>>3)AND1:c=(p>>2)AND1:D=(p>>1)AND1:d=(p>>0)AND1
-
-    p0=(A*2)+a:p1=(B*2)+b:p2=(C*2)+c:p3=(D*2)+d
-
-    BG_PIXEL p3
-NEXT
 
 PAGE_ALIGN
 .sprite_addr_LO
