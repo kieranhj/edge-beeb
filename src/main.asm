@@ -403,6 +403,7 @@ GUARD CODE_TOP
 	jsr oswrch
     CRTC 8, &30                 ; VDU 22 turned the display back on; off again
     jsr setup_display           ; until the buffers and panel are drawn
+    jsr score_boot              ; the C64's initialised score, lives and 012345
 
     \\ Shadow state: display main (D=0), CPU writes shadow (X=1)
     lda &fe34
@@ -478,6 +479,12 @@ ENDIF
     beq no_advance
     jsr scroll_advance          \\ AFTER the draw - see scroll_advance
     .no_advance
+
+    \\ The panel last: the C64 runs status_decode from its raster interrupt
+    \\ and nothing else this frame touches &3000. It writes only the cells
+    \\ that have changed in the bank the CPU owns, so a still frame costs
+    \\ eighteen compares and nothing else.
+    jsr status_call
     TIMMARK TIM_LOGIC
 
     inc frame_count
@@ -522,23 +529,31 @@ ENDIF
 }
 
 \ ******************************************************************
-\ *	title_text_call - page bank 3 in, draw the credits, page back
+\ *	bank3_call - page bank 3 in, call X/Y, page SWRAM_DATA back
 \ ******************************************************************
 \ *	In main RAM because it has to be: nothing in a sideways bank can
-\ *	page its own bank out from under itself. The titles' font and text
-\ *	are in bank 3 (bank 0 has no room), and SWRAM_DATA is the resting
-\ *	state everything else assumes.
+\ *	page its own bank out from under itself, and bank 0 - where every
+\ *	caller sits - is a sideways bank too. Bank 3 holds the titles' font
+\ *	and text, the panel image and the HUD, because it is the only bank
+\ *	with room; SWRAM_DATA is the resting state everything else assumes.
+\ *
+\ *	X = LO, Y = HI of the routine in bank 3. Self-modifying rather than
+\ *	one entry a routine: main RAM has tens of bytes left, not hundreds.
+\ *	Not re-entrant, and nothing calls it from an interrupt.
 
-.title_text_call
+.bank3_call
 {
+    stx target+1
+    sty target+2
     lda #SWRAM_COMPILED
     sta &f4
     sta &fe30
-    jsr title_text
+    jsr target
     lda #SWRAM_DATA
     sta &f4
     sta &fe30
     rts
+    .target jmp &ffff           ; written above
 }
 
 \ ******************************************************************

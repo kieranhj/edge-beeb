@@ -17,7 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5 and 6a-6c are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
+**Layers 0 to 5 and 6a-6d are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
 `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
@@ -26,10 +26,11 @@ bounds, fire latch, bullet and background collisions; and **the attack waves**, 
 original's own 201-wave table, flying its movement commands, shootable for score, and able to run
 into you; and **the life cycle** — three lives, the six-piece player explosion, the drop-in shield,
 game over and a new game; and **the state machine** — a titles page carrying the original's own
-credits, pause on P, abort on ESCAPE, and the completion sequence the wave table's end triggers.
-What is missing is the panel: it still shows the colour-bar placeholder, so `lives`, the score and
-the completion bonus are all counted and never shown. The titles are static until 6e gives them the
-zoom scroller, and the completion's "mega hero" message waits for a font to draw it with.
+credits, pause on P, abort on ESCAPE, and the completion sequence the wave table's end triggers;
+and **the HUD** - the original's own status bar, rendered whole from its charset and its colour
+map, with the score, the high score and the lives bars decoded onto it every frame. The titles are
+static until 6e gives them the zoom scroller, and the completion's "mega hero" message waits for a
+font to draw it with. What is missing is the sound.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
 `DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
@@ -40,20 +41,24 @@ buffer was 97 cycles a byte against 36, and was being taken on 12% of sprites wh
 The old estimate of 63,667 was optimistic by 45%, because it was taken while `BUGS.md` #8 was
 silently skipping every sprite past x = 140.
 
-**There is no margin left for Layer 6d.** 90% with the panel still a placeholder means the HUD, the
-title screen and the state machine all have to come out of the sprites. The costed options are in
-`BUGS.md` #9 and in the Blitter Anatomy artifact: per-row spans recover a quarter of the bytes the
-blitter touches, and compiling the densest frames recovers half the cycles but does not fit.
+**6d turned out to be free**: the HUD paints only the cells that changed, per bank, and costs about
+370 cycles on its worst frame - nothing measurable on the total. The margin this file worried about
+was not needed. It is still true that there is very little of it: the same 100-second test with fire
+held down and the ship parked runs at 101% with four missed flips in 2,500 frames, and did so before
+6d as well. The costed options for buying more are in `BUGS.md` #9 and in the Blitter Anatomy
+artifact: per-row spans recover a quarter of the bytes the blitter touches, and compiling the
+densest explosion frames recovers half the cycles but does not all fit.
 
-**Main RAM** (Layer 6c build, DEV): code and tables `&0E00-&1F6B`, **`&99` free** below `&2000`.
-That is with `DEBUG_TIMING` on; `RELEASE` ends at `&1F4E`. Bank 0 has `&97` left and bank 3 `&324E`;
+**Main RAM** (Layer 6d build, DEV): code and tables `&0E00-&1FEB`, **`&15` free** below `&2000`.
+That is with `DEBUG_TIMING` on. Bank 0 has `&112` left and bank 3 `&23DE`;
 `pause_check`, `comp_mess` and `finale_tick` are up in bank 0 because main RAM ran out mid-layer,
 alongside the frame meter, `coll_row_lo/hi` and the boot-time display setup; the multiply tables are
-gone entirely, and the titles' font and text are in bank 3. **All four
-sideways RAM banks are now in use**: 4 data, 5 and 6 sprites, 7 compiled bodies (13.7K free). Game state `&0800-&08E9`; collision character map
+gone entirely, and the titles' font and text, the panel image and the HUD are in bank 3. **All four
+sideways RAM banks are now in use**: 4 data, 5 and 6 sprites, 7 compiled bodies plus the titles and
+the panel (9.1K free). Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
-tiles, map, col_decode, waves) high water `&BC38`; **banks 1 and 2** (sprites, one per pixel shift)
-`&B153` and `&B78B`. Take live figures from the build listing, not from here.
+tiles, map, col_decode, waves) high water `&BEEE`; **banks 1 and 2** (sprites, one per pixel shift)
+`&B253` and `&B88B`. Take live figures from the build listing, not from here.
 
 ## What is left
 
@@ -177,12 +182,19 @@ plotter are in bank 3, reached through a trampoline in main RAM. The zoom scroll
 ESCAPE aborts, both key numbers measured. **33**: the finale's positions come out of our own code,
 which is what the C64 reads too.
 
-#### 6d — the HUD
+#### 6d — the HUD — done
 
-Score, lives and the rest on the panel, in place of the colour-bar placeholder. **The score counters
-already exist** — Layer 4 ported `bump_score_*` and the high-score compare; six decimal digits one
-to a byte, the C64's own layout, not BCD. Depends on 6a for the budget and 6b for having lives to
-show.
+[`docs/layer-6d-hud.md`](docs/layer-6d-hud.md). The colour-bar placeholder is gone. The C64's status
+bar is a fixed 5 x 40 character map assembled straight into its screen buffer in the multicolour
+STATUS charset, so it transcribes at 1:1 like the credits page did: `tools/export_panel.py` renders
+all 200 cells with their own colour-RAM bytes into a 3,200-byte MODE 2 image, and `panel_draw` is a
+straight copy (decision 34, which also fixes the C64 -> MODE 2 colour mapping). `status_decode`
+decodes the score, the high score and the lives bars, and paints **only the cells that changed, per
+bank**; measured at about 370 cycles on its worst frame.
+
+Everything is in bank 3, because main RAM had 36 bytes free and bank 0 had 151. 6c's
+`title_text_call` became **`bank3_call`**, taking the target in X and Y - the only main-RAM cost of
+the layer.
 
 #### 6e — the title screen
 
@@ -218,7 +230,7 @@ publish.
 | 6a — frame budget | | done 2026-09-03 |
 | 6b — life cycle | [`docs/layer-6b-life-cycle.md`](docs/layer-6b-life-cycle.md) | done 2026-09-03 |
 | 6c — state machine | [`docs/layer-6c-state-machine.md`](docs/layer-6c-state-machine.md) | done 2026-09-03 |
-| 6d — HUD | | |
+| 6d — HUD | [`docs/layer-6d-hud.md`](docs/layer-6d-hud.md) | done 2026-09-03 |
 | 6e — title screen | | |
 | 7 — sound | | |
 | 8 — graphics pipeline B | | |

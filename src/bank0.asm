@@ -173,109 +173,45 @@ INCLUDE "src/timing.asm"
     rts
 }
 
-\\ Clear the panel in whichever bank the X bit selects, then the DEV
-\\ placeholder. Anything that draws on the panel must do it for both banks.
+\\ The status panel into whichever bank the X bit selects. The image is a
+\\ ready-made 3200 bytes in bank 3 (tools/export_panel.py), so this is a
+\\ straight copy and there is nothing to clear first. Anything that draws
+\\ on the panel must do it for both banks.
 .panel_init
 {
-    lda #LO(PANEL_ADDR) : sta write_ptr
-    lda #HI(PANEL_ADDR) : sta write_ptr+1
-    ldx #HI(PANEL_BYTES)
-    lda #0
-    tay
-    .clear_page
-    sta (write_ptr), y
-    iny
-    bne clear_page
-    inc write_ptr+1
-    dex
-    bne clear_page
-    .clear_tail
-    sta (write_ptr), y
-    iny
-    cpy #LO(PANEL_BYTES)
-    bne clear_tail
-
-IF DEV
-    jmp fill_panel_test
-ELSE
-    rts
-ENDIF
+    ldx #LO(panel_draw)
+    ldy #HI(panel_draw)
+    jmp bank3_call
 }
 
-\ ******************************************************************
-\ *	TEMPORARY, DEV only: a placeholder in the panel so the rupture can
-\ *	be seen. White line on the panel's top and bottom scanlines, and
-\ *	sixteen 5-column bars of logical colours 0-15 across rows 1-3
-\ *	(8-15 must look like 0-7 and must not flash). Layer 6 replaces it.
-\ ******************************************************************
-
-IF DEV
-.fill_panel_test
+\\ The score, the high score and the lives count are initialised data on the
+\\ C64 - score and lives zero, high score 012345, all sitting in the file -
+\\ and nothing there ever resets the high score. Ours are in the &0800
+\\ block, which is not in the image, so they are set once at boot. It
+\\ matters because the titles page shows the panel before game_init has run.
+.score_boot
 {
-    \\ Top scanline of row 0 and bottom scanline of row 4
-    lda #LO(PANEL_ADDR) : sta write_ptr
-    lda #HI(PANEL_ADDR) : sta write_ptr+1
-    lda #LO(PANEL_ADDR + 4*row_stride) : sta read_ptr
-    lda #HI(PANEL_ADDR + 4*row_stride) : sta read_ptr+1
-    ldx #80
-    .edge_loop
-    ldy #0
-    lda #&ff
-    sta (write_ptr), y
-    ldy #7
-    sta (read_ptr), y
-    clc
-    lda write_ptr : adc #8 : sta write_ptr
-    bcc no_c1
-    inc write_ptr+1
-    .no_c1
-    clc
-    lda read_ptr : adc #8 : sta read_ptr
-    bcc no_c2
-    inc read_ptr+1
-    .no_c2
+    ldx #SCORE_DIGITS-1
+    .loop
+    txa
+    sta hi_score, x
+    lda #0
+    sta score, x
     dex
-    bne edge_loop
-
-    \\ Colour bars: rows 1-3, column c shows logical colour c DIV 5
-    lda #LO(PANEL_ADDR + row_stride) : sta write_ptr
-    lda #HI(PANEL_ADDR + row_stride) : sta write_ptr+1
-    lda #3 : sta y_count            ; rows
-    .row_loop
-    lda #0 : sta sprite_idx         ; bar number
-    lda #5 : sta x_count            ; columns left in this bar
-    ldx #80
-    .col_loop
-    ldy sprite_idx
-    lda bar_bytes, y
-    ldy #7
-    .byte_loop
-    sta (write_ptr), y
-    dey
-    bpl byte_loop
-    clc
-    lda write_ptr : adc #8 : sta write_ptr
-    bcc no_c3
-    inc write_ptr+1
-    .no_c3
-    dec x_count
-    bne same_bar
-    lda #5 : sta x_count
-    inc sprite_idx
-    .same_bar
-    dex
-    bne col_loop
-    dec y_count
-    bne row_loop
+    bpl loop
+    sta lives                   ; A is still 0
     rts
-
-    \\ Solid MODE 2 byte for logical colour n: bit i of n -> bits 2i+1 and 2i
-    .bar_bytes
-    FOR n, 0, 15, 1
-        EQUB ((n AND 1) * 3) OR ((n AND 2) * 6) OR ((n AND 4) * 12) OR ((n AND 8) * 24)
-    NEXT
 }
-ENDIF
+
+\ The HUD, once a game frame from the main loop. Here so that the loop
+\ pays three bytes of main RAM for it rather than seven.
+.status_call
+{
+    ldx #LO(status_decode)
+    ldy #HI(status_decode)
+    jmp bank3_call
+}
+
 
 \ ******************************************************************
 \ *	pause_check - P holds the game, ESCAPE from inside it gives up
@@ -486,8 +422,10 @@ ENDIF
     \\ draws the hidden bank, swaps to the displayed one, draws that,
     \\ and puts the CPU back on the hidden one.
     jsr title_face
+    jsr status_call             \ the panel is up here too, and the C64
     lda &fe34 : eor #4 : sta &fe34
     jsr title_face
+    jsr status_call             \ keeps decoding it through its titles
     lda &fe34 : eor #4 : sta &fe34
 
     CRTC 8, 0
@@ -508,7 +446,9 @@ ENDIF
 .title_face
 {
     jsr clear_play
-    jmp title_text_call
+    ldx #LO(title_text)
+    ldy #HI(title_text)
+    jmp bank3_call
 }
 
 .bank0_end

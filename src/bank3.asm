@@ -35,7 +35,7 @@ INCBIN "src/data/compiled.bin"
 \ *	of our 4-fat-pixel cells exactly, so the original's 38-column
 \ *	layout lands at 1:1 with no rescaling.
 \ *
-\ *	CALLED THROUGH title_text_call IN MAIN RAM, which does the paging.
+\ *	CALLED THROUGH bank3_call IN MAIN RAM, which does the paging.
 \ *	Nothing in this bank can page its own bank out.
 \ ******************************************************************
 
@@ -151,6 +151,199 @@ TITLE_COL0 = 2
 
     .line_no EQUB 0
     .char_no EQUB 0
+}
+
+\ ******************************************************************
+\ *	The status panel and the HUD (Layer 6d)
+\ ******************************************************************
+\ *	The C64's status bar is five rows of 40 characters assembled
+\ *	straight into its screen buffer and never redrawn; only the score,
+\ *	the high score and the lives bars move, and status_decode pokes
+\ *	those characters back. tools/export_panel.py renders the whole
+\ *	thing to MODE 2 once, at 1:1 - the charset is multicolour, so a
+\ *	character is four double-width pixels, which is one of our
+\ *	4-fat-pixel cells (decision 34 for the colour mapping).
+\ *
+\ *	Here in bank 3 because that is where the room is: main RAM has 36
+\ *	bytes below &2000 and bank 0 has 151. Both routines are reached
+\ *	through bank3_call in main RAM.
+\ ******************************************************************
+
+HUD_GLYPH_BYTES = 16
+HUD_CELLS = 18                  ; 6 score + 6 high score + 6 lives
+
+.panel_image
+INCBIN "src/data/panel.bin"
+
+.hud_glyphs
+INCBIN "src/data/hud.bin"
+
+\ The C64's status_decode writes the score to buffer_1+$02e, the high score
+\ to +$042 and the lives bars to +$060: row 1 columns 6 and 26, row 2 column
+\ 16. A cell is SIXTEEN bytes - four fat pixels is two byte columns, and a
+\ byte column is eight - so it sits at PANEL_ADDR + row*640 + column*16, and
+\ 40 of them is the 640-byte row exactly.
+.hud_cell_lo
+FOR c, 6, 11, 1
+    EQUB LO(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
+NEXT
+FOR c, 26, 31, 1
+    EQUB LO(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
+NEXT
+FOR c, 16, 21, 1
+    EQUB LO(PANEL_ADDR + 2*row_stride + c*HUD_GLYPH_BYTES)
+NEXT
+
+.hud_cell_hi
+FOR c, 6, 11, 1
+    EQUB HI(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
+NEXT
+FOR c, 26, 31, 1
+    EQUB HI(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
+NEXT
+FOR c, 16, 21, 1
+    EQUB HI(PANEL_ADDR + 2*row_stride + c*HUD_GLYPH_BYTES)
+NEXT
+
+\ The C64's lives_display, as glyph indices: $00 -> 0, $8f -> 11, $90 -> 12.
+\ Its rows are eight bytes and it uses six of them; ours are six.
+.hud_lives
+    EQUB  0,  0,  0,  0,  0,  0     ; no lives left
+    EQUB  0,  0, 11, 12,  0,  0
+    EQUB  0, 11, 12, 11, 12,  0
+    EQUB 11, 12, 11, 12, 11, 12
+.hud_lives_off EQUB 0, 6, 12, 18
+
+\ What the panel should show, and what each bank's panel is already
+\ showing. A bank is redrawn every other game frame, so the two are
+\ tracked apart, exactly as the sprite engine tracks its save state:
+\ a change writes into the bank the CPU owns now and again next frame.
+.hud_want SKIP HUD_CELLS
+.hud_have SKIP 2 * HUD_CELLS
+
+\ ******************************************************************
+\ *	panel_draw - the panel image into the bank the CPU owns
+\ ******************************************************************
+\ *	Called once per bank at boot, from panel_init in bank 0 through
+\ *	bank3_call. 3200 bytes is 12 whole pages and 128.
+\ ******************************************************************
+
+.panel_draw
+{
+    lda #LO(panel_image)  : sta read_ptr
+    lda #HI(panel_image)  : sta read_ptr+1
+    lda #LO(PANEL_ADDR)   : sta write_ptr
+    lda #HI(PANEL_ADDR)   : sta write_ptr+1
+
+    ldx #HI(PANEL_BYTES)
+    ldy #0
+    .page
+    lda (read_ptr), y
+    sta (write_ptr), y
+    iny
+    bne page
+    inc read_ptr+1
+    inc write_ptr+1
+    dex
+    bne page
+    .tail
+    lda (read_ptr), y
+    sta (write_ptr), y
+    iny
+    cpy #LO(PANEL_BYTES)
+    bne tail
+
+    \\ Nothing of the HUD survives a repaint, in either bank.
+    ldx #2*HUD_CELLS-1
+    lda #&ff
+    .dirty
+    sta hud_have, x
+    dex
+    bpl dirty
+    rts
+}
+
+\ ******************************************************************
+\ *	status_decode - the C64's, once a game frame
+\ ******************************************************************
+\ *	The original runs this from its raster interrupt every field and
+\ *	writes all eighteen characters every time, because a character is
+\ *	one byte there. Ours is sixteen, in two banks, so it writes only
+\ *	the cells that have changed since this bank was last painted -
+\ *	typically one or two digits, and nothing at all on a still frame.
+\ ******************************************************************
+
+.status_decode
+{
+    \\ ---- what the panel should show -------------------------------
+    ldx lives
+    cpx #4
+    bcc lives_ok
+    ldx #3                      ; never happens; costs four cycles to be sure
+    .lives_ok
+    ldy hud_lives_off, x
+
+    ldx #0
+    .want_loop
+    lda score, x
+    clc
+    adc #1                      ; glyph 1 is '0'; the C64 adds $21 for the same
+    sta hud_want, x
+    lda hi_score, x
+    clc
+    adc #1
+    sta hud_want + 6, x
+    lda hud_lives, y
+    sta hud_want + 12, x
+    iny
+    inx
+    cpx #SCORE_DIGITS
+    bne want_loop
+
+    \\ ---- and what this bank is showing ----------------------------
+    lda &fe34
+    and #4                      ; X bit: the bank the CPU writes
+    beq main_bank
+    lda #HUD_CELLS
+    .main_bank
+    sta bank_off
+
+    ldx #0
+    .cell_loop
+    txa
+    clc
+    adc bank_off
+    tay
+    lda hud_want, x
+    cmp hud_have, y
+    beq next_cell
+    sta hud_have, y
+
+    \\ read_ptr = hud_glyphs + glyph * 16. Thirteen glyphs reach 192, so
+    \\ the shift stays inside a byte.
+    asl a : asl a : asl a : asl a
+    clc
+    adc #LO(hud_glyphs) : sta read_ptr
+    lda #0
+    adc #HI(hud_glyphs) : sta read_ptr+1
+
+    lda hud_cell_lo, x : sta write_ptr
+    lda hud_cell_hi, x : sta write_ptr+1
+
+    ldy #HUD_GLYPH_BYTES-1
+    .copy
+    lda (read_ptr), y
+    sta (write_ptr), y
+    dey
+    bpl copy
+
+    .next_cell
+    inx
+    cpx #HUD_CELLS
+    bne cell_loop
+    rts
+
+    .bank_off EQUB 0
 }
 
 .bank3_end
