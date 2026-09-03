@@ -14,11 +14,12 @@ of it existing tools:
 Layer 7 was always going to use); `vgipacker.py` from Repos/vgm-packer.
 
 **The tune is longer than we have room for.** EDGEA is 17,446 frames - 5m49s -
-and packs to 23.5 KB of .vgi, where the whole of sideways bank 3 plus HAZEL is
-about 13 KB and what is actually spare tonight is about 4.7 KB. So this exporter
-takes a frame limit and truncates, and the player loops what it gets. See
-`docs/layer-7-music.md` for the placement problem and the options for the whole
-tune.
+and packs to 23.5 KB of .vgi, where what is spare is 13.5 KB: the top of
+sideways bank 3 and the bottom of HAZEL, which are adjacent in the address map
+and visible at the same time, so the tune spans them as one block. This exporter
+therefore takes a frame limit and truncates, and the player loops what it gets.
+See `docs/layer-7-music.md` for the placement problem and the options for
+getting the whole tune in.
 
 Truncation happens at the **YM** stage, before ym2sn, so the VGM the packer sees
 is a complete, consistent register log of the first N frames.
@@ -27,7 +28,9 @@ Usage:
     python tools/export_music.py [--frames N] [--budget BYTES] [--keep]
 
 `--budget` searches for the largest frame count whose .vgi fits, by bisection;
-`--frames` skips the search. Output: src/data/music.vgi.
+`--frames` skips the search. Output: src/data/music_lo.bin (the part that lives
+below &C000, padded to exactly MUSIC_LO_SIZE so the halves join) and
+src/data/music_hi.bin.
 """
 
 import argparse
@@ -45,7 +48,17 @@ SKS = os.path.join(ROOT, 'source_cpc', 'Music', 'EDGEA.SKS')
 SONG_TO_YM = os.path.join(BEEB, 'Repos', 'nova-invite', 'bin', 'SongToYm.exe')
 YM2SN = os.path.join(BEEB, 'Repos', 'nova-invite', 'bin', 'ym2sn.py')
 VGIPACKER = os.path.join(BEEB, 'Repos', 'vgm-packer', 'vgipacker.py')
-OUT = os.path.join(ROOT, 'src', 'data', 'music.vgi')
+OUT_LO = os.path.join(ROOT, 'src', 'data', 'music_lo.bin')
+OUT_HI = os.path.join(ROOT, 'src', 'data', 'music_hi.bin')
+
+# The tune is ONE address range that happens to span two kinds of RAM. Sideways
+# bank 3 ends at &C000 and HAZEL begins there, and both are visible at the same
+# time, so a pointer walking off the end of one lands in the other and the
+# player needs to know nothing about it. MUSIC_LO_SIZE is how much of the tune
+# sits below &C000 - it must match main.asm's constant of the same name, which
+# ASSERTs the arithmetic at assembly time.
+MUSIC_LO_SIZE = 0x2300      # &9D00-&BFFF in bank 3
+MUSIC_HI_SIZE = 0x1200      # &C000-&D1FF in HAZEL, below the player at &D200
 
 YM_REGISTERS = 16
 
@@ -103,8 +116,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--frames', type=int, default=0,
                     help='export exactly this many frames (50 per second)')
-    ap.add_argument('--budget', type=int, default=4700,
-                    help='largest .vgi in bytes to aim for (default 4700)')
+    ap.add_argument('--budget', type=int, default=MUSIC_LO_SIZE + MUSIC_HI_SIZE,
+                    help='largest .vgi in bytes to aim for')
     ap.add_argument('--keep', action='store_true',
                     help='leave the intermediate .ym/.vgm files in build/')
     args = ap.parse_args()
@@ -136,10 +149,20 @@ def main():
         if blob is None:
             raise SystemExit('nothing fits %d bytes' % args.budget)
 
-    with open(OUT, 'wb') as f:
-        f.write(blob)
-    print('%s: %d bytes, %d frames (%.1f s), loops' %
-          (OUT, len(blob), keep, keep / 50.0))
+    if len(blob) > MUSIC_LO_SIZE + MUSIC_HI_SIZE:
+        raise SystemExit('%d bytes will not fit %d' %
+                         (len(blob), MUSIC_LO_SIZE + MUSIC_HI_SIZE))
+    # The low half is padded to exactly MUSIC_LO_SIZE, so that wherever the
+    # tune ends the two halves still meet at &C000 and the .vgi header's stream
+    # offsets, which are relative to the start of the file, stay true.
+    pad = bytes(1)
+    part_lo = blob[:MUSIC_LO_SIZE].ljust(MUSIC_LO_SIZE, pad)
+    part_hi = blob[MUSIC_LO_SIZE:].ljust(1, pad)   # never empty: beebasm INCBIN
+    open(OUT_LO, 'wb').write(part_lo)
+    open(OUT_HI, 'wb').write(part_hi)
+    print('%s: %d bytes (bank 3, &9D00)' % (OUT_LO, len(part_lo)))
+    print('%s: %d bytes (HAZEL, &C000)' % (OUT_HI, len(part_hi)))
+    print('tune: %d bytes, %d frames (%.1f s), loops' % (len(blob), keep, keep / 50.0))
 
 
 if __name__ == '__main__':

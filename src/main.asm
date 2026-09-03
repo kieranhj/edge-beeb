@@ -203,6 +203,18 @@ HAZEL_BASE  = &C000
 HAZEL_WORK  = &D500         ; the VGI player's 11 x 256 ring, exactly to &DFFF
 ASSERT HAZEL_WORK + 11 * 256 = &E000
 
+\ The tune is ONE address range that happens to span two kinds of RAM. Bank 3
+\ ends at &C000 and HAZEL begins there, and BOTH ARE VISIBLE AT THE SAME TIME -
+\ they are paged by different registers over different windows - so a pointer
+\ walking off the end of one lands in the other and the player needs to know
+\ nothing about it. tools/export_music.py cuts the .vgi at MUSIC_LO_SIZE and
+\ pads the low half to exactly that, so the halves meet whatever the tune's
+\ length; the two constants must agree, and the ASSERTs below are the check.
+MUSIC_LO_SIZE = &2300       ; of the tune, in bank 3
+MUSIC_LO_BASE = HAZEL_BASE - MUSIC_LO_SIZE      ; &9D00
+MUSIC_PLAYER  = &D200       ; the player's code, above the tune's high half
+ASSERT MUSIC_LO_BASE >= &8000
+
 \ Build flag for lib/vgiplayer.asm, which the library expects on the command
 \ line; set here instead so a bare beebasm invocation cannot get it wrong.
 \ 0 is the compact looped decoder, 1 the unrolled one - half a K more code
@@ -430,7 +442,9 @@ GUARD CODE_TOP
     CRTC 8, &30                 ; VDU 22 turned the display back on; off again
     jsr setup_display           ; until the buffers and panel are drawn
     jsr score_boot              ; the C64's initialised score, lives and 012345
-    jsr music_init              ; the tune starts before the titles and loops
+    ldx #LO(music_init)         ; the tune starts before the titles and loops
+    ldy #HI(music_init)
+    jsr bank3_call
 
     \\ Shadow state: display main (D=0), CPU writes shadow (X=1)
     lda &fe34

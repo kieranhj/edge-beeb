@@ -346,6 +346,56 @@ NEXT
     .bank_off EQUB 0
 }
 
+\ ******************************************************************
+\ *	music_init - start the tune (Layer 7)
+\ ******************************************************************
+\ *	Here rather than in bank 0 because vgm_init reads the .vgi header
+\ *	out of music_lo below, which is in THIS bank: a starter in bank 0
+\ *	could not page bank 3 in without paging itself out. Reached from
+\ *	boot through bank3_call, which has already done the paging; all
+\ *	this adds is HAZEL, where the player's code is, and that does not
+\ *	page bank 3 out because it is a different window.
+\ *
+\ *	C = 1 is the player's "loop for ever", which is what the C64 does
+\ *	with its own tune.
+\ ******************************************************************
+
+.music_init
+{
+    lda &fe34
+    ora #HAZEL_BIT
+    sta &fe34
+    lda #HI(HAZEL_WORK)
+    ldx #LO(MUSIC_LO_BASE)
+    ldy #HI(MUSIC_LO_BASE)
+    sec
+    jsr vgm_init
+    lda &fe34
+    and #255-HAZEL_BIT
+    sta &fe34
+    rts
+}
+
+\ ******************************************************************
+\ *	The low half of the tune, ending exactly at &C000
+\ ******************************************************************
+\ *	The high half is the first thing in HAZEL, at &C000, so the two
+\ *	are one contiguous block in the address map and the player reads
+\ *	across the join without knowing it is there. That only works
+\ *	because this bank and HAZEL are visible at the same time.
+\ *
+\ *	tools/export_music.py pads this half to exactly MUSIC_LO_SIZE, so
+\ *	the join is at &C000 whatever the tune's length.
+\ ******************************************************************
+
+ASSERT P% <= MUSIC_LO_BASE
+PRINT "BANK 3 code/data ends at", ~P%, "- music_lo starts at", ~MUSIC_LO_BASE
+
+ORG MUSIC_LO_BASE
+.music_lo
+INCBIN "src/data/music_lo.bin"
+ASSERT P% = HAZEL_BASE
+
 .bank3_end
 
 SAVE "BANK3", bank3_start, bank3_end

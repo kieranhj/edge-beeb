@@ -31,8 +31,8 @@ and **the HUD** - the original's own status bar, rendered whole from its charset
 map, with the score, the high score and the lives bars decoded onto it every frame; and **the
 music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL. The
 titles are static until 6e gives them the zoom scroller, the completion's "mega hero" message waits
-for a font to draw it with, and **the tune is truncated to 76 seconds because it does not fit** -
-`docs/layer-7-music.md` costs the ways out and wants a decision.
+for a font to draw it with, and **the tune is truncated to 203 of its 349 seconds because it does
+not fit** - `docs/layer-7-music.md` costs the ways out and wants a decision.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
 `DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
@@ -44,11 +44,11 @@ The old estimate of 63,667 was optimistic by 45%, because it was taken while `BU
 silently skipping every sprite past x = 140.
 
 **6d turned out to be free**: the HUD paints only the cells that changed, per bank, and costs about
-370 cycles on its worst frame - nothing measurable on the total. **The music costs 3,578 cycles a
-game frame, 4.5%**, which is the first real bite anything has taken out of the budget since 6a.
+370 cycles on its worst frame - nothing measurable on the total. **The music costs 3,394 cycles a
+game frame, 4.3%**, which is the first real bite anything has taken out of the budget since 6a.
 
 The same 100-second stress test - fire held down, the ship parked, so it dies over and over and the
-screen is full of explosions - now runs at **106% with seven missed flips in 2,500 frames**, against
+screen is full of explosions - now runs at **105% with seven missed flips in 2,500 frames**, against
 101% and four before the music. Ordinary play is the gentler 90% figure plus the same 4.5%. The
 costed options for buying margin back are in `BUGS.md` #9 and in the Blitter Anatomy artifact:
 per-row spans recover a quarter of the bytes the blitter touches, and compiling the densest
@@ -56,8 +56,9 @@ explosion frames recovers half the cycles but does not all fit.
 
 **Main RAM** (Layer 7 build, DEV): code and tables `&0E00-&1FCB`, **`&35` free** below `&2000`.
 That is with `DEBUG_TIMING` on; `game_init` moved to bank 0 in Layer 7 to make room for the HAZEL
-loader and the IRQ's music call. Bank 0 has `&97` left and bank 3 `&23DE`; **HAZEL** (`&C000-&DFFF`)
-holds the music player, the tune and the player's ring workspace, with `&E3` free;
+loader and the IRQ's music call. Bank 0 has `&B2` left; **bank 3 is full** - its code and data end
+at `&9C3D` and the tune's low half runs `&9D00-&BFFF` - and **HAZEL** (`&C000-&DFFF`) holds the
+tune's high half, the player at `&D200` and its ring workspace at `&D500`, with `&DF` free;
 `pause_check`, `comp_mess` and `finale_tick` are up in bank 0 because main RAM ran out mid-layer,
 alongside the frame meter, `coll_row_lo/hi` and the boot-time display setup; the multiply tables are
 gone entirely, and the titles' font and text, the panel image and the HUD are in bank 3. **All four
@@ -212,17 +213,20 @@ The zoom scroller. Shares almost nothing with the rest, and is the first thing t
 
 [`docs/layer-7-music.md`](docs/layer-7-music.md). `tools/export_music.py` runs EDGEA.SKS through
 SongToYm, ym2sn and vgipacker; the **VGI** player (decision 35, KC) plays it from the end of
-`rupt_vsync` at 50 Hz, where the C64 calls its own. Player, workspace and tune are in **HAZEL**
-(decision 36) - the only RAM left, and the only kind that does not collide with the sideways window
-the sprite engine is paging while the IRQ fires. Verified byte-exact: twenty captured fields of
-SN76489 writes match VGM frames 238-257 and nowhere else.
+`rupt_vsync` at 50 Hz, where the C64 calls its own. The player and its workspace are in **HAZEL** (decision
+36) - the only RAM left, and the only kind that does not collide with the sideways window the sprite
+engine is paging while the IRQ fires - and **the tune spans the top of bank 3 and the bottom of
+HAZEL as one contiguous block**, because the two are visible at the same time and a pointer walking
+off `&BFFF` lands in `&C000`. Verified byte-exact: captured fields of SN76489 writes match VGM
+frames 201-212 and nowhere else, and the loop restarts cleanly at 10,173.
 
 **No sound effects, and that is faithful** - the C64 has none at all.
 
-**Open: the tune is 349 seconds and 23,514 bytes of `.vgi`, and HAZEL has 4,831.** It ships as the
-first 76 seconds, looped (decision 37). The layer doc costs the two ways out - scattering the
-format's eleven independent register streams across HAZEL, bank 3 and the bank scraps, or cutting
-the tune musically - and both are KC's call.
+**Open: the tune is 349 seconds and 23,514 bytes of `.vgi`, and there are 13,562.** It ships as the
+first 203 seconds, looped (decision 37). The layer doc costs the ways out - move the panel image out
+of bank 3 to a boot-time load (71% of the tune, no format work), scatter the format's eleven
+independent register streams into ANDY and the bank scraps as well (all of it), or cut the tune
+musically - and all of them are KC's call.
 
 ### Layer 8 — graphics pipeline B (the artist)
 
@@ -250,6 +254,6 @@ publish.
 | 6c — state machine | [`docs/layer-6c-state-machine.md`](docs/layer-6c-state-machine.md) | done 2026-09-03 |
 | 6d — HUD | [`docs/layer-6d-hud.md`](docs/layer-6d-hud.md) | done 2026-09-03 |
 | 6e — title screen | | |
-| 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated |
+| 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
 | 8 — graphics pipeline B | | |
 | 9 — polish and release | | |

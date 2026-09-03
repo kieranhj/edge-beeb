@@ -203,27 +203,6 @@ INCLUDE "src/timing.asm"
     rts
 }
 
-\ Start the music. In bank 0 rather than main RAM because it can be:
-\ HAZEL is at &C000-&DFFF and does not overlap the sideways window, so
-\ paging it in does not page bank 0 out. Only the IRQ's per-field call
-\ has to be in main RAM, and that is because the IRQ can fire with any
-\ bank paged. C = 1 is the player's "loop for ever".
-.music_init
-{
-    lda &fe34
-    ora #HAZEL_BIT
-    sta &fe34
-    lda #HI(HAZEL_WORK)
-    ldx #LO(music_data)
-    ldy #HI(music_data)
-    sec
-    jsr vgm_init
-    lda &fe34
-    and #255-HAZEL_BIT
-    sta &fe34
-    rts
-}
-
 \ The HUD, once a game frame from the main loop. Here so that the loop
 \ pays three bytes of main RAM for it rather than seven.
 .status_call

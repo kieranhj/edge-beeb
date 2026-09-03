@@ -20,8 +20,13 @@
 \ *	    filing system is finished with the moment the banks are loaded.
 \ *	    MUSIC is therefore loaded LAST of the five files.
 \ *
-\ *	  &C000  vgiplayer.asm: code and its resident decode state
-\ *	         music.vgi, the tune
+\ *	  &C000  the HIGH HALF of the tune. Its low half is at the top of
+\ *	         sideways bank 3, ending exactly at &C000, and the two are
+\ *	         one contiguous block: bank 3 and HAZEL are paged by
+\ *	         different registers over different windows, so both are
+\ *	         visible at once and the player reads across the join
+\ *	         without knowing it is there.
+\ *	  &D200  vgiplayer.asm: code and its resident decode state
 \ *	  &D500  the player's ring workspace, 11 x 256, page aligned and
 \ *	         reaching exactly to &DFFF. Not in the file: it is scratch,
 \ *	         and vgm_init zeroes what it needs.
@@ -33,16 +38,26 @@
 \ ******************************************************************
 
 CLEAR 0, &FFFF
-ORG &C000
-GUARD HAZEL_WORK
+ORG HAZEL_BASE
+GUARD MUSIC_PLAYER
 .hazel_start
 
-INCLUDE "lib/vgiplayer.asm"
+\ tools/export_music.py: the CPC port's EDGEA.SKS through SongToYm, ym2sn
+\ and vgipacker, cut at MUSIC_LO_SIZE. TRUNCATED to what fits - see the
+\ layer doc for how much is missing and what it would take.
+.music_hi
+INCBIN "src/data/music_hi.bin"
+.music_hi_end
+ASSERT music_hi_end <= MUSIC_PLAYER
 
-\ tools/export_music.py: the CPC port's EDGEA.SKS through SongToYm,
-\ ym2sn and vgipacker. TRUNCATED to what fits - see the layer doc.
-.music_data
-INCBIN "src/data/music.vgi"
+\ The guard was on the player's base so the tune could not run into it;
+\ now put the player there. beebasm guards one address, so it has to be
+\ cleared before anything is assembled at it.
+CLEAR MUSIC_PLAYER, MUSIC_PLAYER+1
+ORG MUSIC_PLAYER
+GUARD HAZEL_WORK
+
+INCLUDE "lib/vgiplayer.asm"
 
 .hazel_end
 
@@ -53,8 +68,9 @@ SAVE "MUSIC", hazel_start, hazel_end
 PRINT "------"
 PRINT "HAZEL - the VGI player and the tune"
 PRINT "------"
-PRINT "PLAYER size =", ~music_data - vgm_start
-PRINT "TUNE size =", ~hazel_end - music_data
+PRINT "PLAYER size =", ~hazel_end - vgm_start
+PRINT "TUNE size =", ~MUSIC_LO_SIZE + (music_hi_end - music_hi)
+PRINT "TUNE ROOM LEFT =", ~MUSIC_PLAYER - music_hi_end
 PRINT "LOAD PAGES =", HAZEL_LOAD_PAGES
 PRINT "HIGH WATERMARK =", ~P%
 PRINT "FREE =", ~HAZEL_WORK - P%

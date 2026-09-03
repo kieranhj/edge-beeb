@@ -1,9 +1,9 @@
 # Layer 7 — music
 
-Done 2026-09-04, **with the tune truncated to 76 seconds**. Everything works: the toolchain, the
-player, the placement, the IRQ hookup, and it is verified byte-exact against the source VGM. What is
-not done is fitting the whole 5m49s of it, and that is a memory problem, not a music one. The
-options are costed at the end and want KC's decision.
+Done 2026-09-04, **with the tune truncated to 203 seconds of its 349**. Everything works: the
+toolchain, the player, the placement, the IRQ hookup, and it is verified byte-exact against the
+source VGM. What is not done is fitting the last 2m26s, and that is a memory problem, not a music
+one. The options are costed at the end and want KC's decision.
 
 ## The chain
 
@@ -20,7 +20,7 @@ source_cpc/Music/EDGEA.SKS      "EDGE GRINDER MAIN CPC", 17,446 frames, 349 s
 
 Truncation happens at the **YM** stage, so what ym2sn sees is a complete, consistent register log of
 the first N frames and the VGM is not a doctored one. The exporter will also bisect on frame count
-for a byte budget (`--budget`), which is how the 3,800 was arrived at.
+for a byte budget (`--budget`), which is how the 10,173 was arrived at.
 
 `ym2sn.py` reports what the conversion costs: 349 s of AY has 15,856 low-frequency tones the 4 MHz
 SN76489 cannot reach and 148 notes lost to the tuned white noise. That is the ordinary AY→SN tax and
@@ -50,14 +50,13 @@ which is the whole of the trouble below.
 line, so a bare beebasm invocation cannot get it wrong. Going to 1 buys about 300 cycles a field for
 half a K of code, and there is no half a K.
 
-## Where it lives: HAZEL (decision 36)
+## Where it lives: HAZEL, and the top of bank 3 (decision 36)
 
-Main RAM below `&2000` had 53 bytes and every sideways bank was spoken for, so the player, its
-workspace and the tune are in **HAZEL** — the Master's 8K of filing-system RAM at `&C000-&DFFF`,
-paged in by ACCCON bit 3 (Y). `src/music.asm` is that image; it is `SAVE`d as `MUSIC` and loaded at
-boot.
+Main RAM below `&2000` had 53 bytes and every sideways bank was spoken for, so the player and its
+workspace are in **HAZEL** - the Master's 8K of filing-system RAM at `&C000-&DFFF`, paged in by
+ACCCON bit 3 (Y). `src/music.asm` is that image; it is `SAVE`d as `MUSIC` and loaded at boot.
 
-Three things make HAZEL the right home rather than a desperate one:
+Four things make HAZEL the right home rather than a desperate one:
 
 - **It does not overlap the sideways window.** The IRQ fires with whatever bank the interrupted code
   had paged in, and the sprite engine pages 5, 6 and 7 as it draws. A player in a sideways bank
@@ -69,15 +68,29 @@ Three things make HAZEL the right home rather than a desperate one:
 - **Its resident content is the filing system's workspace**, and the filing system is finished the
   moment the banks are loaded. `MUSIC` is therefore the **last** of the five files loaded, and
   nothing may touch the disc afterwards.
+- **`&BFFF` and `&C000` are adjacent, and both are visible at once.** Sideways bank 3 and HAZEL are
+  paged by different registers over different windows, so a pointer walking off the end of the bank
+  lands in HAZEL and the player does not have to know the join is there. That is what lets the tune
+  be nearly three times the size HAZEL alone could hold.
+
+So the tune is **one contiguous block spanning the two**:
 
 ```
-&C000   lib/vgiplayer.asm: code and its resident decode state   545 bytes
-&C221   music.vgi, the tune                                   4,604 bytes
-&D41D   227 free
-&D500   the 11 x 256 ring workspace, page aligned, reaching exactly to &DFFF
+bank 3
+  &9D00   music_lo.bin, the low half of the tune              8,960 bytes
+          ends EXACTLY at &C000 - the exporter pads it to MUSIC_LO_SIZE, so
+          the join holds whatever the tune's length
+HAZEL
+  &C000   music_hi.bin, the rest                              4,602 bytes
+  &D1FA   6 free before the player
+  &D200   lib/vgiplayer.asm: code and its resident decode state  545 bytes
+  &D421   223 free
+  &D500   the 11 x 256 ring workspace, page aligned, reaching exactly to &DFFF
 ```
 
-The workspace is not in the file — it is scratch, and `vgm_init` sets up what it needs.
+The workspace is not in the file - it is scratch, and `vgm_init` sets up what it needs. Bank 3's own
+code and data end at `&9C3D`, so there are 195 bytes of slack below `music_lo`; `bank3.asm` ASSERTs
+it, and if a later layer wants that room `MUSIC_LO_SIZE` comes down and the tune with it.
 
 OSFILE cannot write into HAZEL (the MOS would be overwriting the filing system's own workspace from
 underneath itself), so `MUSIC` stages through `&4000` exactly as a bank does and `move_pages` copies
@@ -87,6 +100,11 @@ it up with the Y bit set. `load_bank`'s OSFILE half is now `load_stage`, shared 
 
 `vgm_update` is called from the **end of `rupt_vsync`**, at 50 Hz, which is where the C64 calls its
 own player (`jsr $2e03` from the raster interrupt).
+
+It selects **both** HAZEL and bank 3 - the player's code is in one and the tune's low half in the
+other - and puts `&FE30` back from `&F4` afterwards, because the IRQ fires with whatever bank the
+interrupted code had paged and the sprite engine is paging 5, 6 and 7 as it draws. `&F4` is reliable
+for that: every bank switch in the engine writes it alongside `&FE30`.
 
 It must be **after** the T1 restart, not before. The VSync handler reprograms T1 for the fire 1
 interval, and anything ahead of that write delays the whole rupture by its own duration. Behind it,
@@ -107,16 +125,18 @@ and the screen is full of explosions. Microseconds; double for 2 MHz cycles.
 
 | worst frame | before 6d | after 6d | with the music |
 |---|---|---|---|
-| `spr_restore_all` | 9,613 | 9,622 | 9,617 |
-| `scroll_frame` | 6,280 | 6,280 | 6,923 |
-| `spr_draw_all` | 22,481 | 22,495 | 23,344 |
-| logic, `scroll_advance`, HUD | 4,226 | 4,411 | 4,732 |
-| whole frame | 40,827 (102%) | 40,439 (101%) | **42,228 (106%)** |
+| `spr_restore_all` | 9,613 | 9,622 | 9,616 |
+| `scroll_frame` | 6,280 | 6,280 | 6,861 |
+| `spr_draw_all` | 22,481 | 22,495 | 23,293 |
+| logic, `scroll_advance`, HUD | 4,226 | 4,411 | 4,475 |
+| whole frame | 40,827 (102%) | 40,439 (101%) | **42,136 (105%)** |
 | frames that missed their flip | 3 | 4 | **7** |
 
-**The music costs 1,789 µs = 3,578 cycles a game frame**, which is 4.5% of the 79,872-cycle frame
-and about 1,789 cycles a field — inside the 2,674 the library quotes for its worst case. It shows up
-spread across all four phases because it is an interrupt: it lands wherever it lands.
+**The music costs 1,697 µs = 3,394 cycles a game frame**, which is 4.3% of the 79,872-cycle frame
+and about 1,700 cycles a field - inside the 2,674 the library quotes for its worst case. It shows up
+spread across all four phases because it is an interrupt: it lands wherever it lands. The bank
+select that the split placement added costs nothing measurable: the same test with the tune wholly
+inside HAZEL read 42,228.
 
 Nothing else moved. The rupture is unchanged, the picture is unchanged, and the scroll is steady.
 
@@ -127,16 +147,22 @@ The whole chain is verified **byte-exact against the source VGM**, not by ear:
 - Twenty consecutive fields of SN76489 writes were captured from the running game and the chip state
   reconstructed from them.
 - The same reconstruction was done from `build/cut.vgm`, the VGM the `.vgi` was packed from.
-- The captured twenty match VGM frames **238-257 exactly, and match nowhere else in the 3,800**.
+- The captured fields match VGM frames **201-212 exactly, and match nowhere else in the 10,173** -
+  so the join at `&C000` is invisible to the player, which is the thing that needed proving.
 
-Also measured: writes arrive **39,936 cycles apart**, which is one field exactly; ten writes a field,
-not eleven, because the noise register carries the format's "unchanged, do not rewrite" marker and
-rewriting it would restart the chip's LFSR.
+Also measured:
+
+- Writes arrive **39,936 cycles apart**, which is one field exactly.
+- Ten writes a field, not eleven, because the noise register carries the format's "unchanged, do not
+  rewrite" marker and rewriting it would restart the chip's LFSR.
+- **The loop works.** Run past 10,173 fields and the chip state matches VGM frame 470 - the player
+  re-mounted the streams at frame 0 and carried on.
 
 ## What is left: the tune does not fit
 
-**EDGEA is 349 seconds and packs to 23,514 bytes of `.vgi`. There are 4,831 bytes in HAZEL.** So
-what ships tonight is the first 76 seconds, looped by the player (`vgm_init` with C=1).
+**EDGEA is 349 seconds and packs to 23,514 bytes of `.vgi`. There are 13,562 between the top of bank
+3 and the player in HAZEL.** So what ships is the first 203 seconds, looped by the player
+(`vgm_init` with C=1) - 58% of it.
 
 The alternatives, costed:
 
@@ -151,9 +177,8 @@ And the space, if it were all collected:
 
 | | bytes |
 |---|--:|
-| HAZEL, after the player and workspace | 4,831 |
-| sideways bank 3 | 9,182 |
-| sideways bank 3 if the panel image moved to a boot-time load | 12,382 |
+| bank 3 and HAZEL, as used now | 13,562 |
+| the panel image, if it moved to a boot-time load instead of living in bank 3 | 3,200 |
 | ANDY (`&8000-&8FFF`, ROMSEL bit 7) | 4,096 |
 | sideways banks 0, 1 and 2 scraps | 5,684 |
 
@@ -164,12 +189,12 @@ through its own pointer. So whole streams can be **placed in different regions**
 not have to be contiguous — which is exactly what a machine with 4,831 here and 9,182 there is good
 for. Two observations make it cheap:
 
-- **HAZEL and a sideways bank are visible at the same time.** `&C000-&DFFF` and `&8000-&BFFF` do not
-  overlap, so streams split between HAZEL and bank 3 need no paging at all — the pointers just point.
-  That alone is 4,831 + 12,382 = **17,213 bytes**, which is 78% of the tune.
+- **Moving the panel image out of bank 3** - it is read once, at boot, into `&3000` in each shadow
+  bank, and never again - would push `MUSIC_LO_BASE` down 3,200 bytes and needs no format work at
+  all. That is 16,762 of 23,514: **71%, up from 58%**, for an afternoon.
 - Streams in a *second* sideways bank, or in ANDY, would need a bank select before the byte fetch:
   four of the eleven streams are under 1,400 bytes and would fit the scraps in banks 1 and 2. About
-  ten cycles a stream, five switches a frame.
+  ten cycles a stream, five switches a frame. With those and ANDY the whole tune fits.
 
 The work is a table of eleven base addresses (and, if the scraps are used, eleven region bytes) in
 place of `vgm_stream_mount`'s "offset + one base" arithmetic, plus a packer-side or build-side

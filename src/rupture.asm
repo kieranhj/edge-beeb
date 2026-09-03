@@ -77,13 +77,18 @@
     \
     \ This call has to be in main RAM: the IRQ fires with whatever bank
     \ the interrupted code had paged, and the sprite engine is paging 5,
-    \ 6 and 7 as it draws. HAZEL is at &C000-&DFFF, clear of the window
-    \ altogether, so the ACCCON bit is the whole of the ceremony.
+    \ 6 and 7 as it draws. The player's code is in HAZEL, clear of that
+    \ window altogether, but the tune's low half is in bank 3, so both
+    \ have to be selected here and &FE30 put back afterwards.
     lda &fe34
     pha
     ora #HAZEL_BIT
     sta &fe34
+    lda #SWRAM_COMPILED         ; the tune's low half is in bank 3
+    sta &fe30
     jsr vgm_update
+    lda &f4                     ; and back to whatever was interrupted: the
+    sta &fe30                   ; sprite engine keeps &F4 in step with &FE30
     pla
     sta &fe34
     rts
