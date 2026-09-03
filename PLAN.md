@@ -17,16 +17,17 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5 are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
+**Layers 0 to 5 and 6a-6b are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
 `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
 over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K/M/L with the C64's
 bounds, fire latch, bullet and background collisions; and **the attack waves**, spawning from the
 original's own 201-wave table, flying its movement commands, shootable for score, and able to run
-into you. What is missing is the game *around* it: `coll_flag` and `comp_flag` are set and nothing
-reads them, so there are no lives, no respawn and no end. The panel still shows a colour-bar
-placeholder and `DEBUG_COLL` makes a fatal hit flash rather than kill.
+into you; and **the life cycle** — three lives, the six-piece player explosion, the drop-in shield,
+game over and a new game. What is missing is the rest of the game *around* it: `comp_flag` is set
+and nothing reads it, there is no title screen, no pause and no completion, and the panel still
+shows a colour-bar placeholder, so `lives` and the score are counted and never shown.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
 `DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
@@ -42,8 +43,8 @@ title screen and the state machine all have to come out of the sprites. The cost
 `BUGS.md` #9 and in the Blitter Anatomy artifact: per-row spans recover a quarter of the bytes the
 blitter touches, and compiling the densest frames recovers half the cycles but does not fit.
 
-**Main RAM** (Layer 6a build, DEV): code and tables `&0E00-&1EF7`, **`&109` free** below `&2000`.
-That is with `DEBUG_TIMING` on; `RELEASE` ends at `&1E63`. The frame meter, `coll_row_lo/hi` and the
+**Main RAM** (Layer 6b build, DEV): code and tables `&0E00-&1F04`, **`&FC` free** below `&2000`.
+That is with `DEBUG_TIMING` on; `RELEASE` ends at `&1EE7`. The frame meter, `coll_row_lo/hi` and the
 boot-time display setup are up in bank 0, and the multiply tables are gone entirely. **All four
 sideways RAM banks are now in use**: 4 data, 5 and 6 sprites, 7 compiled bodies (13.7K free). Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
@@ -137,10 +138,22 @@ Room for the dispatch came from moving `setup_display`, `clear_play` and `panel_
 they run once at boot with bank 0 resting and nothing else calls them. The IRQ handler and
 `install_irq` stay in main RAM, where they must be.
 
-#### 6b — the life cycle
+#### 6b — the life cycle — done
 
-Read `coll_flag`: lives, the life-lost explosion (`explosion_dirs`), respawn and the shield timer.
-Transcription, inside the existing loop.
+[`docs/layer-6b-life-cycle.md`](docs/layer-6b-life-cycle.md). `coll_flag` is read: three lives, the
+player bursting into six pieces on `explosion_dirs`' own vectors, the drop-in shield, and the
+game-over sequence — the player and his bullet gone, the level running out for &c8 ticks, then a
+new game. `life_cycle` sits at the end of `game_tick`, where the C64 has it, so its &32 and &c8
+transcribe unaltered under decision 23.
+
+It also found `BUGS.md` **#10**, a Layer 5 defect that had never been reachable: `wave_manager`'s
+no-free-slot path skipped eight bytes of a nine-byte wave, and nothing had ever filled all six slots
+at once until the player explosion did.
+
+Two decisions. **30**: `DEBUG_COLL` becomes the C64's own "patch me out to disable collisions" and
+defaults to 0 even in DEV. **31**: at zero lives the game re-inits in place, because there is no
+title screen to go back to until 6e; the boot sequence is now `game_init` and the top of the main
+loop calls it again on `restart_req`.
 
 #### 6c — the state machine
 
@@ -157,7 +170,7 @@ show.
 #### 6e — the title screen
 
 The zoom scroller. Shares almost nothing with the rest, and is the first thing that will want the
-`&32` now free below `&2000`.
+`&FC` now free below `&2000`.
 
 ### Layer 7 — sound
 
@@ -186,7 +199,7 @@ publish.
 | 4 — player | [`docs/layer-4-player.md`](docs/layer-4-player.md) | done 2026-09-03 |
 | 5 — enemies | [`docs/layer-5-enemies.md`](docs/layer-5-enemies.md) | done 2026-09-03 |
 | 6a — frame budget | | done 2026-09-03 |
-| 6b — life cycle | | |
+| 6b — life cycle | [`docs/layer-6b-life-cycle.md`](docs/layer-6b-life-cycle.md) | done 2026-09-03 |
 | 6c — state machine | | |
 | 6d — HUD | | |
 | 6e — title screen | | |

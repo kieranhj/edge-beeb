@@ -7,6 +7,7 @@ ruled out. Index first, detail below.
 |---|---|---|
 | 1 | gone (Layer 3) | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`). The routine it was about no longer exists |
 | 2 | fixed (Layer 3) | No sprite clipping: `x_pos >= 80` indexed past `mult8_*`. The engine now clips the frame's box to 80 columns x 160 scanlines at all four edges (decision 2) |
+| 10 | fixed (Layer 6b) | The wave table went one byte out of step for the rest of the game if the player died at the wrong moment: the wave manager's no-free-slot path skipped eight bytes of a nine-byte wave. Only the player explosion ever fills all six slots at once, so it hid until the life cycle went in |
 | 9 | fixed (Layer 6a) | The game dropped below 25 Hz while shooting: the walked path for a sprite crossing the end of the buffer cost 97 cycles a byte and was being taken nine times too often. Split into two ladder calls instead; 100 s of play now peaks at 90% of the frame with no missed flips |
 | 3 | fixed (Layer 4) | `read_keyboard` had no movement bounds. `player_manage` clamps x to `$10-$9b` and y to `$5a-$e5`, the C64's own, and `read_joystick` no longer moves the player at all |
 | 8 | fixed (Layer 5) | Sprites at x >= 140 were never drawn: the byte column was halved with an arithmetic shift, but the value does not fit a signed byte |
@@ -235,3 +236,50 @@ of table for about 60 of code.
 
 The deferral in decision 19 was taken on the grounds that "the interpreted path fits the frame".
 At 90% with no margin for Layer 6d, it only just does.
+
+
+## 10. Enemies stopped coming, or arrived as nonsense, after the player exploded
+
+**Found and fixed 2026-09-03, in Layer 6b, by KC.** Reported as: die on the first wave and the
+enemies vanish for a moment and come back, which is right; die on the second and **no more enemies
+appear at all**; die on the third and **sprites come in at the top left, move diagonally down and
+right, and the player is hit again by something invisible**. Reproduced in b2 and in jsbeeb.
+
+Three different symptoms from one cause, and the wave number is the clue: it is the **wave table
+reader losing its alignment**.
+
+`wave_manager` has a path for when a wave falls due and no slot is free. It cannot just return -
+the wave has to be read past and thrown away, and its last byte is still the delay to the next one.
+The C64 writes that out longhand as `wm_fail`'s one `jsr wave_read` plus **eight** more in
+`wm_fail_2`: nine bytes, a whole wave. Ours had the eight as a loop, and the loop ran **seven**
+times. Eight bytes consumed out of nine.
+
+From that moment the reader sits one byte inside every later wave. Each field then reads as the
+next one along: the shield byte becomes the x, x becomes the y, y becomes the first movement
+command, and so on. That is exactly what KC saw - enemies placed at the top left because their x
+and y are somebody else's shield and start position, flying diagonally because their movement
+commands are somebody else's coordinates, and an object byte that lands on a blank frame so the
+sprite is invisible while its box still collides.
+
+**Why it hid until Layer 6b.** The skip path only runs when all six pool slots are full at once,
+and in ordinary play they never are - the waves are authored not to overfill the pool. The one
+thing that fills all six in a single tick is `life_lost`, which turns every slot into a piece of
+the exploding player. So the layer that read `coll_flag` was the first thing ever to reach the
+path. Whether it bit depended on whether a wave happened to fall due inside the second or so that
+the pieces are animating, which is why dying on the first wave looked fine and dying on the second
+did not.
+
+**The fix**: `ldx #WAVE_BYTES-1`, with `WAVE_BYTES = 9` named next to the table's description, and
+a comment at the site saying what it costs to get wrong.
+
+**Measured after the fix**: forcing the path by filling all six slots and dropping `wave_tmr` to
+zero advances the reader by exactly 9. Across 3,500 frames of a parked player dying over and over,
+through several game-overs and restarts, the read pointer stayed a whole multiple of nine bytes
+from the start of the table, and enemies kept arriving with sane positions and frames.
+
+**What it ruled out**: nothing in the sprite engine. The first suspicion was the seven-way overlap
+of six explosion pieces and the player breaking the save-and-restore ordering, and that was checked
+and is sound - the restore runs slot 0 up and the draw slot 7 down, which is the correct reverse.
+`life_lost` itself is a faithful transcription and corrupts nothing; every array it writes was
+checked against its bounds. The layer's own state - `lives`, the shield, `player_live` - was
+correct throughout, which is why the state readings looked healthy while the screen did not.

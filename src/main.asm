@@ -9,7 +9,9 @@ DEV = 1-RELEASE
 
 \ Debug flags. Each must be off under RELEASE; add new ones to DEBUG_ANY and
 \ to the !BOOT stamp at the bottom of this file so a build says what it is.
-DEBUG_COLL = DEV            ; a fatal hit flashes instead of killing
+DEBUG_COLL = 0              ; collisions never take a life (the C64 source's
+                            ; own "patch me out to disable collisions!").
+                            ; OFF in DEV too: dying is the normal case
 DEBUG_TIMING = DEV          ; the frame meter: see src/timing.asm
 DEBUG_ANY = DEBUG_COLL OR DEBUG_TIMING
 IF RELEASE
@@ -89,6 +91,8 @@ SPRITE_PIX_0 = MODE2_PIXEL_00   ; actually transparent
 SPRITE_PIX_1 = MODE2_PIXEL_05 OR MODE2_PIXEL_50 ; magenta (black on C64)
 SPRITE_PIX_2 = MODE2_PIXEL_01 OR MODE2_PIXEL_10 ; red
 SPRITE_PIX_3 = MODE2_PIXEL_03 OR MODE2_PIXEL_30 ; yellow (white on C64)
+
+GAME_LIVES = 3                  ; the C64's main_init
 
 KEY_LEFT = IKN_z
 KEY_RIGHT = IKN_x
@@ -402,55 +406,12 @@ GUARD CODE_TOP
     ora #4
     sta &fe34
 
-    \\ Set scroll addresses
-
-    lda #LO(screen_start)
-    sta corner_addr
-    lda #HI(screen_start)
-    sta corner_addr+1
-
-    lda #LO(screen_start/8)
-    sta crtc_addr
-    lda #HI(screen_start/8)
-    sta crtc_addr+1
-
     \\ Initialise variables
 
 IF DEBUG_TIMING
     jsr tim_init
 ENDIF
-    jsr spr_init
-    jsr coll_init
-    jsr score_reset
-    jsr sprite_reset
-
-    ldx #0
-    lda #0
-    .col_loop
-    sta column_buffer, X
-    inx
-    cpx #column_size
-    bcc col_loop
-
-    \\ Initialise the tile readers
-
-    ldx #0
-    stx tile_cnt
-    stx tile_total
-    stx char_col
-    jsr tile_update
-
-    \\ Fill the play area before anything is shown - see scroll_prewind.
-    \\ The display is still blanked from setup_display's R8; it goes on
-    \\ once there is a picture in both banks to show.
-    CRTC 8, &30
-    jsr scroll_prewind
-    CRTC 8, 0
-
-    lda crtc_addr
-    sta crtc_live
-    lda crtc_addr+1
-    sta crtc_live+1
+    jsr game_init
     jsr install_irq
 
     \\ The loop draws into the hidden bank (the &FE34 X bit already points
@@ -458,6 +419,16 @@ ENDIF
     \\ IRQ, which flips the banks on a FRAME_LOCK-field cadence.
 
     .loop
+
+    \\ A finished game-over sequence re-inits everything and winds the map
+    \\ back over a blanked display. Here, at the top of the loop, because
+    \\ frame_ready is 0 at this point and stays 0: the VSync handler will
+    \\ not touch &FE34 while scroll_prewind is flipping the banks itself.
+
+    lda restart_req
+    beq no_restart
+    jsr game_init
+    .no_restart
 
 IF DEBUG_TIMING
     jsr tim_start
@@ -513,6 +484,81 @@ ENDIF
 
     .done
 
+    rts
+}
+
+\ ******************************************************************
+\ *	game_init - the C64's main_init: a whole new game
+\ ******************************************************************
+\ *	Everything a game needs set before its first frame, run once at
+\ *	boot and again when a game-over sequence has finished. The C64's
+\ *	main_init blanks the screen ($d011), resets the map, the wave
+\ *	table, the sprites and the score, gives the player three lives and
+\ *	falls into main_dropin. The fast winder at the end of its
+\ *	map_read_rst is our scroll_prewind.
+\ *
+\ *	SAFE TO CALL WITH THE IRQ RUNNING, but only from the top of the
+\ *	main loop: scroll_prewind flips &FE34 itself, and the VSync handler
+\ *	only does that when frame_ready is set, which it is not there.
+\ ******************************************************************
+
+.game_init
+{
+    \\ Set scroll addresses
+
+    lda #LO(screen_start)
+    sta corner_addr
+    lda #HI(screen_start)
+    sta corner_addr+1
+
+    lda #LO(screen_start/8)
+    sta crtc_addr
+    lda #HI(screen_start/8)
+    sta crtc_addr+1
+
+    \\ spr_init first: on a restart the save areas still hold the last
+    \\ game's backgrounds, and spr_restore_all would put them back over
+    \\ the new screen.
+
+    jsr spr_init
+    jsr coll_init
+    jsr score_reset
+    jsr sprite_reset            \\ enemy_init and wave_read_rst with it
+
+    lda #GAME_LIVES
+    sta lives
+    lda #0
+    sta restart_req
+    jsr player_dropin
+
+    ldx #0
+    lda #0
+    .col_loop
+    sta column_buffer, X
+    inx
+    cpx #column_size
+    bcc col_loop
+
+    \\ Initialise the tile readers. map_read_rst ends in tile_update.
+
+    ldx #0
+    stx tile_cnt
+    stx tile_total
+    stx char_col
+    jsr map_read_rst
+
+    \\ Fill the play area before anything is shown - see scroll_prewind.
+    \\ At boot the display is still blanked from setup_display's R8; on a
+    \\ restart this is what hides the wind, as the C64's $d011 does.
+
+    CRTC 8, &30
+    jsr scroll_prewind
+    CRTC 8, 0
+
+    lda crtc_addr
+    sta crtc_live
+    lda crtc_addr+1
+    sta crtc_live+1
     rts
 }
 
@@ -920,7 +966,7 @@ IF RELEASE
 ELSE
     EQUS "REM Edge Grinder DEV build", 13
 IF DEBUG_COLL
-    EQUS "REM DEBUG_COLL: a fatal hit flashes, it does not kill", 13
+    EQUS "REM DEBUG_COLL: collisions do not kill", 13
 ENDIF
 IF DEBUG_TIMING
     EQUS "REM DEBUG_TIMING: the frame meter is running", 13
@@ -982,8 +1028,14 @@ ORG GAME_STATE
 .scroll_x       skip 1              ; the C64's 16-step fine-scroll counter
 .wave_tmr       skip 1              ; ticks until the next wave is spawned
 .fire_latch     skip 1              ; set while fire is held, so it does not repeat
-.coll_flag      skip 1              ; a fatal hit; Layer 6 takes the life
-.comp_flag      skip 1              ; the wave table ran out; Layer 6 again
+.coll_flag      skip 1              ; a fatal hit; doubles as the game-over
+                                    ; countdown once the player is gone
+.comp_flag      skip 1              ; the wave table ran out; Layer 6c reads it
+.lives          skip 1              ; three at main_init, one taken per hit
+.player_shield  skip 1              ; ticks of invulnerability after a drop-in
+.player_live    skip 1              ; 0 during the game-over sequence: no
+                                    ; player_manage, so no collisions either
+.restart_req    skip 1              ; game over has finished; the loop re-inits
 .coll_grind     skip 2              ; the two grind cells, above and below the ship
 .coll_temp      skip 4              ; the collision box being tested
 .rt_store       skip 1              ; X across a bump_score call

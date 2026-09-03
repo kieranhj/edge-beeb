@@ -39,6 +39,10 @@ BUL_SPEED = &0c
 PLY_ROW_OFF = &30 + PANEL_ROWS * 8      ; 88
 BUL_ROW_OFF = &28 + PANEL_ROWS * 8      ; 80
 
+\ The life cycle, all three the C64's own values.
+PLY_SHIELD = &32                ; ticks of invulnerability after a drop-in
+GAME_OVER_TICKS = &c8           ; and of scenery and enemies after the last life
+
 \ The player's own animation frames, from the C64's anim_defaults.
 PLY_ANIM_START = &0b
 PLY_ANIM_END   = &12
@@ -58,7 +62,14 @@ BUL_ANIM_END   = &13
 
 .game_tick
 {
+    \\ player_manage is skipped once the player is gone, which is how the
+    \\ C64's game_over_loop is built: it calls enemy_manage and
+    \\ scroll_manage and nothing else, so no collision check runs and
+    \\ coll_flag is free to be the game-over counter.
+    lda player_live
+    beq no_player
     jsr player_manage
+    .no_player
     jsr bullet_manage
     jsr enemy_manage
     jsr multimate
@@ -73,6 +84,144 @@ BUL_ANIM_END   = &13
     ldx #0
     .no_wrap
     stx scroll_x
+    jmp life_cycle
+}
+
+\ ******************************************************************
+\ *	life_cycle - the shield, the fatal hit, and the game-over count
+\ ******************************************************************
+\ *	The C64's main_loop tail: the block between scroll_manage and the
+\ *	jump to life_lost_init, transcribed. It runs once a TICK, not once
+\ *	a display frame, so the shield's &32 lasts the wall-clock time the
+\ *	original gives it (decision 23).
+\ *
+\ *	The shield's decrement is the C64's own, quirk included: it runs
+\ *	even when the shield is already zero, wraps to &ff and is put back
+\ *	to zero. Do not tidy it into a BEQ.
+\ ******************************************************************
+
+.life_cycle
+{
+    lda player_live
+    beq game_over_tick
+
+    ldx player_shield
+    beq no_shield
+    lda #0
+    sta coll_flag
+    .no_shield
+    dex
+    cpx #&ff
+    bne shield_xb
+    ldx #0
+    .shield_xb
+    stx player_shield
+
+    lda coll_flag
+    beq out
+IF DEBUG_COLL
+    \\ The C64 source's "patch me out to disable collisions!", patched out.
+    lda #0
+    sta coll_flag
+ELSE
+    jmp life_lost
+ENDIF
+    .out
+    rts
+
+    \\ Game over: count the ticks down and ask the main loop for a new
+    \\ game. The C64 goes back to its title screen here instead, which is
+    \\ Layer 6c; until there is one, main_init is the whole of it.
+    .game_over_tick
+    dec coll_flag
+    bne got_out
+    inc restart_req
+    .got_out
+    rts
+}
+
+\ ******************************************************************
+\ *	life_lost - the player bursts into six pieces
+\ ******************************************************************
+\ *	The C64's life_lost_init and life_lost_loop. Every slot in the
+\ *	enemy pool is given the player's position, one of explosion_dirs'
+\ *	movement commands and the explosion animation - so whatever was
+\ *	flying is simply overwritten, which is what the original does too.
+\ *	enemy_bounds and explosion_chk free the slots again as they would
+\ *	any other explosion.
+\ ******************************************************************
+
+.life_lost
+{
+    ldx #0
+    .pos_loop
+    lda sprite_pos
+    sta sprite_pos+2*ENEMY_FIRST, x
+    lda sprite_pos+1
+    sta sprite_pos+2*ENEMY_FIRST+1, x
+    inx
+    inx
+    cpx #2*ENEMY_COUNT
+    bne pos_loop
+
+    ldx #0
+    .dir_loop
+    lda explosion_dirs+2*ENEMY_FIRST, x
+    sta enemy_spds+2*ENEMY_FIRST, x
+    inx
+    cpx #2*ENEMY_COUNT
+    bne dir_loop
+
+    ldx #0
+    .anim_loop
+    lda #0
+    sta sprite_dp+ENEMY_FIRST, x
+    lda #EXPL_LAST
+    sta anim_starts+ENEMY_FIRST, x
+    lda #EXPL_LAST+1
+    sta anim_ends+ENEMY_FIRST, x
+    inx
+    cpx #ENEMY_COUNT
+    bne anim_loop
+
+    dec lives
+    bne player_dropin
+}
+
+\ ******************************************************************
+\ *	game_over_init - the player is gone; run the level out
+\ ******************************************************************
+\ *	Zeroing the position is the C64's way of hiding him and it works
+\ *	here for the same reason it does there: y = 0 is SPR_Y_OFF = 90
+\ *	scanlines above the play area, so the clipper draws nothing.
+
+.game_over_init
+{
+    lda #0
+    sta sprite_pos
+    sta sprite_pos+1
+    sta sprite_pos+2            \\ and the bullet with him
+    sta sprite_pos+3
+    sta player_live
+    lda #GAME_OVER_TICKS
+    sta coll_flag
+    rts
+}
+
+\ ******************************************************************
+\ *	player_dropin - the C64's main_dropin
+\ ******************************************************************
+\ *	Entered at the start of a game and after every life lost. The
+\ *	player keeps his position; what he gets is a shield.
+
+.player_dropin
+{
+    lda #PLY_SHIELD
+    sta player_shield
+    lda #0
+    sta coll_flag
+    lda #1
+    sta player_live
     rts
 }
 
@@ -202,10 +351,6 @@ BUL_ANIM_END   = &13
     cmp coll_temp+3
     bcs psc_over
     inc coll_flag
-IF DEBUG_COLL
-    lda #20
-    sta sprite_pls_tmr
-ENDIF
     .psc_over
     iny
     inx
@@ -343,13 +488,9 @@ ENDIF
     jsr coll_read
     beq pc_no_coll
 
-    \\ Collision occurred, so flag it. Layer 6 reads coll_flag and takes
-    \\ the life; until then DEBUG_COLL shows it as a long hit flash.
+    \\ Collision occurred, so flag it. life_cycle, at the end of this
+    \\ tick, is what reads coll_flag and takes the life.
     inc coll_flag
-IF DEBUG_COLL
-    lda #20
-    sta sprite_pls_tmr
-ENDIF
 
     .pc_no_coll
     jsr bullet_colls

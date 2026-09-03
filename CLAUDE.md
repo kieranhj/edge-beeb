@@ -95,11 +95,11 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 
 | File | Contents |
 |---|---|
-| `main.asm` | constants, zero page map, boot, main loop, `scroll_frame` / `scroll_advance` / `scroll_prewind`, `move_pages`, SAVEs, `!BOOT`, the `&0800` game-state block, includes |
+| `main.asm` | constants, zero page map, boot, `game_init`, main loop, `scroll_frame` / `scroll_advance` / `scroll_prewind`, `move_pages`, SAVEs, `!BOOT`, the `&0800` game-state block, includes |
 | `scroll.asm` | map reader, tile readers, column buffer, column copy |
 | `sprite.asm` | the sprite engine: `SCANSTEP`, `spr_restore_all`, `spr_draw_all`, clipping, the hit-flash tables |
 | `keyboard.asm` | `keydown` (direct VIA matrix read) and `read_joystick`, which packs the five keys into the C64's `$dc00` byte |
-| `player.asm` | movement, fire latch, bullet, background collisions, grind scoring, score, `game_tick` |
+| `player.asm` | movement, fire latch, bullet, background collisions, grind scoring, score, `game_tick`, and the life cycle: `life_cycle`, `life_lost`, `game_over_init`, `player_dropin` |
 | `enemy.asm` | the wave manager and reader, enemy movement, bounds, the two enemy collision passes, explosions |
 | `rupture.asm` | the two-cycle rupture, IRQ handler and install, `setup_display` (wrap, CRTC, palette, panel clear) |
 | `tables.asm` | initialised main-RAM tables only; the mutable state lives at `&0800` (see `main.asm`) |
@@ -125,7 +125,7 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
   display from `*RUN` until both banks are cleared and the panel drawn; R8 does NOT hide the
   CRTC cursor, so R10 = `&20` goes with it. `VDU 22` resets both.
 
-## Memory (Layer 5 build; take live figures from the listing)
+## Memory (Layer 6b build; take live figures from the listing)
 
 | Region | Contents |
 |---|---|
@@ -133,8 +133,8 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
 | `&0400-&049F` | column buffer, 160 B |
 | `&04A0-&07BF` | collision character map, 40 × 20; `&07C0-&07FF` is its overrun slack. The language workspace - ours once `*RUN` has handed over, verified by sentinel |
 | `&0800-&08E9` | game state: the C64's `$0340` block - `sprite_pos`, `sprite_dp`, the `enemy_*` arrays, the score, and what each bank's last sprite draw did. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
-| `&0E00-&1DF3` | code (`GUARD CODE_TOP` = `&2000`) |
-| to `&1F9A` | initialised tables: multiply tables, `coll_row` bases, the sprite row-body dispatch tables, the OSFILE block. **`&66` free** - Layer 6 needs something moved out first |
+| `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `&2000`) |
+| to `&1F04` | initialised tables: the sprite row-body dispatch tables, `explosion_dirs`, the OSFILE block. **`&FC` free** in a DEV build; `RELEASE` ends at `&1EE7` |
 | `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly |
 | `&3000-&3C7F` × 2 | status panel, 5 rows × 640, in BOTH banks, displayed by rupture cycle A |
 | `&4000-&7FFF` × 2 | play buffers, main and shadow |
@@ -165,6 +165,11 @@ that the tables and the data agree.
   `.comp_flag` label beside the `comp_flag` variable it sets, and `sta comp_flag` would have stored
   into code. Assembles cleanly, fails quietly. Do not name a local label after anything it is used
   next to.
+- **`wave_manager`'s skip path must consume all nine bytes of a wave.** It only runs when all six
+  pool slots are full, which nothing did until the player explosion in Layer 6b, so it was wrong
+  from Layer 5 and unreachable. One byte short leaves the reader inside every later wave and
+  every field reads as the next one along. `BUGS.md` #10. The general form: **a path nothing has
+  ever called is not a tested path**, and the layer that first calls it will be blamed for it.
 - **Sprite x does not fit a signed byte.** `x - SPR_X_OFF` runs -12 to 243, so the byte column
   cannot be taken with an arithmetic shift; the sign comes from the subtraction's carry. Getting
   this wrong hid every sprite past x = 140. `BUGS.md` #8.

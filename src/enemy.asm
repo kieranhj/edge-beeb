@@ -29,6 +29,7 @@ ENEMY_Y_LIVE = &40
 EXPL_OBJECT = 0                 ; anim_decode entry 0, the explosion
 EXPL_LAST = &0a                 ; its final frame: the slot is free again
 WAVE_START_DELAY = &10          ; wave_read_rst's first wait
+WAVE_BYTES = 9                  ; one wave; the skip path must eat all nine
 
 \ ******************************************************************
 \ *	wave_read - one byte of the table, self-modifying as map_read is
@@ -140,13 +141,22 @@ WAVE_START_DELAY = &10          ; wave_read_rst's first wait
 
     \\ No slot free, so the wave is read past and thrown away. Its last
     \\ byte is still the delay to the next one.
+    \\
+    \\ IT MUST CONSUME THE WHOLE NINE BYTES. The C64 writes eight
+    \\ `jsr wave_read` out longhand after the one above; this loop is the
+    \\ same count, and getting it wrong leaves the reader one byte out of
+    \\ step for the rest of the game - every later wave read with its
+    \\ fields shifted, enemies at nonsense positions on nonsense courses,
+    \\ and an object byte that gives a blank frame which still collides.
+    \\ It only shows once something fills all six slots at once, which is
+    \\ the player explosion, so it hid until Layer 6b. BUGS.md #10.
     .fail
     jsr wave_read
     cmp #&ff
     bne fail_2
     jmp wm_comp
     .fail_2
-    ldx #7
+    ldx #WAVE_BYTES-1
     .skip
     jsr wave_read
     dex

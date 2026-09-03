@@ -16,6 +16,14 @@
 .bank2_filename EQUS "Bank2",13
 .bank3_filename EQUS "Bank3",13
 
+\ The C64's player explosion direction vectors, verbatim. Movement
+\ commands in emove's encoding, one pair per pool slot; life_lost reads
+\ from +2*ENEMY_FIRST, so the first four bytes are never used - they are
+\ the player's and bullet's slots, which have no pieces to throw.
+.explosion_dirs
+EQUB &00,&00,&02,&03,&19,&09,&44,&44
+EQUB &22,&22,&8a,&8a,&45,&45,&26,&26
+
 .osfile_params
 .osfile_nameaddr
 EQUW bank0_filename
