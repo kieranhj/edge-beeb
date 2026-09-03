@@ -12,7 +12,7 @@ Try the current build in a browser:
 
 **https://bbc.xania.org/?disc=https://bitshifters.github.io/content/wip/edge-beeb.ssd&autoboot&model=Master**
 
-**Z** and **X** steer left and right, **:** and **/** up and down, **RETURN** fires. Boot takes
+**Z** and **X** steer left and right, **K** and **M** up and down, **L** fires. Boot takes
 eight to ten seconds of black screen while three sideways banks load off the disc. The published
 build is a development one: slots 2–7 hold drifting test enemies, the panel shows a colour-bar
 placeholder, and flying into scenery flashes the ship instead of killing you.

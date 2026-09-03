@@ -62,11 +62,14 @@ MODE2_PIXEL_70  = MODE2_PIXEL_07<<1
 MODE2_PIXEL_LEFT_MASK = &AA
 MODE2_PIXEL_RIGHT_MASK = &55
 
+\ Internal key numbers, every one MEASURED with OSBYTE 121 in a BASIC
+\ session holding the key, never recalled: they are hardware facts and
+\ getting one wrong is silent.
 IKN_z = 97
 IKN_x = 66
-IKN_colon = 72
-IKN_fwd_slash = 104
-IKN_return = 73             ; measured with OSBYTE 121, not recalled
+IKN_k = 70
+IKN_m = 101
+IKN_l = 86
 
 \ ******************************************************************
 \ *	GAME defines
@@ -89,9 +92,9 @@ SPRITE_PIX_3 = MODE2_PIXEL_03 OR MODE2_PIXEL_30 ; yellow (white on C64)
 
 KEY_LEFT = IKN_z
 KEY_RIGHT = IKN_x
-KEY_UP = IKN_colon
-KEY_DOWN = IKN_fwd_slash
-KEY_FIRE = IKN_return
+KEY_UP = IKN_k
+KEY_DOWN = IKN_m
+KEY_FIRE = IKN_l
 
 \ ******************************************************************
 \ *	MACROS
@@ -780,6 +783,7 @@ IF DEBUG_COLL
     EQUS "REM DEBUG_COLL: a fatal hit flashes, it does not kill", 13
 ENDIF
 ENDIF
+EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
 EQUS "*RUN Edge", 13
 .bootfile_end
 

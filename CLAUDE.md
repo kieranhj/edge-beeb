@@ -56,7 +56,7 @@ month and this is a Master.
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
 | Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw. `src/sprite.asm`, `docs/layer-3-sprites.md` |
 | Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
-| Controls | Z/X left/right, `:`/`/` up/down, RETURN fire. Internal key numbers are **measured** (OSBYTE 121), never recalled |
+| Controls | Z/X left/right, K/M up/down, L fire. Internal key numbers are **measured** (OSBYTE 121 in a BASIC session holding the key), never recalled |
 
 ## Build
 
@@ -82,7 +82,8 @@ hand this one to jsbeeb and publish this one), `EDGE.lst` (the `-v` listing). be
 progress to stderr; in PowerShell do not redirect that stream or `$ErrorActionPreference = 'Stop'`
 throws on a successful build. Check the exit code.
 
-`!BOOT` is assembled by `main.asm` and says `DEV build` unless `RELEASE`. Add any new `DEBUG_`
+`!BOOT` is assembled by `main.asm`, stamps the assembly time with beebasm's `TIME$` so any disc
+image can be dated, and says `DEV build` unless `RELEASE`. Add any new `DEBUG_`
 flag to `DEBUG_ANY` and to that stamp so a build cannot lie about itself.
 
 There are no automated tests. The check for a change meant to be mechanical is: extract `Edge`

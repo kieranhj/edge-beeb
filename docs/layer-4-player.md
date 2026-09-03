@@ -78,8 +78,11 @@ The map is 800 bytes and the region is 864, and the slack is deliberate — see 
   and the C64 indexes 27 rows into a 24-row table; past column 39 it reads into the next row down.
   Both are off-screen nonsense on the C64 and an out-of-range read here, so both return "no
   collision". The 64 bytes of slack past the map absorb the same overrun on the row tables.
-- **Fire is RETURN.** Internal key number 73 — **measured** with OSBYTE 121 in a BASIC session
-  holding the key, not recalled, after 73 was first written off on a bad test (see below).
+- **The keys are Z/X left/right, K/M up/down, L fire** (KC). Every internal key number is
+  **measured** with OSBYTE 121 in a BASIC session holding the key, never recalled — Z 97, X 66,
+  K 70, M 101, L 86. An earlier pass had fire on RETURN and briefly wrote its number off on a bad
+  test: the ship was parked in the floor, so the bullet fired and `bullet_colls` killed it in the
+  same tick, and the latch then correctly refused to re-fire.
 - Player-to-enemy collisions (`player_s_colls`) are stubbed: the pool does not move until Layer 5.
   `coll_flag` is set and counted but nothing consumes it; Layer 6 takes the life.
 
@@ -87,8 +90,9 @@ The map is 800 bytes and the region is 864, and the slack is deliberate — see 
 
 - Player starts at the C64's `spr_defaults` `$28,$a0`, animates `$0b-$11`, and stands still with no
   keys down — so `keydown` is not reporting phantom presses.
-- RETURN fires; the bullet spawns at the ship and is at `x + 24` one frame later, which is two ticks
-  of 12. Holding RETURN does not re-fire.
+- K moves up and M down at 4 a frame — two ticks of the C64's 2 — and L fires: the bullet spawns at
+  the ship and is at `x + 24` one frame later, which is two ticks of 12. Holding fire does not
+  re-fire.
 - Ship poked to `(100, 229)`, in the floor: `coll_flag` counts up, **both** `coll_grind` cells read
   `$10` (fatal nibble set), `sprite_pls_tmr` runs, and the score reaches 100 — four grinds at 25.
   The high score tracks it.

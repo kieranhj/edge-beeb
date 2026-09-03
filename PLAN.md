@@ -24,7 +24,7 @@ frame through a 160-byte column buffer) drawing from an offline-converted charse
 per-character colours, under a 5-row status panel held by a two-cycle CRTC rupture, with IRQ1V
 owned, the keyboard read direct and the bank flip done by the VSync handler on a two-field lock;
 over it eight software sprites, clipped, restored and redrawn every frame in both banks; and a
-**playable player** - Z/X/:/? and RETURN, the C64's bounds and fire latch, a bullet, background
+**playable player** - Z/X/K/M/L, the C64's bounds and fire latch, a bullet, background
 collision off our own character map, grinding that scores and flashes. No enemies and no game flow
 yet: `DEBUG_SPRITES` still fills slots 2-7 with drifting test enemies and `DEBUG_COLL` makes a fatal
 hit flash rather than kill.
@@ -78,7 +78,7 @@ both background collision checks, grind scoring and the six-digit score, transcr
 Two structural decisions: the **game logic ticks twice per display frame** (decision 23), so the
 original's per-frame constants transcribe unaltered; and background collision reads a **character
 map we keep ourselves** at `&04A0` (decision 24), since the C64 reads codes out of a screen we do
-not have. Fire is RETURN (decision 26).
+not have. The keys are Z/X left/right, K/M up/down and L to fire (decision 26).
 
 ### Layer 5 — enemies
 
