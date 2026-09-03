@@ -42,9 +42,10 @@ title screen and the state machine all have to come out of the sprites. The cost
 `BUGS.md` #9 and in the Blitter Anatomy artifact: per-row spans recover a quarter of the bytes the
 blitter touches, and compiling the densest frames recovers half the cycles but does not fit.
 
-**Main RAM** (Layer 6a build, DEV): code and tables `&0E00-&1FCE`, **`&32` free** below `&2000`.
-That is with `DEBUG_TIMING` on; `RELEASE` has more. The frame meter's code and `coll_row_lo/hi` are
-up in bank 0, and the multiply tables are gone entirely. Game state `&0800-&08E9`; collision character map
+**Main RAM** (Layer 6a build, DEV): code and tables `&0E00-&1EF7`, **`&109` free** below `&2000`.
+That is with `DEBUG_TIMING` on; `RELEASE` ends at `&1E63`. The frame meter, `coll_row_lo/hi` and the
+boot-time display setup are up in bank 0, and the multiply tables are gone entirely. **All four
+sideways RAM banks are now in use**: 4 data, 5 and 6 sprites, 7 compiled bodies (13.7K free). Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
 tiles, map, col_decode, waves) high water `&BC38`; **banks 1 and 2** (sprites, one per pixel shift)
 `&B153` and `&B78B`. Take live figures from the build listing, not from here.
@@ -103,7 +104,7 @@ shields, bullet-to-enemy and player-to-enemy collisions, and the explosion frame
 Split 2026-09-03 because the original layer was four unrelated jobs in a bundle, and because
 `BUGS.md` #9 has to be settled before anything else is allowed onto the frame.
 
-#### 6a — the frame budget — done
+#### 6a — the frame budget — done, in two parts
 
 `BUGS.md` #9 settled. The frame meter (`src/timing.asm`, behind `DEBUG_TIMING`, its code in
 sideways bank 0 because main RAM had none to spare) times each phase of the loop off the User VIA's
@@ -119,6 +120,22 @@ two ordinary ladder calls with the same bias on both pointers. `spr_draw_row_slo
 
 Room for it came from moving `coll_row_lo/hi` to bank 0 and deleting all four multiply tables for
 the shifts that were hiding in them - 336 bytes of table for about 60 of code.
+
+Then **the bullet was compiled** (decision 29). Sideways slot 7 - the fourth of the Master's four
+sideways RAM banks, measured unused - now holds straight-line 6502 for the frames worth it, both
+pixel shifts together, because a compiled body reads no sprite data. The bullet was the best
+candidate in the game and the cheapest: 15 x 6 bytes of box holding 40 opaque, one frame, no hit
+flash, 2,652 bytes of code. Measured 1,614 cycles against about 4,100 interpreted, and firing no
+longer moves the frame's peak at all. `tools/compile_sprites.py` generates it; `compiled_zp.asm`
+asserts the zero page it bakes in.
+
+**The explosion is parked.** Same 2.4x ratio and it is what makes the busiest frames, but all eleven
+frames are 34 KB; the four or five densest would fit slot 7 alongside the bullet. Revisit when
+Layer 6d needs the room, with the Blitter Anatomy artifact's table for which frames earn it.
+
+Room for the dispatch came from moving `setup_display`, `clear_play` and `panel_init` to bank 0:
+they run once at boot with bank 0 resting and nothing else calls them. The IRQ handler and
+`install_irq` stay in main RAM, where they must be.
 
 #### 6b — the life cycle
 

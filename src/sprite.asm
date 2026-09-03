@@ -91,6 +91,19 @@ spr_box_c0    = &8600       ; first opaque byte column
 spr_box_cn    = &8680       ; byte columns = the data's row stride
 spr_dp_dcd    = &8700       ; the C64's sprite_dp_dcd, rebased to frame 0-118
 spr_lut_dcd   = &8780       ; page of the LUT this dp's flash uses
+spr_comp_lo   = &8800       ; frame -> its descriptor in SWRAM_COMPILED, 0 = none
+spr_comp_hi   = &8880
+
+\ The four bytes of a descriptor, in slot 7 (decision 29).
+SPR_COMP_DLO = 0
+SPR_COMP_DHI = 1
+SPR_COMP_RLO = 2
+SPR_COMP_RHI = 3
+
+\ spr_wrap, and spr_sv_wrap, which is what tells the restore what to replay.
+SPR_MODE_PLAIN = 0
+SPR_MODE_SPLIT = 1
+SPR_MODE_COMP  = 2
 
 \ ******************************************************************
 \ *	SCANSTEP - bufp and svp one scanline on
@@ -207,6 +220,12 @@ ENDMACRO
     inx
     cpx #SPR_SLOTS
     bne loop
+
+    \ A compiled slot pages SWRAM_COMPILED in; everything outside this
+    \ file assumes SWRAM_DATA, and the scroll reads char_data next.
+    lda #SWRAM_DATA
+    sta &f4
+    sta &fe30
     rts
 }
 
@@ -234,12 +253,27 @@ ENDMACRO
     sta spr_entry+1
     lda spr_sv_wrap, y
     sta spr_wrap                ; spr_scan_row watches this
+    cmp #SPR_MODE_COMP
+    beq compiled
+    lda spr_wrap
     bne wrapped
     lda spr_entry
     sta call+1
     lda spr_entry+1
     sta call+2
     bne rows                    ; always: the entries are not in page 0
+    .compiled                   ; the only bank the restore ever pages in;
+    lda #SWRAM_COMPILED         ; spr_restore_all puts SWRAM_DATA back
+    sta &f4
+    sta &fe30
+    lda spr_sv_clo, y
+    sta ccall+1
+    lda spr_sv_chi, y
+    sta ccall+2
+    .ccall
+    jsr &ffff                   ; it walks every row itself
+    rts
+
     .wrapped
     jsr spr_split_calc          ; the first character row
     lda #LO(spr_rest_row_split)
@@ -731,6 +765,51 @@ ENDMACRO
     lda #1
     sta spr_sv_on, y
 
+    \\ ---- a compiled body, if this frame has one and nothing has been
+    \\ clipped off it. Its pixels are immediates, so it reads no sprite
+    \\ data and lives in a bank of its own; it walks every row itself
+    \\ and returns, so the row loop below is skipped whole (decision 29).
+    ldy spr_frame
+    lda spr_comp_hi, y
+    beq not_compiled            ; no compiled body for this frame
+    sta spr_entry+1
+    lda spr_comp_lo, y
+    sta spr_entry
+
+    lda spr_skip_c              ; clipped off the left or the top?
+    ora spr_skip_r
+    ora spr_wrap                ; or a row over the end of the buffer?
+    bne not_compiled
+    lda spr_box_cn, y           ; clipped off the right or the bottom?
+    cmp spr_count
+    bne not_compiled
+    lda spr_box_rn, y
+    cmp spr_rows
+    bne not_compiled
+
+    lda #SWRAM_COMPILED
+    sta &f4
+    sta &fe30
+    ldy #SPR_COMP_DLO
+    lda (spr_entry), y
+    sta comp_call+1
+    ldy #SPR_COMP_DHI
+    lda (spr_entry), y
+    sta comp_call+2
+    ldx spr_idx                 ; what the restore will need
+    ldy #SPR_COMP_RLO
+    lda (spr_entry), y
+    sta spr_sv_clo, x
+    ldy #SPR_COMP_RHI
+    lda (spr_entry), y
+    sta spr_sv_chi, x
+    lda #SPR_MODE_COMP
+    sta spr_sv_wrap, x
+    .comp_call
+    jsr &ffff
+    rts
+
+    .not_compiled
     \\ ---- the row body ---------------------------------------------
     ldx spr_count
     lda spr_draw_entry_lo-1, x

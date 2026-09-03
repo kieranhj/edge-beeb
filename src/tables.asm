@@ -14,6 +14,7 @@
 .bank0_filename EQUS "Bank0",13
 .bank1_filename EQUS "Bank1",13
 .bank2_filename EQUS "Bank2",13
+.bank3_filename EQUS "Bank3",13
 
 .osfile_params
 .osfile_nameaddr

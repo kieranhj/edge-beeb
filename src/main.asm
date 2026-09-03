@@ -176,7 +176,13 @@ SWRAM_DATA = 4              ; bank 0: chars, tiles, map, col_decode (resting sta
 SWRAM_SPRITES0 = 5          ; bank 1: sprite data, pixel shift 0
 SWRAM_SPRITES1 = 6          ; bank 2: the same, shift 1. The engine adds the
                             ; shift to SWRAM_SPRITES0, so these must be adjacent.
+SWRAM_COMPILED = 7          ; bank 3: compiled sprite bodies, both shifts together
 ASSERT SWRAM_SPRITES1 = SWRAM_SPRITES0 + 1
+\ Slots 4-7 are the Master's 64K of sideways RAM; 8-F hold the MOS ROMs and
+\ 0-3 are the cartridge slots, empty on a stock machine. Measured in jsbeeb:
+\ a pattern written to slot 7 survives a page out and back, and the same
+\ write to slot 3 vanishes.
+ASSERT SWRAM_COMPILED <= 7
 
 SPR_SAVE = &2000            ; 8 slots x 256 B x 2 banks, saved background
 
@@ -368,6 +374,11 @@ GUARD CODE_TOP
     lda #LO(bank2_filename)
     ldy #HI(bank2_filename)
     ldx #SWRAM_SPRITES1
+    jsr load_bank
+
+    lda #LO(bank3_filename)
+    ldy #HI(bank3_filename)
+    ldx #SWRAM_COMPILED
     jsr load_bank
 
     lda #SWRAM_DATA
@@ -884,6 +895,7 @@ INCLUDE "src/player.asm"
 INCLUDE "src/enemy.asm"
 INCLUDE "src/keyboard.asm"
 INCLUDE "src/rupture.asm"
+INCLUDE "src/data/compiled_zp.asm"   \ what the compiled bodies assume
 INCLUDE "src/tables.asm"
 
 \ ******************************************************************
@@ -986,7 +998,9 @@ ORG GAME_STATE
 .spr_sv_scan    skip 2*SPR_SLOTS
 .spr_sv_rows    skip 2*SPR_SLOTS
 .spr_sv_cols    skip 2*SPR_SLOTS
-.spr_sv_wrap    skip 2*SPR_SLOTS
+.spr_sv_wrap    skip 2*SPR_SLOTS    ; 0 plain, 1 split, 2 compiled
+.spr_sv_clo     skip 2*SPR_SLOTS    ; and the compiled restore body, if 2
+.spr_sv_chi     skip 2*SPR_SLOTS
 
 \ The frame meter (src/timing.asm). Microseconds, worst case since boot;
 \ double them for 2 MHz cycles. tim_over is the one that matters.
@@ -1016,3 +1030,4 @@ PRINT "GAME STATE =", ~game_state_start, "to", ~game_state_end
 INCLUDE "src/bank0.asm"
 INCLUDE "src/bank1.asm"
 INCLUDE "src/bank2.asm"
+INCLUDE "src/bank3.asm"

@@ -19,7 +19,9 @@ shift it needs, so each bank is complete on its own. Layout, INCBIN'd at
   &8680  box_cn    119 B  byte columns (the row stride of the data)
   &8700  dp_dcd    126 B  sprite_dp_dcd from the C64, rebased to frame 0-118
   &8780  lut_dcd   126 B  high byte of the LUT the hit flash uses, per dp
-  &8800  data             row-major, box_rn x box_cn bytes per frame
+  &8800  comp_lo   119 B  compiled body descriptor in slot 7, 0 = not compiled
+  &8880  comp_hi   119 B
+  &8900  data             row-major, box_rn x box_cn bytes per frame
 
 Colours: bit pair 01 -> blue ($d025), 11 -> white ($d026), 10 -> the frame's
 colour from sprite_col_dcd (low nibble) through C64_TO_BBC; 00 -> logical 0
@@ -39,6 +41,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 import bbc  # noqa: E402
+import compile_sprites  # noqa: E402
 
 OUT = "src/data"
 C64_ASM = "source_c64/edge_grinder.asm"
@@ -48,11 +51,18 @@ VIC_BASE = 0x60           # sprite_dp_dcd value of frame 0
 CELL_W = 7                # bytes: 6 for the sprite + 1 spill for shift 1
 ROWS = 21
 BANK = 0x8000
-DATA_START = 0x0800       # offset of the frame data within the bank
+DATA_START = 0x0900       # offset of the frame data within the bank
 TABLE_STRIDE = 0x80
 
 KEEP = {0, bbc.C64_TO_BBC[bbc.C64_SPR_MC1], bbc.C64_TO_BBC[bbc.C64_SPR_MC2]}
 LUT_PAGES = {None: 0x81, bbc.WHITE: 0x82, bbc.MAGENTA: 0x83}
+
+# Which animations get straight-line code in sideways slot 7 (decision 29).
+# By dp range, the same numbers anim_decode uses, so this reads against the
+# table in the C64 source. A frame only qualifies if EVERY dp that reaches it
+# uses the identity LUT: the colours are baked into compiled code, so anything
+# that hit-flashes cannot have any.
+COMPILE_DPS = [(0x12, 0x13)]      # the player bullet
 
 
 def frame_pixels(raw, colour_c64):
@@ -135,19 +145,46 @@ def main():
         assert normal not in KEEP - {0} or normal == flash, dp
         lut_dcd.append(LUT_PAGES[None if flash == normal else flash])
 
+    # Everything both banks need, before either is laid out, because the
+    # compiled bank is shared between them.
+    boxes = {}
+    for shift in (0, 1):
+        for f in range(FRAMES):
+            cells = shifted_bytes(frame_pixels(sprites[f], frame_colour[f]), shift)
+            r0, rn, c0, cn = box(cells)
+            boxes[shift, f] = (r0, rn, c0, cn,
+                               [row[c0:c0 + cn] for row in cells[r0:r0 + rn]])
+
+    # The frames to compile, and the check that none of them ever flashes.
+    want = set()
+    for lo, hi in COMPILE_DPS:
+        for dp in range(lo, hi):
+            want.add(dp_dcd[dp] - VIC_BASE)
+    for f in sorted(want):
+        for dp in range(DP_ENTRIES):
+            if dp_dcd[dp] - VIC_BASE == f:
+                assert lut_dcd[dp] == LUT_PAGES[None], (
+                    f"frame {f} is reached by dp ${dp:02x}, which hit-flashes: "
+                    "its colours cannot be baked into compiled code")
+    todo = {(shift, f): boxes[shift, f][4] for shift in (0, 1) for f in sorted(want)}
+    slot, csize = compile_sprites.build(todo, f"{OUT}/compiled.bin",
+                                        f"{OUT}/compiled_zp.asm")
+    print(f"compiled.bin {csize} B: {len(todo)} bodies, "
+          f"high water &{0x8000 + csize:04X}")
+
     for shift in (0, 1):
         data = bytearray()
         addr, r0s, rns, c0s, cns = [], [], [], [], []
         for f in range(FRAMES):
-            cells = shifted_bytes(frame_pixels(sprites[f], frame_colour[f]), shift)
-            r0, rn, c0, cn = box(cells)
+            r0, rn, c0, cn, rows = boxes[shift, f]
             addr.append(BANK + DATA_START + len(data))
             r0s.append(r0)
             rns.append(rn)
             c0s.append(c0)
             cns.append(cn)
-            for row in cells[r0:r0 + rn]:
-                data += bytes(row[c0:c0 + cn])
+            for row in rows:
+                data += bytes(row)
+        comp = [slot.get((shift, f), 0) for f in range(FRAMES)]
         bank = bytearray()
         bank += mask_table()
         bank += recolour_table(None)
@@ -161,6 +198,8 @@ def main():
         bank += table(cns)
         bank += table([v - VIC_BASE for v in dp_dcd])
         bank += table(lut_dcd)
+        bank += table([a & 0xFF for a in comp])
+        bank += table([a >> 8 for a in comp])
         assert len(bank) == DATA_START, len(bank)
         bank += data
         assert len(bank) <= 0x4000, len(bank)
