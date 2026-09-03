@@ -1,20 +1,35 @@
-"""export_sprites.py - C64 multicolour sprites -> MODE 2, pre-shifted, with
-bounding boxes.
+"""export_sprites.py - C64 multicolour sprites -> MODE 2 sprite banks for the
+Layer 3 engine (src/sprite.asm).
 
-Writes src/data/sprites.bin. Nothing consumes it until Layer 3 replaces the
-plotter; until then the game still reads the raw C64 bytes. The layout here
-is the Layer 3 proposal and may change when that layer is measured.
+Writes src/data/sprites0.bin and src/data/sprites1.bin: one 16K-bank image per
+pixel shift (0 = the sprite starts on a byte boundary, 1 = one MODE 2 pixel
+right, which spills into a seventh byte). The engine pages in the bank for the
+shift it needs, so each bank is complete on its own. Layout, INCBIN'd at
+&8000 (the addresses in the frame table assume it):
 
-Per frame, in order:
-  7 x 21 bytes   shift 0: the 24-px sprite in bytes 0-5 (12 fat pixels), byte 6 clear
-  7 x 21 bytes   shift 1: the same moved right one MODE 2 pixel (spills into byte 6)
-Then a table of 119 x 4 bytes: first row, row count, first column, column count of
-the opaque area at shift 0 (rows and columns of the 7-byte-wide cell).
+  &8000  MASK      256 B  data byte -> AND mask (a nibble of 0 is transparent)
+  &8100  LUT_IDENT 256 B  data byte -> itself
+  &8200  LUT_WHITE 256 B  pixels that are not 0, blue or white -> white
+  &8300  LUT_MAG   256 B  the same -> magenta  (the player's grind flash)
+  &8400  frame_lo  119 B  address of each frame's box data in this bank
+  &8480  frame_hi  119 B
+  &8500  box_r0    119 B  first opaque row of the frame at this shift
+  &8580  box_rn    119 B  rows (0 = blank frame, nothing to draw)
+  &8600  box_c0    119 B  first opaque byte column
+  &8680  box_cn    119 B  byte columns (the row stride of the data)
+  &8700  dp_dcd    126 B  sprite_dp_dcd from the C64, rebased to frame 0-118
+  &8780  lut_dcd   126 B  high byte of the LUT the hit flash uses, per dp
+  &8800  data             row-major, box_rn x box_cn bytes per frame
 
 Colours: bit pair 01 -> blue ($d025), 11 -> white ($d026), 10 -> the frame's
 colour from sprite_col_dcd (low nibble) through C64_TO_BBC; 00 -> logical 0
 (transparent). Black never occurs inside these sprites; if hand-drawn art
 introduces it, it is written as logical 8 (bbc.SPRITE_BLACK).
+
+The flash LUTs assume a sprite holds only 0, blue, white and ONE other
+colour, which is true of the C64 art (sprite_col_dcd never names blue or
+white as the per-sprite colour). Hand-drawn art with more colours needs
+per-colour tables instead: see docs/layer-3-sprites.md.
 
 Run from the project root: python tools/export_sprites.py
 """
@@ -28,8 +43,16 @@ import bbc  # noqa: E402
 OUT = "src/data"
 C64_ASM = "source_c64/edge_grinder.asm"
 FRAMES = 119
-CELL_W = 7   # bytes: 6 for the sprite + 1 spill for shift 1
+DP_ENTRIES = 126          # sprite_dp_dcd / sprite_col_dcd length
+VIC_BASE = 0x60           # sprite_dp_dcd value of frame 0
+CELL_W = 7                # bytes: 6 for the sprite + 1 spill for shift 1
 ROWS = 21
+BANK = 0x8000
+DATA_START = 0x0800       # offset of the frame data within the bank
+TABLE_STRIDE = 0x80
+
+KEEP = {0, bbc.C64_TO_BBC[bbc.C64_SPR_MC1], bbc.C64_TO_BBC[bbc.C64_SPR_MC2]}
+LUT_PAGES = {None: 0x81, bbc.WHITE: 0x82, bbc.MAGENTA: 0x83}
 
 
 def frame_pixels(raw, colour_c64):
@@ -45,43 +68,105 @@ def frame_pixels(raw, colour_c64):
     return rows
 
 
-def pack_rows(rows, shift):
-    out = bytearray()
+def shifted_bytes(rows, shift):
+    """Per row, the CELL_W MODE 2 bytes with the sprite moved right by shift px."""
+    out = []
     for row in rows:
         px = [0] * shift + row + [0] * (CELL_W * 2 - len(row) - shift)
-        for x in range(0, CELL_W * 2, 2):
-            out.append(bbc.mode2_byte(px[x], px[x + 1]))
+        out.append([bbc.mode2_byte(px[x], px[x + 1]) for x in range(0, CELL_W * 2, 2)])
     return out
 
 
-def bbox(rows):
-    ys = [y for y, row in enumerate(rows) if any(row)]
-    xs = [x for row in rows for x, v in enumerate(row) if v]
+def box(cells):
+    ys = [y for y, row in enumerate(cells) if any(row)]
     if not ys:
         return (0, 0, 0, 0)
-    return (ys[0], ys[-1] - ys[0] + 1, xs[0] // 2, (max(xs) // 2) - (xs[0] // 2) + 1)
+    xs = [x for row in cells for x, v in enumerate(row) if v]
+    return (ys[0], ys[-1] - ys[0] + 1, min(xs), max(xs) - min(xs) + 1)
+
+
+def mask_table():
+    out = bytearray()
+    for b in range(256):
+        m = 0
+        if b & 0xAA == 0:
+            m |= 0xAA
+        if b & 0x55 == 0:
+            m |= 0x55
+        out.append(m)
+    return out
+
+
+def recolour_table(target):
+    out = bytearray()
+    for b in range(256):
+        left, right = bbc.mode2_unpack(b)
+        if target is not None:
+            left = left if left in KEEP else target
+            right = right if right in KEEP else target
+        out.append(bbc.mode2_byte(left, right))
+    return out
+
+
+def table(values):
+    assert len(values) <= TABLE_STRIDE
+    return bytes(values) + bytes(TABLE_STRIDE - len(values))
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
     sprites = bbc.load_sprites(count=FRAMES)
-    col_dcd = bbc.parse_c64_table(C64_ASM, "sprite_col_dcd", FRAMES)
+    col_dcd = bbc.parse_c64_table(C64_ASM, "sprite_col_dcd", DP_ENTRIES)
+    dp_dcd = bbc.parse_c64_table(C64_ASM, "sprite_dp_dcd", DP_ENTRIES)
 
-    data = bytearray()
-    boxes = bytearray()
-    opaque = 0
-    for i, raw in enumerate(sprites):
-        rows = frame_pixels(raw, col_dcd[i] & 15)
-        data += pack_rows(rows, 0)
-        data += pack_rows(rows, 1)
-        r0, rn, c0, cn = bbox(rows)
-        boxes += bytes((r0, rn, c0, cn))
-        opaque += rn * cn
-    open(f"{OUT}/sprites.bin", "wb").write(data + boxes)
-    full = FRAMES * CELL_W * ROWS
-    print(f"sprites.bin {len(data) + len(boxes)} B: {FRAMES} frames x 2 shifts x {CELL_W * ROWS} B "
-          f"+ {len(boxes)} B boxes; boxed area {opaque} of {full} bytes per shift "
-          f"({100 * opaque // full}%)")
+    # Frame colour: every dp that maps to a frame names the same colour for it.
+    frame_colour = {}
+    for dp in range(DP_ENTRIES):
+        f = dp_dcd[dp] - VIC_BASE
+        assert 0 <= f < FRAMES, (dp, dp_dcd[dp])
+        c = col_dcd[dp] & 15
+        assert frame_colour.setdefault(f, c) == c, f
+    assert len(frame_colour) == FRAMES
+
+    lut_dcd = []
+    for dp in range(DP_ENTRIES):
+        normal = bbc.C64_TO_BBC[col_dcd[dp] & 15]
+        flash = bbc.C64_TO_BBC[col_dcd[dp] >> 4]
+        assert normal not in KEEP - {0} or normal == flash, dp
+        lut_dcd.append(LUT_PAGES[None if flash == normal else flash])
+
+    for shift in (0, 1):
+        data = bytearray()
+        addr, r0s, rns, c0s, cns = [], [], [], [], []
+        for f in range(FRAMES):
+            cells = shifted_bytes(frame_pixels(sprites[f], frame_colour[f]), shift)
+            r0, rn, c0, cn = box(cells)
+            addr.append(BANK + DATA_START + len(data))
+            r0s.append(r0)
+            rns.append(rn)
+            c0s.append(c0)
+            cns.append(cn)
+            for row in cells[r0:r0 + rn]:
+                data += bytes(row[c0:c0 + cn])
+        bank = bytearray()
+        bank += mask_table()
+        bank += recolour_table(None)
+        bank += recolour_table(bbc.WHITE)
+        bank += recolour_table(bbc.MAGENTA)
+        bank += table([a & 0xFF for a in addr])
+        bank += table([a >> 8 for a in addr])
+        bank += table(r0s)
+        bank += table(rns)
+        bank += table(c0s)
+        bank += table(cns)
+        bank += table([v - VIC_BASE for v in dp_dcd])
+        bank += table(lut_dcd)
+        assert len(bank) == DATA_START, len(bank)
+        bank += data
+        assert len(bank) <= 0x4000, len(bank)
+        open(f"{OUT}/sprites{shift}.bin", "wb").write(bank)
+        print(f"sprites{shift}.bin {len(bank)} B: {len(data)} B of boxed frame data, "
+              f"high water &{BANK + len(bank):04X}")
 
 
 if __name__ == "__main__":

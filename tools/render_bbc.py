@@ -5,7 +5,7 @@ diffed against an emulator screenshot.
   python tools/render_bbc.py chars      -> tools/output/chars.png    (16 x 16 characters)
   python tools/render_bbc.py tiles      -> tools/output/tiles.png    (16 per row)
   python tools/render_bbc.py map [a b]  -> tools/output/map.png      (tile columns a..b, default all)
-  python tools/render_bbc.py sprites    -> tools/output/sprites.png  (8 per row, shift 0)
+  python tools/render_bbc.py sprites [s] -> tools/output/sprites.png  (8 per row, shift s)
 
 Reads src/data/*.bin, so run the exporters first. Run from the project root.
 """
@@ -94,21 +94,25 @@ def render_map(a=0, b=None):
     return img
 
 
-def render_sprites():
-    d = open(f"{DATA}/sprites.bin", "rb").read()
-    frames = 119
-    per_row = 8
-    n_rows = (frames + per_row - 1) // per_row
-    img = new_image(per_row * 14, n_rows * 21)
+def render_sprites(shift=0):
+    """Unpack a sprite bank back into a sheet, boxes and all, so what the
+    engine will actually read can be looked at. The layout is the one
+    export_sprites.py writes and src/sprite.asm reads."""
+    d = open(f"{DATA}/sprites{shift}.bin", "rb").read()
+    frames, per_row, cell_w, cell_h = 119, 8, 7, 21
+    tab = {n: 0x400 + k * 0x80 for k, n in enumerate(
+        ("lo", "hi", "r0", "rn", "c0", "cn"))}
+    img = new_image(per_row * cell_w * 2, ((frames + per_row - 1) // per_row) * cell_h)
     for f in range(frames):
-        base = f * 2 * 7 * 21
-        rows = []
-        for r in range(21):
-            row = []
-            for x in range(7):
-                row += bbc.mode2_unpack(d[base + r * 7 + x])
-            rows.append(row)
-        blit(img, (f % per_row) * 14, (f // per_row) * 21, rows)
+        addr = (d[tab["lo"] + f] | (d[tab["hi"] + f] << 8)) - 0x8000
+        r0, rn, c0, cn = (d[tab[k] + f] for k in ("r0", "rn", "c0", "cn"))
+        rows = [[0] * (cell_w * 2) for _ in range(cell_h)]
+        for r in range(rn):
+            for c in range(cn):
+                left, right = bbc.mode2_unpack(d[addr + r * cn + c])
+                rows[r0 + r][(c0 + c) * 2] = left
+                rows[r0 + r][(c0 + c) * 2 + 1] = right
+        blit(img, (f % per_row) * cell_w * 2, (f // per_row) * cell_h, rows)
     return img
 
 
@@ -120,7 +124,7 @@ def main():
     elif what == "tiles":
         img = render_tiles()
     elif what == "sprites":
-        img = render_sprites()
+        img = render_sprites(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
     else:
         args = [int(v) for v in sys.argv[2:4]]
         img = render_map(*args)

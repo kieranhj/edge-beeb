@@ -9,7 +9,8 @@ DEV = 1-RELEASE
 
 \ Debug flags. Each must be off under RELEASE; add new ones to DEBUG_ANY and
 \ to the !BOOT stamp at the bottom of this file so a build says what it is.
-DEBUG_ANY = 0
+DEBUG_SPRITES = DEV         ; fill the sprite pool with test enemies
+DEBUG_ANY = DEBUG_SPRITES
 IF RELEASE
     ASSERT DEBUG_ANY=0
 ENDIF
@@ -130,7 +131,21 @@ column_buffer = &400        ; 160 bytes for right hand column
 column_size = 160
 
 SWRAM_DATA = 4              ; bank 0: chars, tiles, map, col_decode (resting state)
-SWRAM_SPRITES = 5           ; bank 1: sprite data
+SWRAM_SPRITES0 = 5          ; bank 1: sprite data, pixel shift 0
+SWRAM_SPRITES1 = 6          ; bank 2: the same, shift 1. The engine adds the
+                            ; shift to SWRAM_SPRITES0, so these must be adjacent.
+ASSERT SWRAM_SPRITES1 = SWRAM_SPRITES0 + 1
+
+SPR_SAVE = &2000            ; 8 slots x 256 B x 2 banks, saved background
+
+\ Sprites are SCREEN space and do not take the scroll's half-byte bank
+\ phase, so this is 0. Both banks are drawn at the same origin
+\ (corner_addr + 8) and displayed at the same CRTC address - the
+\ picture's one-pixel offset is in the map content, not in the window -
+\ so the same sprite bytes at the same address stand still under both.
+\ Set it to 1 if that turns out to be the wrong way round: a sprite
+\ that should be still would then shimmer one pixel at 50 Hz.
+SPR_PHASE_MASK = 0
 
 \ Hardware
 CRTC_ADDR     = &FE00
@@ -183,10 +198,6 @@ ASSERT T1_I3 < 65536
 
 FRAME_LOCK = 2              ; fields per game frame: 25 Hz
 
-sprite_total = 119
-sprite_stride = 64
-sprite_width_bytes = 3
-sprite_height = 21          ; total 63 bytes for a C64 sprite
 
 \ ******************************************************************
 \ *	ZERO PAGE
@@ -206,18 +217,36 @@ GUARD &9F
 .read_ptr       skip 2      ; generic read ptr
 .write_ptr      skip 2      ; generic write ptr
 
-.sprite_no      skip 1      ; temp for sprite_plot
-.sprite_byte    skip 1      ; temp for sprite_plot
-.sprite_idx     skip 1      ; temp for sprite_plot
+.sprite_idx     skip 1      ; temp for the panel test pattern
 
 .x_count        skip 1      ; temp for sprite_plot
 .y_count        skip 1      ; temp for sprite_plot
 
-.x_pos          skip 1      ; sprite x
-.y_pos          skip 1      ; sprite y
-.num            skip 1      ; sprite frame
-
-.bg_ptrs        skip 4      ; pointers to sprite plot address on screen for stash
+\\ Sprite engine (src/sprite.asm). bufp/svp/src are the blitter's three
+\\ pointers; the rest is one sprite's working state, live only inside
+\\ spr_draw_slot.
+.bufp           skip 2      ; the screen byte being drawn
+.svp            skip 2      ; the matching byte of the slot's save page
+.src            skip 2      ; the frame's data, in the paged-in sprite bank
+.spr_slot       skip 1      ; 0-7
+.spr_idx        skip 1      ; spr_bank8 + spr_slot: the per-bank state index
+.spr_bank8      skip 1      ; 8 while the CPU writes the shadow bank, else 0
+.spr_phase      skip 1      ; 1 while the bank being drawn is the odd pixel
+.spr_frame      skip 1      ; 0-118, from sprite_dp through sprite_dp_dcd
+.spr_y          skip 1      ; the C64 y of the sprite in hand
+.spr_c          skip 1      ; signed byte column, while it is being worked out
+.spr_c0         skip 1      ; first byte column drawn, 0-79
+.spr_r0         skip 1      ; first scanline drawn, 0-159
+.spr_cols       skip 1      ; the frame's box width = its data row stride
+.spr_rows       skip 1      ; rows left to draw
+.spr_count      skip 1      ; byte columns actually drawn, 1-7
+.spr_skip_c     skip 1      ; columns and rows clipped off the left and top
+.spr_skip_r     skip 1
+.spr_scan       skip 1      ; scanline within the first character row
+.spr_wrap       skip 1      ; the row span crosses the end of the buffer
+.spr_col        skip 1      ; column index, in the wrapped path only
+.spr_byte       skip 1      ; and the data byte it is drawing
+.spr_tmp        skip 2      ; and where its row started
 
 .plane_hi       skip 1      ; HI(char_data) + 8 * (char_col AND 3): this frame's column plane
 
@@ -275,7 +304,12 @@ GUARD CODE_TOP
 
     lda #LO(bank1_filename)
     ldy #HI(bank1_filename)
-    ldx #SWRAM_SPRITES
+    ldx #SWRAM_SPRITES0
+    jsr load_bank
+
+    lda #LO(bank2_filename)
+    ldy #HI(bank2_filename)
+    ldx #SWRAM_SPRITES1
     jsr load_bank
 
     lda #SWRAM_DATA
@@ -313,12 +347,10 @@ GUARD CODE_TOP
 
     \\ Initialise variables
 
-    lda #4
-    sta x_pos
-    lda #70
-    sta y_pos
-    lda #11
-    sta num
+    jsr spr_init
+IF DEBUG_SPRITES
+    jsr spr_test_init
+ENDIF
 
     ldx #0
     lda #0
@@ -348,9 +380,11 @@ GUARD CODE_TOP
     .loop
     stx char_col
 
-    \\ Remove sprites from frame
+    \\ Every sprite's background comes back before anything is drawn:
+    \\ a draw between another slot's restore and its draw would be
+    \\ captured into that slot's save. The new scroll column is not.
 
-    jsr restore_background
+    jsr spr_restore_all
 
     \\ Start column plot
 
@@ -512,42 +546,16 @@ GUARD CODE_TOP
 
     jsr copy_column_buffer
 
-    \\ Store new bg
+    \\ Sprites, over the column just written
 
-    ldx x_pos
-    ldy y_pos
-    jsr stash_background
+    lda char_col
+    and #SPR_PHASE_MASK
+    sta spr_phase
+    jsr spr_draw_all
 
-    \\ Plot a sprite (raw C64 data lives in bank 1)
-
-    lda #SWRAM_SPRITES
-    sta &f4
-    sta &fe30
-
-    lda num
-    ldx x_pos
-    ldy y_pos
-    jsr plot_sprite
-
-    lda #SWRAM_DATA
-    sta &f4
-    sta &fe30
-
-    \\ Animate sprite
-
-    lda frame_count
-    and #1
-    beq skip_anim
-
-    ldx num
-    inx
-    cpx #18
-    bcc num_ok
-    ldx #11
-    .num_ok
-    stx num
-
-    .skip_anim
+IF DEBUG_SPRITES
+    jsr spr_test_anim
+ENDIF
 
     \\ Read keyboard
 
@@ -729,6 +737,9 @@ IF RELEASE
     EQUS "REM Edge Grinder", 13
 ELSE
     EQUS "REM Edge Grinder DEV build", 13
+IF DEBUG_SPRITES
+    EQUS "REM DEBUG_SPRITES: the pool holds test enemies", 13
+ENDIF
 ENDIF
 EQUS "*RUN Edge", 13
 .bootfile_end
@@ -759,3 +770,4 @@ PRINT "------"
 
 INCLUDE "src/bank0.asm"
 INCLUDE "src/bank1.asm"
+INCLUDE "src/bank2.asm"

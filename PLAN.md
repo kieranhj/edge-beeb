@@ -17,23 +17,25 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 2 are done (2026-09-02).** The scroller assembles from `src/` through `build.ps1`
-into `build/EDGE.SSD` and boots in jsbeeb as a Master. What runs: a 1-pixel-per-frame 25 Hz
-horizontal scroller in MODE 2 (two phase-offset shadow screens, hardware 16K wrap, one byte column
-a frame through a 160-byte column buffer) drawing from an offline-converted charset with the C64's
+**Layers 0 to 3 are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
+`build/EDGE.SSD` and boots in jsbeeb as a Master. What runs: a 1-pixel-per-frame 25 Hz horizontal
+scroller in MODE 2 (two phase-offset shadow screens, hardware 16K wrap, one byte column a frame
+through a 160-byte column buffer) drawing from an offline-converted charset with the C64's
 per-character colours, under a 5-row status panel held by a two-cycle CRTC rupture, with IRQ1V
-owned, the keyboard read direct and the bank flip done by the VSync handler on a two-field lock.
-One player sprite moves on Z/X/:/? with a background stash. Nothing else of the game exists yet. The sprite still reads raw C64 data from bank 1; `src/data/sprites.bin`
-is exported in the Layer 3 format but unused until then.
+owned, the keyboard read direct and the bank flip done by the VSync handler on a two-field lock;
+and over it eight software sprites, clipped, restored and redrawn every frame in both banks from
+offline-converted bounding-boxed MODE 2 data. No game logic yet: `DEBUG_SPRITES` fills the pool
+with test enemies and the keyboard moves slot 0.
 
-**The frame budget** is 79,872 cycles at 25 Hz. The scroll column costs about 9,000 (estimated,
-not yet measured). The current sprite plotter is estimated at 17-18,000 per sprite per frame,
-which is why Layer 3 replaces it before any second sprite is added.
+**The frame budget** is 79,872 cycles at 25 Hz. Measured with eight sprites live: the scroll column
+costs 11,153, the sprite restore 15,093 and the draw 34,143 — **60,389, or 76%**, leaving ~19,000
+for the player, the waves, collisions and the music.
 
-**Main RAM** (Layer 2 build): code `&0E00-&15F5`, tables to `&1AB0`, `&550` free below `&2000`
-(the code image's ceiling). `&2000-&2FFF` is reserved for the Layer 3 sprite saves; the panel is at
-`&3000-&3C7F` in both banks; `&3C80-&3FFF` x 2 is free. **Bank 0** (chars, tiles, map, col_decode) high water `&B500`, `&B00` free;
-**bank 1** (raw sprites) `&9DC0`. Take live figures from the build listing, not from here.
+**Main RAM** (Layer 3 build): code `&0E00-&190x`, tables to `&1AEA`, `&516` free below `&2000`
+(the code image's ceiling). `&2000-&2FFF` is the sprite save area, 8 slots x 256 B x 2 banks
+exactly; the panel is at `&3000-&3C7F` in both banks; `&3C80-&3FFF` x 2 is free. **Bank 0** (chars,
+tiles, map, col_decode) high water `&B500`; **bank 1** (sprites, shift 0) `&B153`; **bank 2**
+(sprites, shift 1) `&B78B`. Take live figures from the build listing, not from here.
 
 ## What is left
 
@@ -53,14 +55,19 @@ deferred to Layer 3.
 `&2000`, IRQ1V owned, VSync-side bank flip on `FRAME_LOCK`, direct keyboard, palette, frame
 counter, map wrap at 302 columns. Timings measured.
 
-### Layer 3 — sprite engine v2
+### Layer 3 — sprite engine v2 — done (first pass)
 
-`PROPOSAL.md` §3. Slot table for eight sprites, one save page per slot per bank at `&2000`
-(main RAM, 4K: bank parity selects the half), mask-from-data table, restore backwards / draw
-forwards, `SCANSTEP` with deferred carry and the 16K wrap inline, horizontal and vertical clipping
-on the interpreted path, compiled player and bullet, hit-flash recolour table. **Measure** with
-jsbeeb and record cycles per sprite in `docs/layer-3-sprites.md`. Target: eight sprites moving at
-25 Hz inside budget.
+[`docs/layer-3-sprites.md`](docs/layer-3-sprites.md). Eight software sprites in both banks:
+bounding-boxed MODE 2 data in two banks (one per pixel shift), mask from the data byte, save area
+mirroring screen geometry one page per slot per bank at `&2000`, `SCANSTEP` with the deferred carry
+and the 16K wrap inline, restore replaying the draw, clipping at all four edges, hit flash on the
+ORA table, and a walked fallback for rows straddling the buffer wrap. **Measured: 6,155 cycles a
+sprite**, 49,236 for eight, 60,389 with the scroll — 76% of the frame.
+
+Interpreted throughout: the compiled player and bullet of `PROPOSAL.md` §3.6 are **not** built
+(decision 19), because the interpreted path fits. Three things are still open and are listed at the
+end of the layer doc: the bank phase wants an eye on it in b-em (decision 22), `SPR_X_OFF`/
+`SPR_Y_OFF` are confirmed by Layer 4, and there is still no buffer oracle.
 
 ### Layer 4 — player
 
@@ -102,8 +109,8 @@ publish.
 | 0 — toolchain, source split, docs | [`docs/layer-0-toolchain.md`](docs/layer-0-toolchain.md) | done 2026-09-02 |
 | 1 — graphics pipeline A | [`docs/layer-1-graphics-pipeline.md`](docs/layer-1-graphics-pipeline.md) | done 2026-09-02 |
 | 2 — display | [`docs/layer-2-display.md`](docs/layer-2-display.md) | done 2026-09-02 |
-| 3 — sprite engine v2 | | next |
-| 4 — player | | |
+| 3 — sprite engine v2 | [`docs/layer-3-sprites.md`](docs/layer-3-sprites.md) | done 2026-09-03 |
+| 4 — player | | next |
 | 5 — enemies | | |
 | 6 — game flow | | |
 | 7 — sound | | |

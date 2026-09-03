@@ -3,6 +3,10 @@
 \ *	Keys read straight from the System VIA keyboard matrix (Paradroid's
 \ *	keydown: 69 cycles against OSBYTE's 243, and it works with the MOS
 \ *	interrupt gone). X = internal key number; returns N set if pressed.
+\ *
+\ *	read_keyboard moves the player - sprite slot 0 - in the C64's own
+\ *	units: x is halved (one step is one fat pixel), y is not. Layer 4
+\ *	replaces it with the original's acceleration and bounds.
 \ ******************************************************************
 
 .keydown
@@ -28,27 +32,27 @@
     ldx #KEY_UP
     jsr keydown
     bpl not_up
-    dec y_pos
-    dec y_pos
+    dec sprite_pos+1
+    dec sprite_pos+1
     .not_up
 
     ldx #KEY_DOWN
     jsr keydown
     bpl not_down
-    inc y_pos
-    inc y_pos
+    inc sprite_pos+1
+    inc sprite_pos+1
     .not_down
 
     ldx #KEY_LEFT
     jsr keydown
     bpl not_left
-    dec x_pos
+    dec sprite_pos
     .not_left
 
     ldx #KEY_RIGHT
     jsr keydown
     bpl not_right
-    inc x_pos
+    inc sprite_pos
     .not_right
 
     rts
