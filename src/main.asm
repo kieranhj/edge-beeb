@@ -10,7 +10,8 @@ DEV = 1-RELEASE
 \ Debug flags. Each must be off under RELEASE; add new ones to DEBUG_ANY and
 \ to the !BOOT stamp at the bottom of this file so a build says what it is.
 DEBUG_SPRITES = DEV         ; fill the sprite pool with test enemies
-DEBUG_ANY = DEBUG_SPRITES
+DEBUG_COLL = DEV            ; a fatal background hit flashes instead of killing
+DEBUG_ANY = DEBUG_SPRITES OR DEBUG_COLL
 IF RELEASE
     ASSERT DEBUG_ANY=0
 ENDIF
@@ -65,6 +66,7 @@ IKN_z = 97
 IKN_x = 66
 IKN_colon = 72
 IKN_fwd_slash = 104
+IKN_return = 73             ; measured with OSBYTE 121, not recalled
 
 \ ******************************************************************
 \ *	GAME defines
@@ -89,6 +91,7 @@ KEY_LEFT = IKN_z
 KEY_RIGHT = IKN_x
 KEY_UP = IKN_colon
 KEY_DOWN = IKN_fwd_slash
+KEY_FIRE = IKN_return
 
 \ ******************************************************************
 \ *	MACROS
@@ -129,6 +132,21 @@ row_stride = 640
 
 column_buffer = &400        ; 160 bytes for right hand column
 column_size = 160
+
+\\ The background collision character map (decision 24). The C64 reads the
+\\ character codes back out of its own screen; we draw pixels, so scroll.asm
+\\ writes them here as it plots and player.asm reads them. 40 columns as a
+\\ ring, 20 rows of the play area, the same grid the C64's screen has.
+\\ &04A0-&07FF is the language workspace: BASIC's, and ours once *RUN has
+\\ handed over. Verified in jsbeeb - a sentinel across the whole of it
+\\ survives 3,000 fields of the running game untouched.
+COLL_COLS = 40
+COLL_ROWS = 20
+coll_map = &04A0
+ASSERT coll_map >= column_buffer + column_size
+ASSERT coll_map + COLL_COLS * COLL_ROWS <= &0800
+
+SCORE_DIGITS = 6
 
 SWRAM_DATA = 4              ; bank 0: chars, tiles, map, col_decode (resting state)
 SWRAM_SPRITES0 = 5          ; bank 1: sprite data, pixel shift 0
@@ -248,6 +266,14 @@ GUARD &9F
 .spr_byte       skip 1      ; and the data byte it is drawing
 .spr_tmp        skip 2      ; and where its row started
 
+\\ Player and collisions (src/player.asm)
+.joy            skip 1      ; the C64's joystick byte: a CLEAR bit is pressed
+.joy_idx        skip 1      ; which key read_joystick is asking about
+.coll_row       skip 1      ; play-area character row being sampled
+.coll_col       skip 1      ; and screen character column, 0-39
+.coll_base      skip 1      ; coll_map slot holding screen column 0
+.coll_wr        skip 1      ; and the slot the entering character goes in
+
 .plane_hi       skip 1      ; HI(char_data) + 8 * (char_col AND 3): this frame's column plane
 
 .frame_count    skip 1      ; game frames (25 Hz), for animation timing
@@ -348,6 +374,9 @@ GUARD CODE_TOP
     \\ Initialise variables
 
     jsr spr_init
+    jsr coll_init
+    jsr score_reset
+    jsr sprite_reset
 IF DEBUG_SPRITES
     jsr spr_test_init
 ENDIF
@@ -389,6 +418,7 @@ ENDIF
     \\ Start column plot
 
     jsr set_corner_addr
+    jsr coll_frame_start        ; where plot_char_y files this column's codes
 
     \\ Select this frame's column plane (2K per plane, pixel column = char_col AND 3)
 
@@ -557,9 +587,13 @@ IF DEBUG_SPRITES
     jsr spr_test_anim
 ENDIF
 
-    \\ Read keyboard
+    \\ Game logic. Two ticks a frame: one pass of this loop is two of the
+    \\ C64's, so its per-frame constants transcribe unchanged (decision 23).
+    \\ The joystick is read once - it cannot change between the two.
 
-    jsr read_keyboard
+    jsr read_joystick
+    jsr game_tick
+    jsr game_tick
 
     \\ Scrolling
 
@@ -577,6 +611,7 @@ ENDIF
     \\ Bump the tile_cnt
 
     jsr tile_cnt_bump
+    jsr coll_advance
 
     .no_bump
 
@@ -712,6 +747,7 @@ INCLUDE "src/scroll.asm"
 }
 
 INCLUDE "src/sprite.asm"
+INCLUDE "src/player.asm"
 INCLUDE "src/keyboard.asm"
 INCLUDE "src/rupture.asm"
 INCLUDE "src/tables.asm"
@@ -739,6 +775,9 @@ ELSE
     EQUS "REM Edge Grinder DEV build", 13
 IF DEBUG_SPRITES
     EQUS "REM DEBUG_SPRITES: the pool holds test enemies", 13
+ENDIF
+IF DEBUG_COLL
+    EQUS "REM DEBUG_COLL: a fatal hit flashes, it does not kill", 13
 ENDIF
 ENDIF
 EQUS "*RUN Edge", 13

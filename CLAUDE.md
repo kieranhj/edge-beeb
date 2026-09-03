@@ -55,6 +55,8 @@ month and this is a Master.
 | Display split | Two CRTC cycles: 5-row panel at `&3000` **in both shadow banks** (every panel write goes to both), then 34 rows with the 20-row play area and VSync at absolute row 34. `src/rupture.asm` |
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
 | Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw. `src/sprite.asm`, `docs/layer-3-sprites.md` |
+| Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
+| Controls | Z/X left/right, `:`/`/` up/down, RETURN fire. Internal key numbers are **measured** (OSBYTE 121), never recalled |
 
 ## Build
 
@@ -95,7 +97,8 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `main.asm` | constants, zero page map, boot, main loop, `move_pages`, SAVEs, `!BOOT`, includes |
 | `scroll.asm` | map reader, tile readers, column buffer, column copy |
 | `sprite.asm` | the sprite engine: `SCANSTEP`, `spr_restore_all`, `spr_draw_all`, clipping, the flash tables, the C64's per-slot arrays, and the `DEBUG_SPRITES` harness |
-| `keyboard.asm` | `keydown` (direct VIA matrix read) and `read_keyboard` |
+| `keyboard.asm` | `keydown` (direct VIA matrix read) and `read_joystick`, which packs the five keys into the C64's `$dc00` byte |
+| `player.asm` | movement, fire latch, bullet, background collisions, grind scoring, score, `game_tick` |
 | `rupture.asm` | the two-cycle rupture, IRQ handler and install, `setup_display` (wrap, CRTC, palette, panel clear) |
 | `tables.asm` | main-RAM data tables |
 | `bank0.asm` | the SWRAM data bank |
@@ -120,14 +123,15 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
   display from `*RUN` until both banks are cleared and the panel drawn; R8 does NOT hide the
   CRTC cursor, so R10 = `&20` goes with it. `VDU 22` resets both.
 
-## Memory (Layer 3 build; take live figures from the listing)
+## Memory (Layer 4 build; take live figures from the listing)
 
 | Region | Contents |
 |---|---|
 | ZP `&00-&9F` | variables, guarded; wiped at boot |
 | `&0400` | column buffer, 160 B |
-| `&0E00-&190x` | code (`GUARD CODE_TOP` = `&2000`) |
-| to `&1AEA` | tables, and the sprite engine's per-slot arrays (the C64's own `sprite_pos` / `sprite_dp` / `sprite_pls_tmr`, plus what each bank's last draw did) |
+| `&04A0-&07BF` | collision character map, 40 × 20; `&07C0-&07FF` is its overrun slack. The language workspace - ours once `*RUN` has handed over, verified by sentinel |
+| `&0E00-&1BB0` | code (`GUARD CODE_TOP` = `&2000`); `&1D7` free above the tables and getting tight |
+| to `&1E29` | tables, the sprite engine's per-slot arrays, and the C64's game-state block (the C64's own `sprite_pos` / `sprite_dp` / `sprite_pls_tmr`, plus what each bank's last draw did) |
 | `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly |
 | `&3000-&3C7F` × 2 | status panel, 5 rows × 640, in BOTH banks, displayed by rupture cycle A |
 | `&4000-&7FFF` × 2 | play buffers, main and shadow |
@@ -153,6 +157,9 @@ that the tables and the data agree.
 - **A play buffer row is 640 bytes and the buffer is 16K, so the wrap point is not row-aligned**:
   a sprite's seven columns can straddle `&8000`. `sprite.asm` tests for it once per sprite and walks
   the pointer per column when it might (decision 21).
+- **The scroll's tail keeps `char_col + 1` in X**, from the increment at the top down to the
+  `corner_addr` update. Anything called from in there - `tile_cnt_bump`, `coll_advance` - must count
+  in Y. Getting this wrong breaks the scroll outright; `BUGS.md` #5.
 - **Sprites do not take the scroll's bank phase** (`SPR_PHASE_MASK = 0`, decision 22), which
   reverses `PROPOSAL.md` §3.1. Unconfirmed on a display - see `docs/layer-3-sprites.md`.
 - The C64 music is a binary by Sean Connolly. Arkos Tracker is the CPC port's driver, and the BBC

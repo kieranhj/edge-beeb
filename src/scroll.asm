@@ -205,8 +205,82 @@
     sta read_column_data+1
     \\ Won't overflow
 
+    \\ File the character code for the collision map (decision 24). Y is
+    \\ still the code: the shifting above went through read_char_data+1.
+    \\ The twenty calls a frame run top to bottom, so the store walks one
+    \\ map row - COLL_COLS bytes - at a time. All four frames of a
+    \\ character write the same codes to the same slot: tile_cnt only
+    \\ moves between characters, so it is idempotent and needs no test.
+    tya
+    .coll_store
+    sta &ffff
+    clc
+    lda coll_store+1
+    adc #COLL_COLS
+    sta coll_store+1
+    bcc coll_no_carry
+    inc coll_store+2
+    .coll_no_carry
+
     rts
 \}
+
+\ Point plot_char_y's collision store at row 0 of the slot the entering
+\ character occupies. Called once a frame, beside set_corner_addr.
+.coll_frame_start
+{
+    clc
+    lda #LO(coll_map)
+    adc coll_wr
+    sta coll_store+1
+    lda #HI(coll_map)
+    adc #0
+    sta coll_store+2
+    rts
+}
+
+\ A character has finished arriving, so the ring moves on: the slot just
+\ written becomes screen column 39 and the one after it column 0.
+\ IT MUST NOT TOUCH X. The scroll calls this beside tile_cnt_bump, in
+\ the middle of the run of tests on char_col + 1, which lives in X from
+\ the increment at the top until the corner_addr update at the bottom.
+\ tile_cnt_bump counts in Y for the same reason. Clobbering X here put
+\ crtc_addr and corner_addr on the wrong frames and broke the scroll
+\ outright (KC, 2026-09-03).
+.coll_advance
+{
+    ldy coll_wr
+    iny
+    cpy #COLL_COLS
+    bne no_wrap
+    ldy #0
+    .no_wrap
+    sty coll_wr
+    iny
+    cpy #COLL_COLS
+    bne base_ok
+    ldy #0
+    .base_ok
+    sty coll_base
+    rts
+}
+
+\ Clear the map to character 0, which col_decode calls empty, and start
+\ the ring. Everything is off before the first characters have arrived.
+.coll_init
+{
+    lda #0
+    sta coll_wr
+    sta coll_base
+    ldx #0
+    .page_loop
+    sta coll_map, x
+    sta coll_map+256, x
+    sta coll_map+512, x
+    inx
+    bne page_loop
+    jmp coll_advance
+}
 
 .set_corner_addr
 {

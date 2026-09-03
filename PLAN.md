@@ -17,25 +17,27 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 3 are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
-`build/EDGE.SSD` and boots in jsbeeb as a Master. What runs: a 1-pixel-per-frame 25 Hz horizontal
-scroller in MODE 2 (two phase-offset shadow screens, hardware 16K wrap, one byte column a frame
-through a 160-byte column buffer) drawing from an offline-converted charset with the C64's
+**Layers 0 to 4 are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
+`build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
+horizontal scroller in MODE 2 (two phase-offset shadow screens, hardware 16K wrap, one byte column a
+frame through a 160-byte column buffer) drawing from an offline-converted charset with the C64's
 per-character colours, under a 5-row status panel held by a two-cycle CRTC rupture, with IRQ1V
 owned, the keyboard read direct and the bank flip done by the VSync handler on a two-field lock;
-and over it eight software sprites, clipped, restored and redrawn every frame in both banks from
-offline-converted bounding-boxed MODE 2 data. No game logic yet: `DEBUG_SPRITES` fills the pool
-with test enemies and the keyboard moves slot 0.
+over it eight software sprites, clipped, restored and redrawn every frame in both banks; and a
+**playable player** - Z/X/:/? and RETURN, the C64's bounds and fire latch, a bullet, background
+collision off our own character map, grinding that scores and flashes. No enemies and no game flow
+yet: `DEBUG_SPRITES` still fills slots 2-7 with drifting test enemies and `DEBUG_COLL` makes a fatal
+hit flash rather than kill.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with eight sprites live: the scroll column
-costs 11,153, the sprite restore 15,093 and the draw 34,143 — **60,389, or 76%**, leaving ~19,000
-for the player, the waves, collisions and the music.
+11,153, the sprite restore 15,093, the draw 34,143, and the two logic ticks about 1,600 - roughly
+**62,000, or 78%**, leaving ~18,000 for the waves, collisions and the music.
 
-**Main RAM** (Layer 3 build): code `&0E00-&190x`, tables to `&1AEA`, `&516` free below `&2000`
-(the code image's ceiling). `&2000-&2FFF` is the sprite save area, 8 slots x 256 B x 2 banks
-exactly; the panel is at `&3000-&3C7F` in both banks; `&3C80-&3FFF` x 2 is free. **Bank 0** (chars,
-tiles, map, col_decode) high water `&B500`; **bank 1** (sprites, shift 0) `&B153`; **bank 2**
-(sprites, shift 1) `&B78B`. Take live figures from the build listing, not from here.
+**Main RAM** (Layer 4 build): code `&0E00-&1BB0`, tables to `&1E29`, **`&1D7` free** below `&2000`
+(the code image's ceiling) - tight, and Layers 5 and 6 add the most code. `&04A0-&07BF` is the
+collision character map with `&07C0-&07FF` its overrun slack; `&2000-&2FFF` the sprite save area;
+the panel `&3000-&3C7F` in both banks. **Bank 0** high water `&B500`; **bank 1** (sprites, shift 0)
+`&B153`; **bank 2** (shift 1) `&B78B`. Take live figures from the build listing, not from here.
 
 ## What is left
 
@@ -69,11 +71,14 @@ Interpreted throughout: the compiled player and bullet of `PROPOSAL.md` §3.6 ar
 end of the layer doc: the bank phase wants an eye on it in b-em (decision 22), `SPR_X_OFF`/
 `SPR_Y_OFF` are confirmed by Layer 4, and there is still no buffer oracle.
 
-### Layer 4 — player
+### Layer 4 — player — done
 
-Movement bounds (C64 x `$10-$9b`, y `$5a-$e5`, converted), fire latch, bullet at 12 px per frame
-collision-checked twice a frame as the CPC does, player-to-background collision via the fatal
-nibble of `col_decode`, bullet-to-background, grind scoring.
+[`docs/layer-4-player.md`](docs/layer-4-player.md). Movement and bounds, the fire latch, the bullet,
+both background collision checks, grind scoring and the six-digit score, transcribed from the C64.
+Two structural decisions: the **game logic ticks twice per display frame** (decision 23), so the
+original's per-frame constants transcribe unaltered; and background collision reads a **character
+map we keep ourselves** at `&04A0` (decision 24), since the C64 reads codes out of a screen we do
+not have. Fire is RETURN (decision 26).
 
 ### Layer 5 — enemies
 
@@ -110,8 +115,8 @@ publish.
 | 1 — graphics pipeline A | [`docs/layer-1-graphics-pipeline.md`](docs/layer-1-graphics-pipeline.md) | done 2026-09-02 |
 | 2 — display | [`docs/layer-2-display.md`](docs/layer-2-display.md) | done 2026-09-02 |
 | 3 — sprite engine v2 | [`docs/layer-3-sprites.md`](docs/layer-3-sprites.md) | done 2026-09-03 |
-| 4 — player | | next |
-| 5 — enemies | | |
+| 4 — player | [`docs/layer-4-player.md`](docs/layer-4-player.md) | done 2026-09-03 |
+| 5 — enemies | | next |
 | 6 — game flow | | |
 | 7 — sound | | |
 | 8 — graphics pipeline B | | |

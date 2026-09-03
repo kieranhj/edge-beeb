@@ -759,6 +759,9 @@ IF DEBUG_SPRITES
     .loop
     lda spr_test_dp0, x
     sta sprite_dp, x
+    sta anim_starts, x
+    lda spr_test_dp1, x
+    sta anim_ends, x
     txa
     asl a
     tay
@@ -767,22 +770,15 @@ IF DEBUG_SPRITES
     lda spr_test_y, x
     sta sprite_pos+1, y
     dex
-    bpl loop
+    cpx #1
+    bne loop                    ; slots 7 down to 2: sprite_reset owns 0 and 1
     rts
 }
 
+\ The animation and the pulse countdown are multimate's now, so all this
+\ does is drift the enemies left and flash one of them to watch.
 .spr_test_anim
 {
-    \ The C64's own pulse timer countdown (pt_loop), and a flash to
-    \ watch every 64 frames.
-    ldx #SPR_SLOTS-1
-    .pulse
-    lda sprite_pls_tmr, x
-    beq no_pulse
-    dec sprite_pls_tmr, x
-    .no_pulse
-    dex
-    bpl pulse
     lda frame_count
     and #63
     bne no_flash
@@ -790,27 +786,6 @@ IF DEBUG_SPRITES
     sta sprite_pls_tmr+2
     .no_flash
 
-    \ Animate on alternate frames, as the C64's anim_tmr does
-    lda frame_count
-    and #1
-    bne no_anim
-    ldx #SPR_SLOTS-1
-    .anim
-    lda sprite_dp, x
-    clc
-    adc #1
-    cmp spr_test_dp1, x
-    bcc keep
-    beq keep
-    lda spr_test_dp0, x
-    .keep
-    sta sprite_dp, x
-    dex
-    bpl anim
-    .no_anim
-
-    \ Drift the enemies left, wrapping well outside the play area so
-    \ they clip in and out at both edges
     ldx #SPR_SLOTS-1
     .move
     txa
@@ -826,12 +801,12 @@ IF DEBUG_SPRITES
     sta sprite_pos, y
     dex
     cpx #2
-    bcs move                    ; slots 7 down to 2; 1 and 0 stand still
-    rts
+    bcs move                    ; slots 7 down to 2; the player and his
+    rts                         ; bullet are the game's now
 }
 
-\ dp ranges from the C64's anim_decode: player ship, bullet, then
-\ enemy_1, enemy_2, enemy_4, enemy_8, enemy_11 and enemy_13.
+\ dp ranges from the C64's anim_decode. Slots 0 and 1 are the player and
+\ his bullet and are set by sprite_reset; these are only read from 2 up.
 .spr_test_dp0 EQUB &0b, &12, &13, &1b, &25, &41, &54, &64
 .spr_test_dp1 EQUB &11, &12, &1a, &20, &2e, &47, &5b, &6b
 .spr_test_x   EQUB   40,   60,  100,  140,  170,   14,  120,   80
