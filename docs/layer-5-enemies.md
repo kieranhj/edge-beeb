@@ -118,6 +118,10 @@ enemies moving, both collision passes, the animation, the explosion sweep and th
 
 That is the worst case: the pool is often not full, and an empty slot costs the blitter nothing.
 
+**It is also optimistic, and the frame does overrun in play** — `BUGS.md` #9. The draw was measured
+while `BUGS.md` #8 was skipping every sprite past x = 140, so enemies entering from the right edge
+were free at the time and are not now.
+
 ## Verified in jsbeeb
 
 - Waves spawn on the table's own timings, fly their commands and are decommissioned at the edges;

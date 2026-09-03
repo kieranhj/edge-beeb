@@ -32,6 +32,13 @@ placeholder and `DEBUG_COLL` makes a fatal hit flash rather than kill.
 11,153, sprite restore 15,093, sprite draw 34,143, and the two logic ticks 3,278 — **63,667, or
 80%**. The pool is often not full, and an empty slot costs the blitter nothing.
 
+**That figure is now known to be optimistic and the frame does overrun.** `BUGS.md` #9: the game
+drops below 25 Hz while shooting, about 50 s in. The draw was measured while `BUGS.md` #8 was
+silently skipping every sprite past x = 140, so enemies entering from the right cost nothing then
+and cost full price now; explosion frames are the densest artwork in the game and shooting is what
+makes them. **Settle this before Layer 6 puts a HUD on every frame** — if it is the budget, the
+answer is the compiled blitter deferred in decision 19.
+
 **Main RAM** (Layer 5 build): code and tables `&0E00-&1F88`, **`&78` free** below `&2000` — Layer 6
 will not fit without moving something else out. Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,

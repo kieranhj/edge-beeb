@@ -7,7 +7,8 @@ ruled out. Index first, detail below.
 |---|---|---|
 | 1 | gone (Layer 3) | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`). The routine it was about no longer exists |
 | 2 | fixed (Layer 3) | No sprite clipping: `x_pos >= 80` indexed past `mult8_*`. The engine now clips the frame's box to 80 columns x 160 scanlines at all four edges (decision 2) |
-| 3 | open | `read_keyboard` has no bounds; the C64 clamps x to `$10-$9b` and y to `$5a-$e5`. Harmless now that sprites clip, but the player will run off the edge until Layer 4 ports the bounds |
+| 9 | **open** | The game drops below 25 Hz while shooting, about 50 s into the level. Suspected frame overrun, not yet measured |
+| 3 | fixed (Layer 4) | `read_keyboard` had no movement bounds. `player_manage` clamps x to `$10-$9b` and y to `$5a-$e5`, the C64's own, and `read_joystick` no longer moves the player at all |
 | 8 | fixed (Layer 5) | Sprites at x >= 140 were never drawn: the byte column was halved with an arithmetic shift, but the value does not fit a signed byte |
 | 7 | fixed (Layer 5) | A stationary sprite rocked two pixels back and forth with the scroll: `scroll_advance` ran before the sprite draw |
 | 6 | fixed (Layer 5) | The game opened on an empty playfield and the waves did not line up with the level: the C64's start-of-game fast winder was missing |
@@ -116,3 +117,38 @@ columns that fit before the right edge, where before it was not drawn at all.
 
 It bit the player too, silently: `PLY_X_MAX` is `$9b` = 155, so the ship would have vanished
 anywhere past x = 139.
+
+## 9. The game drops below 25 Hz while shooting, ~50 s in
+
+**Open.** Reported by KC, 2026-09-03: the game slows below 25 Hz when shooting, around 50 seconds
+into the level.
+
+**Not measured yet.** What follows is the suspicion and how to confirm it, not a diagnosis.
+
+The frame is 79,872 cycles and the last measurement put the worst case at 63,667 - 80% - so there
+is not much margin, and three things all push the same way at once:
+
+- **`BUGS.md` #8 raised the real sprite load.** Until it was fixed, every sprite at x >= 140 was
+  silently skipped. The 34,143-cycle draw figure was measured while that was true, so enemies
+  entering from the right edge were costing nothing. They cost full price now, and the measurement
+  is optimistic by an unknown amount.
+- **Explosion frames are the densest artwork in the game.** Shooting is what creates them, which
+  fits "while shooting" exactly. The interpreted blitter costs ~37 cycles per byte inside the
+  bounding box whether the byte is opaque or not, and the explosion boxes are large.
+- **The wave table gets busier as it goes.** 50 seconds is about 1,250 game frames, well into it,
+  so more of the pool is live at once.
+
+When the loop does overrun two fields, `FRAME_LOCK` does not tear - it waits for the next flip, so
+the frame rate drops to 3 fields (16.7 Hz) and back. That is consistent with "slows down" rather
+than "glitches".
+
+**To confirm:** sample `frame_count` against `field_count` over a few hundred fields while shooting
+into a busy wave - the ratio was exactly 1:2 in the Layer 5 soak, before the #8 fix and without
+firing. Then measure `spr_draw_all` with explosions live, and compare against the 34,143 the budget
+table still quotes.
+
+**If it is the budget**, the fix is the compiled blitter deferred in decision 19 - `PROPOSAL.md`
+§3.6's compiled player and bullet, and the 30% of bounding-box bytes that are transparent and cost
+the interpreted path the same as opaque ones (`docs/layer-3-sprites.md`). That deferral was taken on
+the grounds that "the interpreted path fits the frame"; this is the first evidence that it does not
+always, and it should be revisited before Layer 6 adds the HUD to every frame.
