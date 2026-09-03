@@ -11,6 +11,8 @@ compile.txt
 # put it in, so any run without a working -do drops these in the project root
 /Edge
 /BANK0
+/BANK1
+/BANK2
 /!BOOT
 
 # ---- Third-party tools (beebasm lives in ..\..\Bin; a local copy is optional) ----
@@ -22,6 +24,7 @@ __pycache__/
 
 # ---- Local editor / agent settings ----
 .claude/settings.local.json
+.vscode/
 
 # ---- Original game binaries (copyright Cosine; keep locally) ----
 *.d64
