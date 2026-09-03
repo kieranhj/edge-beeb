@@ -9,9 +9,8 @@ DEV = 1-RELEASE
 
 \ Debug flags. Each must be off under RELEASE; add new ones to DEBUG_ANY and
 \ to the !BOOT stamp at the bottom of this file so a build says what it is.
-DEBUG_SPRITES = DEV         ; fill the sprite pool with test enemies
-DEBUG_COLL = DEV            ; a fatal background hit flashes instead of killing
-DEBUG_ANY = DEBUG_SPRITES OR DEBUG_COLL
+DEBUG_COLL = DEV            ; a fatal hit flashes instead of killing
+DEBUG_ANY = DEBUG_COLL
 IF RELEASE
     ASSERT DEBUG_ANY=0
 ENDIF
@@ -150,6 +149,17 @@ ASSERT coll_map >= column_buffer + column_size
 ASSERT coll_map + COLL_COLS * COLL_ROWS <= &0800
 
 SCORE_DIGITS = 6
+
+\\ Game state lives at &0800, not in the code image. The C64 keeps the
+\\ same block in its tape buffer at $0340 for the same reason: it is RAM
+\\ that needs no initial value, so it costs nothing to put it where the
+\\ image is not. &0800-&0BFF is the MOS's sound, serial and soft-key
+\\ workspace, which is ours with the MOS interrupt gone - verified in
+\\ jsbeeb, a sentinel across all four pages surviving 1,500 fields of
+\\ the running game. Declared at the bottom of this file, outside the
+\\ SAVE, so none of it is written to the disc.
+GAME_STATE = &0800
+GAME_STATE_TOP = &0C00
 
 SWRAM_DATA = 4              ; bank 0: chars, tiles, map, col_decode (resting state)
 SWRAM_SPRITES0 = 5          ; bank 1: sprite data, pixel shift 0
@@ -380,9 +390,6 @@ GUARD CODE_TOP
     jsr coll_init
     jsr score_reset
     jsr sprite_reset
-IF DEBUG_SPRITES
-    jsr spr_test_init
-ENDIF
 
     ldx #0
     lda #0
@@ -397,7 +404,15 @@ ENDIF
     ldx #0
     stx tile_cnt
     stx tile_total
+    stx char_col
     jsr tile_update
+
+    \\ Fill the play area before anything is shown - see scroll_prewind.
+    \\ The display is still blanked from setup_display's R8; it goes on
+    \\ once there is a picture in both banks to show.
+    CRTC 8, &30
+    jsr scroll_prewind
+    CRTC 8, 0
 
     lda crtc_addr
     sta crtc_live
@@ -410,7 +425,6 @@ ENDIF
     \\ IRQ, which flips the banks on a FRAME_LOCK-field cadence.
 
     .loop
-    stx char_col
 
     \\ Every sprite's background comes back before anything is drawn:
     \\ a draw between another slot's restore and its draw would be
@@ -418,6 +432,57 @@ ENDIF
 
     jsr spr_restore_all
 
+    lda char_col
+    and #SPR_PHASE_MASK
+    sta spr_phase
+
+    jsr scroll_frame            \\ plots this frame's byte column
+    jsr spr_draw_all
+
+    \\ Game logic. Two ticks a frame: one pass of this loop is two of the
+    \\ C64's, so its per-frame constants transcribe unchanged (decision 23).
+    \\ The joystick is read once - it cannot change between the two.
+
+    jsr read_joystick
+    jsr game_tick
+    jsr game_tick
+
+    jsr scroll_advance          \\ AFTER the draw - see scroll_advance
+
+    inc frame_count
+
+    \\ Hand the frame over and wait for the flip
+    sei
+    lda crtc_addr
+    sta crtc_park
+    lda crtc_addr+1
+    sta crtc_park+1
+    lda #1
+    sta frame_ready
+    cli
+    .wait_flip
+    lda frame_ready
+    bne wait_flip
+
+    jmp loop
+
+    .done
+
+    rts
+}
+
+\ ******************************************************************
+\ *	scroll_frame - plot one byte column and advance the scroll
+\ ******************************************************************
+\ *	The whole of a frame's scroll work, lifted out of the main loop so
+\ *	that scroll_prewind can run it before the game starts. It reads
+\ *	char_col, draws that pixel column of the incoming characters, and
+\ *	leaves char_col, tile_cnt, the collision ring, crtc_addr and
+\ *	corner_addr on the next frame's values.
+\ ******************************************************************
+
+.scroll_frame
+{
     \\ Start column plot
 
     jsr set_corner_addr
@@ -578,26 +643,23 @@ ENDIF
     \\ Now copy new right hand column to screen buffer
 
     jsr copy_column_buffer
+    rts
+}
 
-    \\ Sprites, over the column just written
+\ ******************************************************************
+\ *	scroll_advance - move the scroll on by one pixel
+\ ******************************************************************
+\ *	SEPARATE FROM scroll_frame, AND CALLED AFTER THE SPRITES ARE DRAWN.
+\ *	Sprites are placed from corner_addr, so advancing it before the draw
+\ *	puts them one byte column - two pixels - further right on the frames
+\ *	where it moves and not on the others. A stationary ship then rocks
+\ *	back and forth in step with the scroll, which is exactly what KC saw
+\ *	when these two were one routine (BUGS.md #7). The order here is the
+\ *	loop's original one: plot, draw, then advance.
+\ ******************************************************************
 
-    lda char_col
-    and #SPR_PHASE_MASK
-    sta spr_phase
-    jsr spr_draw_all
-
-IF DEBUG_SPRITES
-    jsr spr_test_anim
-ENDIF
-
-    \\ Game logic. Two ticks a frame: one pass of this loop is two of the
-    \\ C64's, so its per-frame constants transcribe unchanged (decision 23).
-    \\ The joystick is read once - it cannot change between the two.
-
-    jsr read_joystick
-    jsr game_tick
-    jsr game_tick
-
+.scroll_advance
+{
     \\ Scrolling
 
     \\ Increment column
@@ -661,26 +723,60 @@ ELSE
     .no_scroll
 ENDIF
 
-    inc frame_count
-
-    \\ Hand the frame over and wait for the flip
-    sei
-    lda crtc_addr
-    sta crtc_park
-    lda crtc_addr+1
-    sta crtc_park+1
-    lda #1
-    sta frame_ready
-    cli
-    .wait_flip
-    lda frame_ready
-    bne wait_flip
-
-    jmp loop
-
-    .done
-
+    stx char_col
     rts
+}
+
+\ ******************************************************************
+\ *	scroll_prewind - fill the play area before the first frame
+\ ******************************************************************
+\ *	THE C64 DOES THIS AND WE HAVE TO AS WELL. map_read_rst ends in what
+\ *	its author calls a "Scroll fast winder for the start of game": the
+\ *	whole buffer-swap cycle run 20 times, which is 40 characters, which
+\ *	is exactly the width of the screen. Without it the game opens on an
+\ *	empty playfield that takes a screen's worth of scrolling to fill,
+\ *	and - far worse - the wave table, whose timings were authored
+\ *	against a full screen, spawns its first enemies a screen ahead of
+\ *	the scenery they were drawn to fly through. KC saw both: a long
+\ *	blank start, and enemies that did not line up with the level.
+\ *
+\ *	40 characters is 160 of our frames: a character is 4 pixels wide and
+\ *	we move one pixel a frame. Each frame writes one byte column into
+\ *	the bank the X bit selects, so the flip has to happen here too -
+\ *	the VSync handler that normally does it is not installed yet. Each
+\ *	bank then gets its own 80 columns, one pixel out of phase with the
+\ *	other, exactly as the running loop leaves them.
+\ ******************************************************************
+
+\ COLL_COLS is the width in CHARACTERS (40), not byte columns: a
+\ character is 4 pixels wide and we move one pixel a frame, so a screen
+\ is 160 frames. It is also defined above, which PLAY_COLS is not -
+\ sprite.asm is included after this point and beebasm takes constant
+\ assignments in file order.
+SCROLL_PREWIND = 4 * COLL_COLS
+
+.scroll_prewind
+{
+    lda #LO(SCROLL_PREWIND)
+    sta prewind_count
+    lda #HI(SCROLL_PREWIND)
+    sta prewind_count+1
+    .loop
+    jsr scroll_frame
+    jsr scroll_advance
+    lda &fe34                   ; the CPU's bank, as the VSync flip does it
+    eor #5
+    sta &fe34
+    lda prewind_count
+    bne no_borrow
+    dec prewind_count+1
+    .no_borrow
+    dec prewind_count
+    lda prewind_count
+    ora prewind_count+1
+    bne loop
+    rts
+    .prewind_count EQUW 0
 }
 
 INCLUDE "src/scroll.asm"
@@ -751,6 +847,7 @@ INCLUDE "src/scroll.asm"
 
 INCLUDE "src/sprite.asm"
 INCLUDE "src/player.asm"
+INCLUDE "src/enemy.asm"
 INCLUDE "src/keyboard.asm"
 INCLUDE "src/rupture.asm"
 INCLUDE "src/tables.asm"
@@ -776,9 +873,6 @@ IF RELEASE
     EQUS "REM Edge Grinder", 13
 ELSE
     EQUS "REM Edge Grinder DEV build", 13
-IF DEBUG_SPRITES
-    EQUS "REM DEBUG_SPRITES: the pool holds test enemies", 13
-ENDIF
 IF DEBUG_COLL
     EQUS "REM DEBUG_COLL: a fatal hit flashes, it does not kill", 13
 ENDIF
@@ -788,6 +882,7 @@ EQUS "*RUN Edge", 13
 .bootfile_end
 
 SAVE "!BOOT", bootfile, bootfile_end
+
 
 \ ******************************************************************
 \ *	Space reserved for runtime buffers not preinitialised
@@ -810,6 +905,55 @@ PRINT "------"
 PRINT "HIGH WATERMARK =", ~P%
 PRINT "FREE =", ~screen_start-P%
 PRINT "------"
+
+\ ******************************************************************
+\ *	GAME STATE at &0800 - see GAME_STATE above. None of it is saved:
+\ *	it is declared after the SAVEs and outside them, and every routine
+\ *	that reads it writes it first. The first four blocks are the C64's
+\ *	own $0340-$039F labels, same names, same meanings.
+\ ******************************************************************
+
+CLEAR GAME_STATE, GAME_STATE_TOP
+ORG GAME_STATE
+.game_state_start
+
+.sprite_pos     skip 2*SPR_SLOTS    ; x,y a slot: 0 player, 1 bullet, 2-7 pool
+.sprite_dp      skip SPR_SLOTS      ; the sprite_dp_dcd index = the frame
+.sprite_pls_tmr skip SPR_SLOTS      ; hit-flash countdown
+.anim_starts    skip SPR_SLOTS
+.anim_ends      skip SPR_SLOTS
+.anim_tmr       skip 1              ; multimate steps every fourth tick
+
+.enemy_spds     skip 2*SPR_SLOTS    ; movement commands; slot 1 is the bullet's speed
+.enemy_shields  skip SPR_SLOTS      ; hits left before it explodes
+.enemy_rockers  skip SPR_SLOTS      ; timer value it switches command at
+.enemy_resets   skip SPR_SLOTS      ; and wraps at
+.enemy_tmrs     skip SPR_SLOTS
+
+.scroll_x       skip 1              ; the C64's 16-step fine-scroll counter
+.wave_tmr       skip 1              ; ticks until the next wave is spawned
+.fire_latch     skip 1              ; set while fire is held, so it does not repeat
+.coll_flag      skip 1              ; a fatal hit; Layer 6 takes the life
+.comp_flag      skip 1              ; the wave table ran out; Layer 6 again
+.coll_grind     skip 2              ; the two grind cells, above and below the ship
+.coll_temp      skip 4              ; the collision box being tested
+.rt_store       skip 1              ; X across a bump_score call
+
+.score          skip SCORE_DIGITS   ; one decimal digit a byte, biggest first
+.hi_score       skip SCORE_DIGITS
+
+\ What each bank's last sprite draw did, for the restore: bank*8 + slot.
+.spr_sv_on      skip 2*SPR_SLOTS
+.spr_sv_lo      skip 2*SPR_SLOTS
+.spr_sv_hi      skip 2*SPR_SLOTS
+.spr_sv_scan    skip 2*SPR_SLOTS
+.spr_sv_rows    skip 2*SPR_SLOTS
+.spr_sv_cols    skip 2*SPR_SLOTS
+.spr_sv_wrap    skip 2*SPR_SLOTS
+
+.game_state_end
+ASSERT game_state_end <= GAME_STATE_TOP
+PRINT "GAME STATE =", ~game_state_start, "to", ~game_state_end
 
 INCLUDE "src/bank0.asm"
 INCLUDE "src/bank1.asm"

@@ -334,21 +334,43 @@ ENDMACRO
     tay
     lda sprite_pos+1, y
     sta spr_y
+
+    \\ v = x - SPR_X_OFF + phase runs -12 to 244, which DOES NOT FIT A
+    \\ SIGNED BYTE. This used to halve it with CMP #&80 : ROR, an
+    \\ arithmetic shift that reads bit 7 as the sign - so every sprite at
+    \\ x >= 140 came out with a large negative column, was taken to be off
+    \\ the left edge and was never drawn. Enemies spawning at x = 172, the
+    \\ far right edge, stayed invisible until they had crossed a third of
+    \\ the screen (BUGS.md #8). The sign has to come from the subtraction's
+    \\ carry instead, so the phase is folded into the constant to keep that
+    \\ carry meaningful, and the halving is logical when v >= 0.
+    lda #SPR_X_OFF
+    sec
+    sbc spr_phase
+    sta spr_c
     lda sprite_pos, y
     sec
-    sbc #SPR_X_OFF
-    clc
-    adc spr_phase
+    sbc spr_c                   ; carry set = v >= 0
     sta spr_c
+    php                         ; the bank select below clears carry
     and #1
     clc
     adc #SWRAM_SPRITES0
     sta &f4
     sta &fe30
     lda spr_c
-    cmp #&80
+    plp
+    bcs x_positive
+    sec                         ; v < 0: arithmetic, keep the sign
     ror a
-    sta spr_c                   ; signed byte column of the left edge
+    jmp x_done
+    .x_positive
+    lsr a                       ; v >= 0: logical, 0-244 becomes 0-122
+    .x_done
+    sta spr_c                   ; signed byte column of the left edge.
+                                ; enemy_bounds keeps x under &d0, so the
+                                ; column stays under 98 and C below cannot
+                                ; reach &80 and be mistaken for negative.
 
     \\ ---- the frame and its box ------------------------------------
     ldx spr_slot
@@ -741,74 +763,3 @@ ENDMACRO
     sta spr_phase
     rts
 }
-
-\ ******************************************************************
-\ *	TEMPORARY, DEBUG_SPRITES only: eight sprites to look at and to
-\ *	measure, until Layer 4 gives the player and Layer 5 the waves.
-\ *	Slot 0 is the player ship (the keyboard moves it), slot 1 his
-\ *	bullet, slots 2-7 six enemies drifting left and wrapping round,
-\ *	so every frame puts something across each edge of the play area
-\ *	and through the buffer's 16K wrap. Slot 2 is flashed every 64
-\ *	frames to exercise the hit-flash tables.
-\ ******************************************************************
-
-IF DEBUG_SPRITES
-.spr_test_init
-{
-    ldx #SPR_SLOTS-1
-    .loop
-    lda spr_test_dp0, x
-    sta sprite_dp, x
-    sta anim_starts, x
-    lda spr_test_dp1, x
-    sta anim_ends, x
-    txa
-    asl a
-    tay
-    lda spr_test_x, x
-    sta sprite_pos, y
-    lda spr_test_y, x
-    sta sprite_pos+1, y
-    dex
-    cpx #1
-    bne loop                    ; slots 7 down to 2: sprite_reset owns 0 and 1
-    rts
-}
-
-\ The animation and the pulse countdown are multimate's now, so all this
-\ does is drift the enemies left and flash one of them to watch.
-.spr_test_anim
-{
-    lda frame_count
-    and #63
-    bne no_flash
-    lda #12
-    sta sprite_pls_tmr+2
-    .no_flash
-
-    ldx #SPR_SLOTS-1
-    .move
-    txa
-    asl a
-    tay
-    lda sprite_pos, y
-    sec
-    sbc #1
-    cmp #4
-    bcs move_ok
-    lda #184
-    .move_ok
-    sta sprite_pos, y
-    dex
-    cpx #2
-    bcs move                    ; slots 7 down to 2; the player and his
-    rts                         ; bullet are the game's now
-}
-
-\ dp ranges from the C64's anim_decode. Slots 0 and 1 are the player and
-\ his bullet and are set by sprite_reset; these are only read from 2 up.
-.spr_test_dp0 EQUB &0b, &12, &13, &1b, &25, &41, &54, &64
-.spr_test_dp1 EQUB &11, &12, &1a, &20, &2e, &47, &5b, &6b
-.spr_test_x   EQUB   40,   60,  100,  140,  170,   14,  120,   80
-.spr_test_y   EQUB  170,  170,  100,  130,  160,  200,   84,  240
-ENDIF

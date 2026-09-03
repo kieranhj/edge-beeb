@@ -1,7 +1,8 @@
 \ ******************************************************************
 \ *	bank0.asm
 \ *	Sideways RAM bank 0 (slot SWRAM_DATA): the converted charset,
-\ *	the C64 tiles, both maps and col_decode. All from tools/export_tiles.py;
+\ *	the C64 tiles, both maps, col_decode and the attack wave table. From
+\ *	tools/export_tiles.py and tools/export_waves.py;
 \ *	regenerate with the tool rather than editing src/data.
 \ ******************************************************************
 
@@ -41,6 +42,21 @@ PAGE_ALIGN
 .col_decode
 INCBIN "src/data/col_decode.bin"
 PRINT "COL_DECODE =", ~col_decode
+
+\ The attack wave table: 9 bytes a wave, read a byte at a time by
+\ wave_read, terminated by an $ff in the x position. anim_decode is the
+\ 19 start/end frame pairs a wave's object byte picks its animation from.
+\ Both from tools/export_waves.py.
+
+PAGE_ALIGN
+.wave_data
+INCBIN "src/data/waves.bin"
+.wave_end
+PRINT "WAVE data =", ~wave_data
+
+.anim_decode
+INCBIN "src/data/anim_decode.bin"
+PRINT "ANIM_DECODE =", ~anim_decode
 
 .bank0_end
 

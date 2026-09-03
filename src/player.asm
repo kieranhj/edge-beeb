@@ -27,10 +27,9 @@ PLY_X_MAX = &9b
 PLY_Y_MIN = &5a
 PLY_Y_MAX = &e5
 
-\ Bullet: 12 pixels a tick, and the bounds enemy_bounds kills it at.
+\ Bullet: 12 pixels a tick. The bounds it dies at are enemy_bounds', in
+\ enemy.asm, which walks the bullet's slot as well as the pool's.
 BUL_SPEED = &0c
-BUL_X_KILL = &d0
-BUL_Y_KILL = &40
 
 \ The C64 takes the character row from (y - $30) >> 3 and indexes a table
 \ of 24 absolute screen rows; ours is the play area alone, which starts
@@ -61,6 +60,7 @@ BUL_ANIM_END   = &13
 {
     jsr player_manage
     jsr bullet_manage
+    jsr enemy_manage
     jsr multimate
 
     \\ scroll_manage's counter. The buffer swaps it also drives are the
@@ -167,9 +167,51 @@ BUL_ANIM_END   = &13
     lda #BUL_ANIM_END
     sta anim_ends+1
 
-    \\ Player to enemy collisions are Layer 5's: the pool does not move
-    \\ yet and nothing can be hit. The C64's player_s_colls goes here.
+    \\ Player to enemy collisions: a box round the ship against every
+    \\ live enemy. Frames below $0b are the explosion, which cannot hit.
     .player_s_colls
+    lda sprite_pos
+    sec
+    sbc #6
+    sta coll_temp
+    clc
+    adc #&0d
+    sta coll_temp+1
+    lda sprite_pos+1
+    sec
+    sbc #&0b
+    sta coll_temp+2
+    clc
+    adc #&18
+    sta coll_temp+3
+
+    ldx #0
+    ldy #0
+    .psc_loop
+    lda sprite_dp+ENEMY_FIRST, y
+    cmp #&0b
+    bcc psc_over
+    lda sprite_pos+2*ENEMY_FIRST, x
+    cmp coll_temp
+    bcc psc_over
+    cmp coll_temp+1
+    bcs psc_over
+    lda sprite_pos+2*ENEMY_FIRST+1, x
+    cmp coll_temp+2
+    bcc psc_over
+    cmp coll_temp+3
+    bcs psc_over
+    inc coll_flag
+IF DEBUG_COLL
+    lda #20
+    sta sprite_pls_tmr
+ENDIF
+    .psc_over
+    iny
+    inx
+    inx
+    cpx #2*ENEMY_COUNT
+    bne psc_loop
     jmp player_colls
 }
 
@@ -183,21 +225,6 @@ BUL_ANIM_END   = &13
     clc
     adc enemy_spds+2
     sta sprite_pos+2
-
-    \\ enemy_bounds, for slot 1 alone
-    lda sprite_pos+2
-    cmp #BUL_X_KILL
-    bcs kill
-    lda sprite_pos+3
-    cmp #BUL_Y_KILL
-    bcs out
-    .kill
-    lda #0
-    sta sprite_pos+2
-    sta sprite_pos+3
-    sta enemy_spds+2
-    sta enemy_spds+3
-    .out
     rts
 }
 
@@ -205,8 +232,9 @@ BUL_ANIM_END   = &13
 \ *	multimate - the C64's animation and pulse-timer tail
 \ ******************************************************************
 \ Every fourth tick, step every slot's frame between its anim_starts
-\ and anim_ends; then count the hit-flash timers down. The explosion
-\ check and the wave manager that follow it on the C64 are Layer 5's.
+\ and anim_ends; free the slots whose explosions have finished; count
+\ the hit-flash timers down; and run the wave manager. The C64's tail,
+\ in its order.
 
 .multimate
 {
@@ -233,6 +261,8 @@ BUL_ANIM_END   = &13
     .mm_out
     stx anim_tmr
 
+    jsr explosion_chk
+
     \\ Decrement the pulse timers
     ldx #SPR_SLOTS-1
     .pt_loop
@@ -242,7 +272,8 @@ BUL_ANIM_END   = &13
     .pt_next
     dex
     bpl pt_loop
-    rts
+
+    jmp wave_manager
 }
 
 \ ******************************************************************
@@ -522,6 +553,7 @@ ENDIF
     sta anim_tmr
     sta scroll_x
 
+    jsr enemy_init
     lda #PLY_ANIM_START
     sta sprite_dp
     sta anim_starts

@@ -2,11 +2,12 @@
 
 A port of Cosine's *Edge Grinder* (Commodore 64) to the BBC Master 128, in 6502 assembly.
 
-**It is not a game yet.** Four of ten layers are done. What runs today is the engine: a
-one-pixel-per-frame horizontal scroller at 25 Hz in MODE 2, a five-row status panel held by a CRTC
-rupture, eight software sprites clipped and redrawn every frame in both shadow banks, and a player
-ship you can fly, shoot with, and crash into the scenery. There are no enemies, no lives and no
-score display — those are Layers 5 and 6.
+**It is not a game yet.** Five of ten layers are done. What runs today: a one-pixel-per-frame
+horizontal scroller at 25 Hz in MODE 2, a five-row status panel held by a CRTC rupture, eight
+software sprites clipped and redrawn every frame in both shadow banks, a player ship you can fly,
+shoot with and crash into the scenery, and the original's attack waves flying their own movement
+commands and shootable for score. What is missing is the game *around* it — no lives, no respawn,
+no end, and no score on the panel. Those are Layer 6.
 
 Try the current build in a browser:
 
@@ -38,14 +39,15 @@ walk rather than remembering addresses. Clipped at all four edges, and a sprite 
 buffer's 16K wrap falls back to walking the pointer per column. About 6,155 cycles a sprite for
 restore and draw together — the plotter this replaced cost roughly 17,500.
 
-**The player.** Movement and bounds, the fire latch, the bullet, and both background collision
-checks, transcribed from the original. The game logic ticks twice per display frame, because the
+**The player and the waves.** Movement and bounds, the fire latch, the bullet, and both background
+collision checks, transcribed from the original; and the 201-wave attack table with its two-command
+movement model, shields, scoring and explosions. The game logic ticks twice per display frame, because the
 C64's loop runs at 50 Hz and ours at 25, which lets its per-frame constants transcribe unaltered.
 Collision reads a character map the scroll keeps as it plots — the C64 reads codes back out of the
 screen it displays, which a bitmap port cannot do — and puts them through the original's own
 `col_decode` table.
 
-Roughly 78% of the 79,872-cycle frame is spoken for with eight sprites live.
+Roughly 80% of the 79,872-cycle frame is spoken for with eight sprites live.
 
 ## Building
 

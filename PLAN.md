@@ -17,27 +17,26 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 4 are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
+**Layers 0 to 5 are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
 `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
-horizontal scroller in MODE 2 (two phase-offset shadow screens, hardware 16K wrap, one byte column a
-frame through a 160-byte column buffer) drawing from an offline-converted charset with the C64's
-per-character colours, under a 5-row status panel held by a two-cycle CRTC rupture, with IRQ1V
-owned, the keyboard read direct and the bank flip done by the VSync handler on a two-field lock;
-over it eight software sprites, clipped, restored and redrawn every frame in both banks; and a
-**playable player** - Z/X/K/M/L, the C64's bounds and fire latch, a bullet, background
-collision off our own character map, grinding that scores and flashes. No enemies and no game flow
-yet: `DEBUG_SPRITES` still fills slots 2-7 with drifting test enemies and `DEBUG_COLL` makes a fatal
-hit flash rather than kill.
+horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
+IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
+over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K/M/L with the C64's
+bounds, fire latch, bullet and background collisions; and **the attack waves**, spawning from the
+original's own 201-wave table, flying its movement commands, shootable for score, and able to run
+into you. What is missing is the game *around* it: `coll_flag` and `comp_flag` are set and nothing
+reads them, so there are no lives, no respawn and no end. The panel still shows a colour-bar
+placeholder and `DEBUG_COLL` makes a fatal hit flash rather than kill.
 
-**The frame budget** is 79,872 cycles at 25 Hz. Measured with eight sprites live: the scroll column
-11,153, the sprite restore 15,093, the draw 34,143, and the two logic ticks about 1,600 - roughly
-**62,000, or 78%**, leaving ~18,000 for the waves, collisions and the music.
+**The frame budget** is 79,872 cycles at 25 Hz. Measured, worst case with eight sprites live: scroll
+11,153, sprite restore 15,093, sprite draw 34,143, and the two logic ticks 3,278 — **63,667, or
+80%**. The pool is often not full, and an empty slot costs the blitter nothing.
 
-**Main RAM** (Layer 4 build): code `&0E00-&1BB0`, tables to `&1E29`, **`&1D7` free** below `&2000`
-(the code image's ceiling) - tight, and Layers 5 and 6 add the most code. `&04A0-&07BF` is the
-collision character map with `&07C0-&07FF` its overrun slack; `&2000-&2FFF` the sprite save area;
-the panel `&3000-&3C7F` in both banks. **Bank 0** high water `&B500`; **bank 1** (sprites, shift 0)
-`&B153`; **bank 2** (shift 1) `&B78B`. Take live figures from the build listing, not from here.
+**Main RAM** (Layer 5 build): code and tables `&0E00-&1F88`, **`&78` free** below `&2000` — Layer 6
+will not fit without moving something else out. Game state `&0800-&08E9`; collision character map
+`&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
+tiles, map, col_decode, waves) high water `&BC38`; **banks 1 and 2** (sprites, one per pixel shift)
+`&B153` and `&B78B`. Take live figures from the build listing, not from here.
 
 ## What is left
 
@@ -80,10 +79,13 @@ original's per-frame constants transcribe unaltered; and background collision re
 map we keep ourselves** at `&04A0` (decision 24), since the C64 reads codes out of a screen we do
 not have. The keys are Z/X left/right, K/M up/down and L to fire (decision 26).
 
-### Layer 5 — enemies
+### Layer 5 — enemies — done
 
-`wave_manager` / `wave_read` and the 54-wave table verbatim, movement commands, rocker timer,
-shields, bullet-to-enemy and player-to-enemy collisions, explosion frames.
+[`docs/layer-5-enemies.md`](docs/layer-5-enemies.md). `wave_manager`, `wave_read` and the **201-wave**
+table (not 54, as this file used to say), the two-command movement model with its rocker timer,
+shields, bullet-to-enemy and player-to-enemy collisions, and the explosion frames. The wave table and
+`anim_decode` are exported to bank 0 (decision 28) and the whole game-state block moved to `&0800`
+(decision 27), because the image no longer had room for the layer.
 
 ### Layer 6 — game flow
 
@@ -116,8 +118,8 @@ publish.
 | 2 — display | [`docs/layer-2-display.md`](docs/layer-2-display.md) | done 2026-09-02 |
 | 3 — sprite engine v2 | [`docs/layer-3-sprites.md`](docs/layer-3-sprites.md) | done 2026-09-03 |
 | 4 — player | [`docs/layer-4-player.md`](docs/layer-4-player.md) | done 2026-09-03 |
-| 5 — enemies | | next |
-| 6 — game flow | | |
+| 5 — enemies | [`docs/layer-5-enemies.md`](docs/layer-5-enemies.md) | done 2026-09-03 |
+| 6 — game flow | | next |
 | 7 — sound | | |
 | 8 — graphics pipeline B | | |
 | 9 — polish and release | | |
