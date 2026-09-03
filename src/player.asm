@@ -43,6 +43,18 @@ BUL_ROW_OFF = &28 + PANEL_ROWS * 8      ; 80
 PLY_SHIELD = &32                ; ticks of invulnerability after a drop-in
 GAME_OVER_TICKS = &c8           ; and of scenery and enemies after the last life
 
+\ Which of the C64's loops the tick is standing in for. Playing, game over
+\ and both halves of the completion are separate loops in the original -
+\ ttl_loop aside, they differ only in what the tick does, so here they are
+\ one loop and this byte.
+MODE_PLAY   = 0
+MODE_OVER   = 1                 ; game_over_loop: no player, coll_flag counts down
+MODE_COMP   = 2                 ; comp_loop: the player flies off the right
+MODE_FINALE = 3                 ; cm_splode_wait: bangs until fire, nothing else
+COMP_X_END  = &c0               ; where comp_loop's fly-off stops
+COMP_SCROLL = &0c               ; and the scroll_x it must stop on
+FINALE_GAP  = 4                 ; ticks between bangs, the C64's rt_store
+
 \ The player's own animation frames, from the C64's anim_defaults.
 PLY_ANIM_START = &0b
 PLY_ANIM_END   = &12
@@ -62,12 +74,20 @@ BUL_ANIM_END   = &13
 
 .game_tick
 {
-    \\ player_manage is skipped once the player is gone, which is how the
-    \\ C64's game_over_loop is built: it calls enemy_manage and
-    \\ scroll_manage and nothing else, so no collision check runs and
-    \\ coll_flag is free to be the game-over counter.
-    lda player_live
-    beq no_player
+    \\ The finale is the one mode that moves nothing: the C64's
+    \\ cm_splode_wait runs a shortened multimate and nothing else, so
+    \\ neither the pool nor the wave manager may run - the wave table has
+    \\ already ended and reading past it is what BUGS.md #10 was about.
+    lda game_mode
+    cmp #MODE_FINALE
+    beq finale_only
+
+    \\ player_manage is skipped in every other mode but playing, which is
+    \\ how the C64 builds them: game_over_loop and comp_loop call
+    \\ enemy_manage and scroll_manage and nothing else, so no collision
+    \\ check runs and coll_flag is free to be the game-over counter.
+    cmp #MODE_PLAY
+    bne no_player
     jsr player_manage
     .no_player
     jsr bullet_manage
@@ -85,6 +105,9 @@ BUL_ANIM_END   = &13
     .no_wrap
     stx scroll_x
     jmp life_cycle
+
+    .finale_only
+    jmp finale_tick
 }
 
 \ ******************************************************************
@@ -102,8 +125,11 @@ BUL_ANIM_END   = &13
 
 .life_cycle
 {
-    lda player_live
+    lda game_mode
+    cmp #MODE_OVER
     beq game_over_tick
+    cmp #MODE_COMP
+    beq comp_tick
 
     ldx player_shield
     beq no_shield
@@ -118,7 +144,7 @@ BUL_ANIM_END   = &13
     stx player_shield
 
     lda coll_flag
-    beq out
+    beq no_coll
 IF DEBUG_COLL
     \\ The C64 source's "patch me out to disable collisions!", patched out.
     lda #0
@@ -126,17 +152,44 @@ IF DEBUG_COLL
 ELSE
     jmp life_lost
 ENDIF
+
+    \\ The wave table ran out: the game is won. The C64 checks it here,
+    \\ after the collision and never before it.
+    .no_coll
+    lda comp_flag
+    beq out
+    lda #MODE_COMP
+    sta game_mode
     .out
     rts
 
-    \\ Game over: count the ticks down and ask the main loop for a new
-    \\ game. The C64 goes back to its title screen here instead, which is
-    \\ Layer 6c; until there is one, main_init is the whole of it.
+    \\ Game over: count the ticks down, then ask the main loop for the
+    \\ titles, which is where the C64's game_over_loop goes too.
     .game_over_tick
     dec coll_flag
     bne got_out
-    inc restart_req
+    inc to_titles
     .got_out
+    rts
+
+    \\ Completion: the C64's comp_loop. The player flies off to the right
+    \\ on his own, and the run has to END on a particular scroll step -
+    \\ so when he reaches the edge he waits there, a pixel short, until
+    \\ scroll_x comes round to &0c. Then the sequence proper.
+    .comp_tick
+    lda sprite_pos
+    clc
+    adc #1
+    cmp #COMP_X_END
+    bcc cl_over
+    lda scroll_x
+    cmp #COMP_SCROLL
+    bne not_yet
+    jmp comp_mess               \\ up in bank 0, well out of branch range
+    .not_yet
+    lda #COMP_X_END
+    .cl_over
+    sta sprite_pos
     rts
 }
 
@@ -202,7 +255,8 @@ ENDIF
     sta sprite_pos+1
     sta sprite_pos+2            \\ and the bullet with him
     sta sprite_pos+3
-    sta player_live
+    lda #MODE_OVER
+    sta game_mode
     lda #GAME_OVER_TICKS
     sta coll_flag
     rts
@@ -220,8 +274,8 @@ ENDIF
     sta player_shield
     lda #0
     sta coll_flag
-    lda #1
-    sta player_live
+    lda #MODE_PLAY
+    sta game_mode
     rts
 }
 
@@ -381,7 +435,12 @@ ENDIF
 \ the hit-flash timers down; and run the wave manager. The C64's tail,
 \ in its order.
 
-.multimate
+\ Every fourth tick, step every slot's frame between its anim_starts and
+\ anim_ends. Lifted out of multimate because the completion finale wants
+\ this and nothing else - the C64 writes it out a second time there and
+\ calls it "a shortened version of multimate".
+
+.anim_step
 {
     ldx anim_tmr
     inx
@@ -405,7 +464,12 @@ ENDIF
     ldx #0
     .mm_out
     stx anim_tmr
+    rts
+}
 
+.multimate
+{
+    jsr anim_step
     jsr explosion_chk
 
     \\ Decrement the pulse timers

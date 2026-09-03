@@ -23,6 +23,136 @@ GUARD &C000
 .compiled_data
 INCBIN "src/data/compiled.bin"
 
+\ ******************************************************************
+\ *	The titles page's font and credits, and the code that draws them
+\ ******************************************************************
+\ *	Here rather than in bank 0 because bank 0 has 358 bytes left and
+\ *	this is 702 of data, and because the page is drawn once: paging
+\ *	this bank in for it costs nothing. tools/export_title.py.
+\ *
+\ *	The font is the C64's own status charset read as MULTICOLOUR, which
+\ *	is what it is: four double-width pixels a character, which is one
+\ *	of our 4-fat-pixel cells exactly, so the original's 38-column
+\ *	layout lands at 1:1 with no rescaling.
+\ *
+\ *	CALLED THROUGH title_text_call IN MAIN RAM, which does the paging.
+\ *	Nothing in this bank can page its own bank out.
+\ ******************************************************************
+
+TITLE_GLYPH_BYTES = 16
+TITLE_LINE_LEN = 38
+TITLE_LINES = 5
+
+.title_font
+INCBIN "src/data/title.bin"
+title_lines_data = title_font + 32 * TITLE_GLYPH_BYTES
+
+\ The C64 puts its five lines on screen rows 12, 14, 15, 16 and 17 of 25.
+\ Ours is a 20-row play area under the panel, so they sit at 8, 10, 11, 12
+\ and 13: the original's gaps kept, the block centred in the shorter area.
+.title_rows EQUB 8, 10, 11, 12, 13
+
+\ 38 characters is 152 of the 160 pixels, so one byte column of margin.
+TITLE_COL0 = 2
+
+\ The zero page it borrows: write_ptr and read_ptr are the generic pair, and
+\ spr_tmp is the sprite engine's scratch. Nothing is drawing sprites while the
+\ titles are up, and clear_play has finished with write_ptr before this runs.
+.title_text
+{
+    ldx #0                      \\ line
+    .line_loop
+    stx line_no
+
+    \\ write_ptr = screen_start + row * 640 + TITLE_COL0 * 8
+    ldy title_rows, x
+    lda #LO(screen_start + TITLE_COL0 * 8)
+    sta write_ptr
+    lda #HI(screen_start + TITLE_COL0 * 8)
+    sta write_ptr+1
+    .row_loop
+    cpy #0
+    beq row_done
+    clc
+    lda write_ptr   : adc #LO(row_stride) : sta write_ptr
+    lda write_ptr+1 : adc #HI(row_stride) : sta write_ptr+1
+    dey
+    bne row_loop
+    .row_done
+
+    \\ read_ptr = this line's 38 glyph numbers. Four lines at 38 is 152,
+    \\ so the multiply stays inside a byte.
+    ldy #0
+    .times_loop
+    cpx #0
+    beq times_done
+    tya : clc : adc #TITLE_LINE_LEN : tay
+    dex
+    bne times_loop
+    .times_done
+    tya
+    clc
+    adc #LO(title_lines_data) : sta read_ptr
+    lda #0
+    adc #HI(title_lines_data) : sta read_ptr+1
+
+    ldx #0
+    .char_loop
+    stx char_no
+
+    \\ spr_tmp = title_font + glyph * 16. Thirty-two glyphs reach 496, so
+    \\ the shift is a 16-bit one - a single ROL would lose the top bits.
+    ldy #0
+    lda (read_ptr), y
+    sta spr_tmp
+    lda #0
+    sta spr_tmp+1
+    ldx #4
+    .shift
+    asl spr_tmp
+    rol spr_tmp+1
+    dex
+    bne shift
+    clc
+    lda spr_tmp   : adc #LO(title_font) : sta spr_tmp
+    lda spr_tmp+1 : adc #HI(title_font) : sta spr_tmp+1
+
+    \\ A glyph is two byte columns, and our byte columns are 8 bytes apart
+    \\ and consecutive, so it is one straight 16-byte copy.
+    ldy #TITLE_GLYPH_BYTES-1
+    .copy
+    lda (spr_tmp), y
+    sta (write_ptr), y
+    dey
+    bpl copy
+
+    clc
+    lda write_ptr : adc #TITLE_GLYPH_BYTES : sta write_ptr
+    bcc no_carry
+    inc write_ptr+1
+    .no_carry
+    inc read_ptr
+    bne no_carry2
+    inc read_ptr+1
+    .no_carry2
+
+    ldx char_no
+    inx
+    cpx #TITLE_LINE_LEN
+    bne char_loop
+
+    ldx line_no
+    inx
+    cpx #TITLE_LINES
+    beq done
+    jmp line_loop
+    .done
+    rts
+
+    .line_no EQUB 0
+    .char_no EQUB 0
+}
+
 .bank3_end
 
 SAVE "BANK3", bank3_start, bank3_end

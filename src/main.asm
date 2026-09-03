@@ -72,6 +72,8 @@ IKN_x = 66
 IKN_k = 70
 IKN_m = 101
 IKN_l = 86
+IKN_p = 55
+IKN_escape = 112            ; the MOS interrupt is gone, so it is just a key
 
 \ ******************************************************************
 \ *	GAME defines
@@ -99,6 +101,8 @@ KEY_RIGHT = IKN_x
 KEY_UP = IKN_k
 KEY_DOWN = IKN_m
 KEY_FIRE = IKN_l
+KEY_PAUSE = IKN_p           ; decision 32
+KEY_ABORT = IKN_escape      ; and only while paused, as the C64 has it
 
 \ ******************************************************************
 \ *	MACROS
@@ -411,24 +415,27 @@ GUARD CODE_TOP
 IF DEBUG_TIMING
     jsr tim_init
 ENDIF
-    jsr game_init
     jsr install_irq
 
-    \\ The loop draws into the hidden bank (the &FE34 X bit already points
-    \\ at it), parks the scroll address, and hands the frame to the VSync
-    \\ IRQ, which flips the banks on a FRAME_LOCK-field cadence.
+    \\ ---- the state machine, the C64's master_loop --------------------
+    \\
+    \\ Titles -> game_init -> the play loop -> life lost -> game over or
+    \\ completion -> titles. Only the titles are a loop of their own,
+    \\ because only they hold a still picture. Playing, game over and
+    \\ completion all differ in what the TICK does and not in what the
+    \\ frame does, so they share this loop and are told apart by
+    \\ game_mode, which says which of the original's loops the tick is
+    \\ standing in for.
+    \\
+    \\ game_init is called HERE, at the top, and the loop leaves through
+    \\ the bottom: scroll_prewind flips &FE34 itself, and frame_ready has
+    \\ to be 0 while it does, which it is everywhere outside the loop.
+
+    .master_loop
+    jsr title_page              \\ static credits, returns when fire is hit
+    jsr game_init
 
     .loop
-
-    \\ A finished game-over sequence re-inits everything and winds the map
-    \\ back over a blanked display. Here, at the top of the loop, because
-    \\ frame_ready is 0 at this point and stays 0: the VSync handler will
-    \\ not touch &FE34 while scroll_prewind is flipping the banks itself.
-
-    lda restart_req
-    beq no_restart
-    jsr game_init
-    .no_restart
 
 IF DEBUG_TIMING
     jsr tim_start
@@ -445,7 +452,14 @@ ENDIF
     and #SPR_PHASE_MASK
     sta spr_phase
 
+    \\ The finale's background stands still: the C64's cm_splode_wait
+    \\ calls neither scroll_manage nor anything that plots, so the level
+    \\ stops where the player left it and only the bangs move.
+    lda game_mode
+    cmp #MODE_FINALE
+    beq no_scroll
     jsr scroll_frame            \\ plots this frame's byte column
+    .no_scroll
     TIMMARK TIM_SCROLL
     jsr spr_draw_all
     TIMMARK TIM_DRAW
@@ -455,15 +469,40 @@ ENDIF
     \\ The joystick is read once - it cannot change between the two.
 
     jsr read_joystick
+    jsr pause_check
     jsr game_tick
     jsr game_tick
 
+    lda game_mode
+    cmp #MODE_FINALE
+    beq no_advance
     jsr scroll_advance          \\ AFTER the draw - see scroll_advance
+    .no_advance
     TIMMARK TIM_LOGIC
 
     inc frame_count
+    jsr frame_wait
 
-    \\ Hand the frame over and wait for the flip
+    \\ The game-over count and the completion sequence both end by asking
+    \\ for the titles again; nothing else leaves this loop.
+    lda to_titles
+    beq loop
+    jmp master_loop
+
+    .done
+
+    rts
+}
+
+\ ******************************************************************
+\ *	frame_wait - hand the frame over and wait for the flip
+\ ******************************************************************
+\ *	The bottom of every playing frame. The loop has drawn into the
+\ *	hidden bank; this parks that bank's scroll address, sets the ready
+\ *	flag and spins until the VSync handler has flipped and taken it.
+
+.frame_wait
+{
     sei
 IF DEBUG_TIMING
     \\ Inside the SEI so field_count cannot move under the subtraction.
@@ -479,11 +518,44 @@ ENDIF
     .wait_flip
     lda frame_ready
     bne wait_flip
+    rts
+}
 
-    jmp loop
+\ ******************************************************************
+\ *	title_text_call - page bank 3 in, draw the credits, page back
+\ ******************************************************************
+\ *	In main RAM because it has to be: nothing in a sideways bank can
+\ *	page its own bank out from under itself. The titles' font and text
+\ *	are in bank 3 (bank 0 has no room), and SWRAM_DATA is the resting
+\ *	state everything else assumes.
 
-    .done
+.title_text_call
+{
+    lda #SWRAM_COMPILED
+    sta &f4
+    sta &fe30
+    jsr title_text
+    lda #SWRAM_DATA
+    sta &f4
+    sta &fe30
+    rts
+}
 
+\ ******************************************************************
+\ *	field_wait - one field, WITHOUT handing a frame over
+\ ******************************************************************
+\ *	What a frozen screen waits on: the pause loop and the titles. The
+\ *	flip only happens when frame_ready is set, so leaving it alone
+\ *	keeps the displayed bank displayed - a paused picture that is
+\ *	genuinely still, rather than the last two frames alternating at
+\ *	25 Hz, which is what handing frames over would give.
+
+.field_wait
+{
+    lda field_count
+    .same
+    cmp field_count
+    beq same
     rts
 }
 
@@ -528,7 +600,7 @@ ENDIF
     lda #GAME_LIVES
     sta lives
     lda #0
-    sta restart_req
+    sta to_titles
     jsr player_dropin
 
     ldx #0
@@ -1033,9 +1105,12 @@ ORG GAME_STATE
 .comp_flag      skip 1              ; the wave table ran out; Layer 6c reads it
 .lives          skip 1              ; three at main_init, one taken per hit
 .player_shield  skip 1              ; ticks of invulnerability after a drop-in
-.player_live    skip 1              ; 0 during the game-over sequence: no
-                                    ; player_manage, so no collisions either
-.restart_req    skip 1              ; game over has finished; the loop re-inits
+.game_mode      skip 1              ; MODE_PLAY / OVER / COMP / FINALE: which of
+                                    ; the C64's loops the tick is standing in for
+.to_titles      skip 1              ; game over or completion has finished:
+                                    ; the loop drops back to master_loop
+.finale_slot    skip 1              ; which slot the next bang takes, 0-7
+.finale_tmr     skip 1              ; ticks until it goes off
 .coll_grind     skip 2              ; the two grind cells, above and below the ship
 .coll_temp      skip 4              ; the collision box being tested
 .rt_store       skip 1              ; X across a bump_score call

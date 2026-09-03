@@ -17,7 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5 and 6a-6b are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
+**Layers 0 to 5 and 6a-6c are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
 `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
@@ -25,9 +25,11 @@ over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K
 bounds, fire latch, bullet and background collisions; and **the attack waves**, spawning from the
 original's own 201-wave table, flying its movement commands, shootable for score, and able to run
 into you; and **the life cycle** — three lives, the six-piece player explosion, the drop-in shield,
-game over and a new game. What is missing is the rest of the game *around* it: `comp_flag` is set
-and nothing reads it, there is no title screen, no pause and no completion, and the panel still
-shows a colour-bar placeholder, so `lives` and the score are counted and never shown.
+game over and a new game; and **the state machine** — a titles page carrying the original's own
+credits, pause on P, abort on ESCAPE, and the completion sequence the wave table's end triggers.
+What is missing is the panel: it still shows the colour-bar placeholder, so `lives`, the score and
+the completion bonus are all counted and never shown. The titles are static until 6e gives them the
+zoom scroller, and the completion's "mega hero" message waits for a font to draw it with.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
 `DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
@@ -43,9 +45,11 @@ title screen and the state machine all have to come out of the sprites. The cost
 `BUGS.md` #9 and in the Blitter Anatomy artifact: per-row spans recover a quarter of the bytes the
 blitter touches, and compiling the densest frames recovers half the cycles but does not fit.
 
-**Main RAM** (Layer 6b build, DEV): code and tables `&0E00-&1F04`, **`&FC` free** below `&2000`.
-That is with `DEBUG_TIMING` on; `RELEASE` ends at `&1EE7`. The frame meter, `coll_row_lo/hi` and the
-boot-time display setup are up in bank 0, and the multiply tables are gone entirely. **All four
+**Main RAM** (Layer 6c build, DEV): code and tables `&0E00-&1F6B`, **`&99` free** below `&2000`.
+That is with `DEBUG_TIMING` on; `RELEASE` ends at `&1F4E`. Bank 0 has `&97` left and bank 3 `&324E`;
+`pause_check`, `comp_mess` and `finale_tick` are up in bank 0 because main RAM ran out mid-layer,
+alongside the frame meter, `coll_row_lo/hi` and the boot-time display setup; the multiply tables are
+gone entirely, and the titles' font and text are in bank 3. **All four
 sideways RAM banks are now in use**: 4 data, 5 and 6 sprites, 7 compiled bodies (13.7K free). Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
 tiles, map, col_decode, waves) high water `&BC38`; **banks 1 and 2** (sprites, one per pixel shift)
@@ -155,10 +159,23 @@ defaults to 0 even in DEV. **31**: at zero lives the game re-inits in place, bec
 title screen to go back to until 6e; the boot sequence is now `game_init` and the top of the main
 loop calls it again on `restart_req`.
 
-#### 6c — the state machine
+#### 6c — the state machine — done
 
-Titles → init → loop → life lost → game over; `comp_flag` and the completion sequence; pause and
-Q-to-abort.
+[`docs/layer-6c-state-machine.md`](docs/layer-6c-state-machine.md). `master_loop`: titles →
+`game_init` → play → life lost → game over or completion → titles. Only the titles are a loop of
+their own; the rest share the main loop and are told apart by `game_mode`, which replaced 6b's
+`player_live`. `frame_wait` and `field_wait` came out of the old inline loop — the still states wait
+a field WITHOUT handing a frame over, so a paused picture is genuinely still.
+
+**The titles are the original's credits page**, in the original's font: `status.chr` is a multicolour
+set, so a character is four double-width pixels, which is one of our 4-fat-pixel cells exactly — the
+C64's 38-column layout lands at 1:1 with no rescaling. `tools/export_title.py`; the data and its
+plotter are in bank 3, reached through a trampoline in main RAM. The zoom scroller is still 6e.
+
+**Completion** is the fly-off, the 5,000-a-life bonus and the explosion finale, all of it but the
+"mega hero" message, which needs a font drawn for the job (Layer 8). Two decisions. **32**: P pauses,
+ESCAPE aborts, both key numbers measured. **33**: the finale's positions come out of our own code,
+which is what the C64 reads too.
 
 #### 6d — the HUD
 
@@ -200,7 +217,7 @@ publish.
 | 5 — enemies | [`docs/layer-5-enemies.md`](docs/layer-5-enemies.md) | done 2026-09-03 |
 | 6a — frame budget | | done 2026-09-03 |
 | 6b — life cycle | [`docs/layer-6b-life-cycle.md`](docs/layer-6b-life-cycle.md) | done 2026-09-03 |
-| 6c — state machine | | |
+| 6c — state machine | [`docs/layer-6c-state-machine.md`](docs/layer-6c-state-machine.md) | done 2026-09-03 |
 | 6d — HUD | | |
 | 6e — title screen | | |
 | 7 — sound | | |

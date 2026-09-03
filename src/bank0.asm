@@ -277,6 +277,240 @@ IF DEV
 }
 ENDIF
 
+\ ******************************************************************
+\ *	pause_check - P holds the game, ESCAPE from inside it gives up
+\ ******************************************************************
+\ *	The C64 tests its pause key at the top of main_loop and, once in,
+\ *	waits on fire to come back out, debouncing it so the release does
+\ *	not fire the bullet on the way. Q aborts from in there; ours is
+\ *	ESCAPE (decision 32), and the abort is the C64's main_abort
+\ *	exactly: one life left and then lose it, so the game-over sequence
+\ *	runs as it always does.
+\ *
+\ *	In bank 0 because main RAM ran out, and it may be: the main loop
+\ *	calls it with SWRAM_DATA paged in, which is the resting state.
+\ ******************************************************************
+
+.pause_check
+{
+    ldx #KEY_PAUSE
+    jsr keydown
+    bpl out
+
+    \\ Wait for P to be let go, or holding it would toggle every frame
+    .p_release
+    jsr field_wait
+    ldx #KEY_PAUSE
+    jsr keydown
+    bmi p_release
+
+    .paused
+    jsr field_wait
+
+    ldx #KEY_ABORT
+    jsr keydown
+    bmi abort
+
+    ldx #KEY_FIRE
+    jsr keydown
+    bpl paused
+
+    \\ Fire is down: wait for it to come up before playing on
+    .f_release
+    jsr field_wait
+    ldx #KEY_FIRE
+    jsr keydown
+    bmi f_release
+    .out
+    rts
+
+    .abort
+    lda #1
+    sta lives
+    jmp life_lost
+}
+
+\ ******************************************************************
+\ *	comp_mess - the game is won: the bonus, then the finale
+\ ******************************************************************
+\ *	The C64's comp_mess, minus the "mega hero" message it draws over
+\ *	the play area: that is written in character codes into a text
+\ *	screen we do not have, and it waits for Layer 8 and a font drawn
+\ *	for the job. What is here is the rest of it, in order - every
+\ *	sprite hidden, 5,000 points a remaining life counted on with the
+\ *	original's own 50-frame pause between them, and then the finale.
+\ *
+\ *	It BLOCKS, on field_wait, exactly as the original blocks on
+\ *	sync_wait. Nothing is moving and nothing is being drawn, so there
+\ *	is no frame to hand over.
+\ *
+\ *	Up here in bank 0 because main RAM has no room for it, and bank 0
+\ *	is the resting state the sprite engine puts back - so unlike bank
+\ *	3, code here may call into main RAM and be returned to.
+\ ******************************************************************
+
+.comp_mess
+{
+    ldx #0
+    txa
+    .hide
+    sta sprite_pos, x
+    inx
+    cpx #2*SPR_SLOTS
+    bne hide
+
+    ldy lives
+    beq no_bonus                \\ cannot happen in play; a loop of 256 if it did
+    .bonus_loop
+    jsr bump_score_1000
+    jsr bump_score_1000
+    jsr bump_score_1000
+    jsr bump_score_1000
+    jsr bump_score_1000
+    ldx #&32
+    .bonus_wait
+    jsr field_wait
+    dex
+    bne bonus_wait
+    dey
+    bne bonus_loop
+    .no_bonus
+
+    \\ Into the finale. comp_flag stops being the completion flag here and
+    \\ becomes the index the bangs are placed from, which is what the C64
+    \\ does with it too.
+    lda #0
+    sta comp_flag
+    sta finale_slot
+    lda #MODE_FINALE
+    sta game_mode
+    lda #FINALE_GAP
+    sta finale_tmr
+    rts
+}
+
+\ ******************************************************************
+\ *	finale_tick - bangs until fire, the C64's cm_splode_wait
+\ ******************************************************************
+\ *	One slot every FINALE_GAP ticks is turned into an explosion at a
+\ *	position read out of memory, round-robin through all eight. Then
+\ *	the animation, and fire ends it.
+\ *
+\ *	THE POSITIONS ARE READ OUT OF OUR OWN CODE (decision 33), because
+\ *	that is what the original does: it loads at $0812, so the $0900 and
+\ *	$0a00 it reads here are its own machine code, used purely as a
+\ *	source of scattered numbers. Two pages of ours do the same job.
+\ *	The map was tried first and is useless for it - the level opens on
+\ *	empty tiles, so every bang landed at x = 0 - and the character set
+\ *	is worse, being pixel patterns with four distinct values in a page.
+\ *	The arithmetic around the two reads is the original's, unaltered.
+
+.finale_tick
+{
+    dec finale_tmr
+    bpl no_bang
+
+    ldx finale_slot
+    lda finale_slot
+    asl a
+    tay                         \\ Y indexes sprite_pos by twos
+
+    ldx comp_flag
+    lda code_start+&200, x
+    sta sprite_pos, y
+    lda code_start+&300, x
+    and #&7f
+    clc
+    adc #&5e                    \\ &5e-&dd: down the play area, as the C64 has it
+    sta sprite_pos+1, y
+    lda #0
+    sta enemy_spds, y
+    sta enemy_spds+1, y
+    inc comp_flag
+
+    ldx finale_slot
+    lda #0
+    sta sprite_dp, x
+    lda #EXPL_LAST
+    sta anim_starts, x
+    lda #EXPL_LAST+1
+    sta anim_ends, x
+
+    inx
+    cpx #SPR_SLOTS
+    bne slot_ok
+    ldx #0
+    .slot_ok
+    stx finale_slot
+    lda #FINALE_GAP
+    sta finale_tmr
+    .no_bang
+
+    jsr anim_step
+
+    ldx #KEY_FIRE
+    jsr keydown
+    bpl out
+    inc to_titles
+    .out
+    rts
+}
+
+\ ******************************************************************
+\ *	title_page - the C64's titles page, minus the zoom scroller
+\ ******************************************************************
+\ *	A still picture, so it is drawn once into BOTH banks and then
+\ *	nothing is handed over: field_wait leaves frame_ready alone, the
+\ *	VSync handler never flips, and whichever bank is on screen stays
+\ *	on screen. Returns when fire is pressed, which is where the C64's
+\ *	ttl_loop goes to main_init.
+\ *
+\ *	Blanked while it draws, as the original blanks $d011 across the
+\ *	same transition: the second of the two draws is into the bank the
+\ *	display is showing.
+\ *
+\ *	Up here in bank 0 because it is a run-once routine, like
+\ *	setup_display, and because what it draws lives in this bank.
+\ ******************************************************************
+
+.title_page
+{
+    CRTC 8, &30
+
+    \\ The scroll stopped wherever it stopped; a still picture wants a
+    \\ known origin. The IRQ programs crtc_live at fire 1 each frame.
+    lda #LO(screen_start/8) : sta crtc_live
+    lda #HI(screen_start/8) : sta crtc_live+1
+
+    \\ EOR, not a store: D and X are opposite and must stay so. This
+    \\ draws the hidden bank, swaps to the displayed one, draws that,
+    \\ and puts the CPU back on the hidden one.
+    jsr title_face
+    lda &fe34 : eor #4 : sta &fe34
+    jsr title_face
+    lda &fe34 : eor #4 : sta &fe34
+
+    CRTC 8, 0
+
+    \\ Fire starts a game. No debounce: the C64 does not have one either,
+    \\ and sprite_reset clears fire_latch, so a held key just shoots.
+    .wait
+    jsr field_wait
+    ldx #KEY_FIRE
+    jsr keydown
+    bpl wait
+    rts
+}
+
+\\ One bank's worth of title page: black, then the credits. The text is in
+\\ bank 3, so it goes through the trampoline in main RAM - this routine
+\\ cannot page bank 3 in without paging itself out.
+.title_face
+{
+    jsr clear_play
+    jmp title_text_call
+}
+
 .bank0_end
 
 SAVE "BANK0", bank0_start, bank0_end
