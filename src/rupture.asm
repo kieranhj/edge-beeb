@@ -69,6 +69,23 @@
 
     lda #0
     sta rupt_state
+
+    \ The music, LAST: after T1 has been restarted, so the decode runs
+    \ inside the 3,326 us the counter is going to spend getting to fire 1
+    \ and cannot push the rupture about. The VGI player is bounded at
+    \ about 1,340 us a field, so it has three times the room it needs.
+    \
+    \ This call has to be in main RAM: the IRQ fires with whatever bank
+    \ the interrupted code had paged, and the sprite engine is paging 5,
+    \ 6 and 7 as it draws. HAZEL is at &C000-&DFFF, clear of the window
+    \ altogether, so the ACCCON bit is the whole of the ceremony.
+    lda &fe34
+    pha
+    ora #HAZEL_BIT
+    sta &fe34
+    jsr vgm_update
+    pla
+    sta &fe34
     rts
 }
 

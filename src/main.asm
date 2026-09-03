@@ -194,6 +194,21 @@ ASSERT SWRAM_COMPILED <= 7
 
 SPR_SAVE = &2000            ; 8 slots x 256 B x 2 banks, saved background
 
+\ HAZEL: the Master's 8K of filing-system RAM at &C000-&DFFF, paged in by
+\ ACCCON bit 3 (Y). Layer 7 puts the music player and the tune there - it is
+\ the only RAM left, and unlike a sideways bank it does not collide with the
+\ window the sprite engine is paging while the IRQ fires. See src/music.asm.
+HAZEL_BIT   = 8
+HAZEL_BASE  = &C000
+HAZEL_WORK  = &D500         ; the VGI player's 11 x 256 ring, exactly to &DFFF
+ASSERT HAZEL_WORK + 11 * 256 = &E000
+
+\ Build flag for lib/vgiplayer.asm, which the library expects on the command
+\ line; set here instead so a bare beebasm invocation cannot get it wrong.
+\ 0 is the compact looped decoder, 1 the unrolled one - half a K more code
+\ for about 300 cycles a field.
+VGI_UNROLL = 0
+
 \ Sprites are SCREEN space and do not take the scroll's half-byte bank
 \ phase, so this is 0. Both banks are drawn at the same origin
 \ (corner_addr + 8) and displayed at the same CRTC address - the
@@ -323,6 +338,10 @@ GUARD &9F
 .crtc_live      skip 2      ; scroll address the IRQ programs at fire 1
 .rupt_state     skip 1      ; 0 = fire 1 pending, 1 = fire 2 pending, 2 = done
 
+\ The VGI music player's four bytes (lib/vgiplayer.h.asm): two indirect
+\ pointers. Everything else it keeps is absolute, up in HAZEL with the code.
+INCLUDE "lib/vgiplayer.h.asm"
+
 IF DEBUG_TIMING
 .tim_ptr        skip 2      ; the maximum slot the next mark writes
 .tim_val        skip 2      ; us since tim_start, at the last mark
@@ -389,6 +408,13 @@ GUARD CODE_TOP
     ldx #SWRAM_COMPILED
     jsr load_bank
 
+    \ MUSIC goes into HAZEL, and HAZEL is the filing system's own
+    \ workspace, so it must be the LAST file loaded. Nothing may touch
+    \ the disc after this.
+    lda #LO(music_filename)
+    ldy #HI(music_filename)
+    jsr load_hazel
+
     lda #SWRAM_DATA
     sta &f4
     sta &fe30
@@ -404,6 +430,7 @@ GUARD CODE_TOP
     CRTC 8, &30                 ; VDU 22 turned the display back on; off again
     jsr setup_display           ; until the buffers and panel are drawn
     jsr score_boot              ; the C64's initialised score, lives and 012345
+    jsr music_init              ; the tune starts before the titles and loops
 
     \\ Shadow state: display main (D=0), CPU writes shadow (X=1)
     lda &fe34
@@ -571,81 +598,6 @@ ENDIF
     .same
     cmp field_count
     beq same
-    rts
-}
-
-\ ******************************************************************
-\ *	game_init - the C64's main_init: a whole new game
-\ ******************************************************************
-\ *	Everything a game needs set before its first frame, run once at
-\ *	boot and again when a game-over sequence has finished. The C64's
-\ *	main_init blanks the screen ($d011), resets the map, the wave
-\ *	table, the sprites and the score, gives the player three lives and
-\ *	falls into main_dropin. The fast winder at the end of its
-\ *	map_read_rst is our scroll_prewind.
-\ *
-\ *	SAFE TO CALL WITH THE IRQ RUNNING, but only from the top of the
-\ *	main loop: scroll_prewind flips &FE34 itself, and the VSync handler
-\ *	only does that when frame_ready is set, which it is not there.
-\ ******************************************************************
-
-.game_init
-{
-    \\ Set scroll addresses
-
-    lda #LO(screen_start)
-    sta corner_addr
-    lda #HI(screen_start)
-    sta corner_addr+1
-
-    lda #LO(screen_start/8)
-    sta crtc_addr
-    lda #HI(screen_start/8)
-    sta crtc_addr+1
-
-    \\ spr_init first: on a restart the save areas still hold the last
-    \\ game's backgrounds, and spr_restore_all would put them back over
-    \\ the new screen.
-
-    jsr spr_init
-    jsr coll_init
-    jsr score_reset
-    jsr sprite_reset            \\ enemy_init and wave_read_rst with it
-
-    lda #GAME_LIVES
-    sta lives
-    lda #0
-    sta to_titles
-    jsr player_dropin
-
-    ldx #0
-    lda #0
-    .col_loop
-    sta column_buffer, X
-    inx
-    cpx #column_size
-    bcc col_loop
-
-    \\ Initialise the tile readers. map_read_rst ends in tile_update.
-
-    ldx #0
-    stx tile_cnt
-    stx tile_total
-    stx char_col
-    jsr map_read_rst
-
-    \\ Fill the play area before anything is shown - see scroll_prewind.
-    \\ At boot the display is still blanked from setup_display's R8; on a
-    \\ restart this is what hides the wind, as the C64's $d011 does.
-
-    CRTC 8, &30
-    jsr scroll_prewind
-    CRTC 8, 0
-
-    lda crtc_addr
-    sta crtc_live
-    lda crtc_addr+1
-    sta crtc_live+1
     rts
 }
 
@@ -965,10 +917,20 @@ INCLUDE "src/scroll.asm"
 \\ staging copy. Must run before the mode change and before any IRQ takeover.
 .load_bank
 {
-    sta osfile_nameaddr
-    sty osfile_nameaddr+1
     stx &f4
     stx &fe30
+    jsr load_stage
+    lda #HI(&4000)
+    ldx #HI(&8000)
+    ldy #HI(&4000)
+    jmp move_pages
+}
+
+\\ The OSFILE half, shared with load_hazel: A/Y = filename, loads to &4000.
+.load_stage
+{
+    sta osfile_nameaddr
+    sty osfile_nameaddr+1
 
     \\ OSFILE writes the file's catalogue addresses back into the block
     \\ after a load, so the second call would honour BANK1's &8000 load
@@ -985,15 +947,30 @@ INCLUDE "src/scroll.asm"
 	LDX #LO(osfile_params)
 	LDY #HI(osfile_params)
 	LDA #&FF
-    JSR osfile
-
-    lda #HI(&4000)
-    ldx #HI(&8000)
-    ldy #HI(&4000)
-    jmp move_pages
+    JMP osfile
 }
 
-\\ A=from page, X=to page, Y=num pages
+\\ MUSIC into HAZEL. OSFILE cannot write there - the MOS would be
+\ overwriting the filing system's own workspace underneath itself - so
+\ the file stages through &4000 like a bank does, and move_pages copies
+\ it up with the Y bit set. Nothing may use the disc afterwards.
+.load_hazel
+{
+    jsr load_stage
+    lda &fe34
+    ora #HAZEL_BIT
+    sta &fe34
+    lda #HI(&4000)
+    ldx #HI(HAZEL_BASE)
+    ldy #HAZEL_LOAD_PAGES
+    jsr move_pages
+    lda &fe34
+    and #255-HAZEL_BIT
+    sta &fe34
+    rts
+}
+
+\ A=from page, X=to page, Y=num pages
 .move_pages
 {
     STA from_page+2
@@ -1173,3 +1150,4 @@ INCLUDE "src/bank0.asm"
 INCLUDE "src/bank1.asm"
 INCLUDE "src/bank2.asm"
 INCLUDE "src/bank3.asm"
+INCLUDE "src/music.asm"

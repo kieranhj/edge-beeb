@@ -203,6 +203,27 @@ INCLUDE "src/timing.asm"
     rts
 }
 
+\ Start the music. In bank 0 rather than main RAM because it can be:
+\ HAZEL is at &C000-&DFFF and does not overlap the sideways window, so
+\ paging it in does not page bank 0 out. Only the IRQ's per-field call
+\ has to be in main RAM, and that is because the IRQ can fire with any
+\ bank paged. C = 1 is the player's "loop for ever".
+.music_init
+{
+    lda &fe34
+    ora #HAZEL_BIT
+    sta &fe34
+    lda #HI(HAZEL_WORK)
+    ldx #LO(music_data)
+    ldy #HI(music_data)
+    sec
+    jsr vgm_init
+    lda &fe34
+    and #255-HAZEL_BIT
+    sta &fe34
+    rts
+}
+
 \ The HUD, once a game frame from the main loop. Here so that the loop
 \ pays three bytes of main RAM for it rather than seven.
 .status_call
@@ -210,6 +231,87 @@ INCLUDE "src/timing.asm"
     ldx #LO(status_decode)
     ldy #HI(status_decode)
     jmp bank3_call
+}
+
+
+\ ******************************************************************
+\ *	game_init - the C64's main_init: a whole new game
+\ ******************************************************************
+\ *	Everything a game needs set before its first frame, run once at
+\ *	boot and again when a game-over sequence has finished. The C64's
+\ *	main_init blanks the screen ($d011), resets the map, the wave
+\ *	table, the sprites and the score, gives the player three lives and
+\ *	falls into main_dropin. The fast winder at the end of its
+\ *	map_read_rst is our scroll_prewind.
+\ *
+\ *	SAFE TO CALL WITH THE IRQ RUNNING, but only from the top of the
+\ *	main loop: scroll_prewind flips &FE34 itself, and the VSync handler
+\ *	only does that when frame_ready is set, which it is not there.
+\ *
+\ *	In bank 0 since Layer 7, because main RAM had to find room for the
+\ *	HAZEL loader and the IRQ's music call. Both its callers - boot and
+\ *	the top of master_loop - run with SWRAM_DATA paged in, which is the
+\ *	resting state, and everything it calls is in main RAM or bank 0.
+\ ******************************************************************
+
+.game_init
+{
+    \\ Set scroll addresses
+
+    lda #LO(screen_start)
+    sta corner_addr
+    lda #HI(screen_start)
+    sta corner_addr+1
+
+    lda #LO(screen_start/8)
+    sta crtc_addr
+    lda #HI(screen_start/8)
+    sta crtc_addr+1
+
+    \\ spr_init first: on a restart the save areas still hold the last
+    \\ game's backgrounds, and spr_restore_all would put them back over
+    \\ the new screen.
+
+    jsr spr_init
+    jsr coll_init
+    jsr score_reset
+    jsr sprite_reset            \\ enemy_init and wave_read_rst with it
+
+    lda #GAME_LIVES
+    sta lives
+    lda #0
+    sta to_titles
+    jsr player_dropin
+
+    ldx #0
+    lda #0
+    .col_loop
+    sta column_buffer, X
+    inx
+    cpx #column_size
+    bcc col_loop
+
+    \\ Initialise the tile readers. map_read_rst ends in tile_update.
+
+    ldx #0
+    stx tile_cnt
+    stx tile_total
+    stx char_col
+    jsr map_read_rst
+
+    \\ Fill the play area before anything is shown - see scroll_prewind.
+    \\ At boot the display is still blanked from setup_display's R8; on a
+    \\ restart this is what hides the wind, as the C64's $d011 does.
+
+    CRTC 8, &30
+    jsr scroll_prewind
+    CRTC 8, 0
+
+    lda crtc_addr
+    sta crtc_live
+    lda crtc_addr+1
+    sta crtc_live+1
+    rts
 }
 
 

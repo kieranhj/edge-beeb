@@ -17,7 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5 and 6a-6d are done (2026-09-03).** The game assembles from `src/` through `build.ps1` into
+**Layers 0 to 5, 6a-6d and 7 are done (2026-09-04).** The game assembles from `src/` through `build.ps1` into
 `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
@@ -28,9 +28,11 @@ into you; and **the life cycle** — three lives, the six-piece player explosion
 game over and a new game; and **the state machine** — a titles page carrying the original's own
 credits, pause on P, abort on ESCAPE, and the completion sequence the wave table's end triggers;
 and **the HUD** - the original's own status bar, rendered whole from its charset and its colour
-map, with the score, the high score and the lives bars decoded onto it every frame. The titles are
-static until 6e gives them the zoom scroller, and the completion's "mega hero" message waits for a
-font to draw it with. What is missing is the sound.
+map, with the score, the high score and the lives bars decoded onto it every frame; and **the
+music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL. The
+titles are static until 6e gives them the zoom scroller, the completion's "mega hero" message waits
+for a font to draw it with, and **the tune is truncated to 76 seconds because it does not fit** -
+`docs/layer-7-music.md` costs the ways out and wants a decision.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
 `DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
@@ -42,15 +44,20 @@ The old estimate of 63,667 was optimistic by 45%, because it was taken while `BU
 silently skipping every sprite past x = 140.
 
 **6d turned out to be free**: the HUD paints only the cells that changed, per bank, and costs about
-370 cycles on its worst frame - nothing measurable on the total. The margin this file worried about
-was not needed. It is still true that there is very little of it: the same 100-second test with fire
-held down and the ship parked runs at 101% with four missed flips in 2,500 frames, and did so before
-6d as well. The costed options for buying more are in `BUGS.md` #9 and in the Blitter Anatomy
-artifact: per-row spans recover a quarter of the bytes the blitter touches, and compiling the
-densest explosion frames recovers half the cycles but does not all fit.
+370 cycles on its worst frame - nothing measurable on the total. **The music costs 3,578 cycles a
+game frame, 4.5%**, which is the first real bite anything has taken out of the budget since 6a.
 
-**Main RAM** (Layer 6d build, DEV): code and tables `&0E00-&1FEB`, **`&15` free** below `&2000`.
-That is with `DEBUG_TIMING` on. Bank 0 has `&112` left and bank 3 `&23DE`;
+The same 100-second stress test - fire held down, the ship parked, so it dies over and over and the
+screen is full of explosions - now runs at **106% with seven missed flips in 2,500 frames**, against
+101% and four before the music. Ordinary play is the gentler 90% figure plus the same 4.5%. The
+costed options for buying margin back are in `BUGS.md` #9 and in the Blitter Anatomy artifact:
+per-row spans recover a quarter of the bytes the blitter touches, and compiling the densest
+explosion frames recovers half the cycles but does not all fit.
+
+**Main RAM** (Layer 7 build, DEV): code and tables `&0E00-&1FCB`, **`&35` free** below `&2000`.
+That is with `DEBUG_TIMING` on; `game_init` moved to bank 0 in Layer 7 to make room for the HAZEL
+loader and the IRQ's music call. Bank 0 has `&97` left and bank 3 `&23DE`; **HAZEL** (`&C000-&DFFF`)
+holds the music player, the tune and the player's ring workspace, with `&E3` free;
 `pause_check`, `comp_mess` and `finale_tick` are up in bank 0 because main RAM ran out mid-layer,
 alongside the frame meter, `coll_row_lo/hi` and the boot-time display setup; the multiply tables are
 gone entirely, and the titles' font and text, the panel image and the HUD are in bank 3. **All four
@@ -201,10 +208,21 @@ the layer.
 The zoom scroller. Shares almost nothing with the rest, and is the first thing that will want the
 `&FC` now free below `&2000`.
 
-### Layer 7 — sound
+### Layer 7 — music — done, with the tune truncated
 
-CPC `.SKS` tunes through the nova-invite toolchain to a VGC stream, played from the 50 Hz
-interrupt; sound effects on the SN76489.
+[`docs/layer-7-music.md`](docs/layer-7-music.md). `tools/export_music.py` runs EDGEA.SKS through
+SongToYm, ym2sn and vgipacker; the **VGI** player (decision 35, KC) plays it from the end of
+`rupt_vsync` at 50 Hz, where the C64 calls its own. Player, workspace and tune are in **HAZEL**
+(decision 36) - the only RAM left, and the only kind that does not collide with the sideways window
+the sprite engine is paging while the IRQ fires. Verified byte-exact: twenty captured fields of
+SN76489 writes match VGM frames 238-257 and nowhere else.
+
+**No sound effects, and that is faithful** - the C64 has none at all.
+
+**Open: the tune is 349 seconds and 23,514 bytes of `.vgi`, and HAZEL has 4,831.** It ships as the
+first 76 seconds, looped (decision 37). The layer doc costs the two ways out - scattering the
+format's eleven independent register streams across HAZEL, bank 3 and the bank scraps, or cutting
+the tune musically - and both are KC's call.
 
 ### Layer 8 — graphics pipeline B (the artist)
 
@@ -232,6 +250,6 @@ publish.
 | 6c — state machine | [`docs/layer-6c-state-machine.md`](docs/layer-6c-state-machine.md) | done 2026-09-03 |
 | 6d — HUD | [`docs/layer-6d-hud.md`](docs/layer-6d-hud.md) | done 2026-09-03 |
 | 6e — title screen | | |
-| 7 — sound | | |
+| 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated |
 | 8 — graphics pipeline B | | |
 | 9 — polish and release | | |
