@@ -136,6 +136,49 @@ ENDMACRO
     sbc #HI(screen_size)-1      ; carry is clear here
     .nowrap
     sta bufp+1
+
+    \ A new character row, which is the only place a sprite's split
+    \ column can change - see spr_split_calc. Five cycles for the
+    \ sprites that do not straddle, which is nearly all of them.
+    lda spr_wrap
+    beq out
+    jsr spr_split_calc
+    .out
+    rts
+}
+
+\ ******************************************************************
+\ *	spr_split_calc - where this character row leaves the buffer
+\ ******************************************************************
+\ spr_split = how many of the row's byte columns lie before the end of
+\ the 16K buffer, or 0 if all of them do.
+\ THE ANSWER IS THE SAME FOR ALL EIGHT SCANLINES OF A CHARACTER ROW.
+\ Every term of a byte's address except the scanline is a multiple of 8
+\ - the buffer origin, the row offset, the column - so the columns sit
+\ at base + scan + 0, 8, 16 ... and which of them fit before &8000
+\ does not depend on scan. bufp AND 7 IS the scanline, so the base is
+\ bufp minus it, and the distance to the end is &8000 - base. Divided
+\ by 8 that is the count, and 256 bytes or more of it means nowhere
+\ near the end.
+
+.spr_split_calc
+{
+    lda bufp
+    and #7                      ; the scanline
+    sec
+    sbc bufp
+    tay                         ; LO(&8000 - base)
+    lda #HI(screen_top)
+    sbc bufp+1
+    bne whole                   ; 256 bytes or more still to go
+    tya
+    lsr a : lsr a : lsr a       ; byte columns that fit
+    cmp spr_count
+    bcc out                     ; 1 to count-1: the row is split here
+    .whole
+    lda #0
+    .out
+    sta spr_split
     rts
 }
 
@@ -184,18 +227,24 @@ ENDMACRO
     sta spr_rows
     lda spr_sv_cols, y
     sta spr_count
-    ldx spr_sv_wrap, y
-    bne wrapped
     tax
     lda spr_rest_entry_lo-1, x
-    sta call+1
+    sta spr_entry               ; the whole-row body, for spr_rest_row_split
     lda spr_rest_entry_hi-1, x
+    sta spr_entry+1
+    lda spr_sv_wrap, y
+    sta spr_wrap                ; spr_scan_row watches this
+    bne wrapped
+    lda spr_entry
+    sta call+1
+    lda spr_entry+1
     sta call+2
     bne rows                    ; always: the entries are not in page 0
     .wrapped
-    lda #LO(spr_rest_row_slow)
+    jsr spr_split_calc          ; the first character row
+    lda #LO(spr_rest_row_split)
     sta call+1
-    lda #HI(spr_rest_row_slow)
+    lda #HI(spr_rest_row_split)
     sta call+2
 
     .rows
@@ -235,42 +284,56 @@ ENDMACRO
     EQUB HI(spr_rest_row1), HI(spr_rest_row2), HI(spr_rest_row3), HI(spr_rest_row4)
     EQUB HI(spr_rest_row5), HI(spr_rest_row6), HI(spr_rest_row7)
 
-\ The row straddles the end of the buffer, so its columns are no longer
-\ 8 bytes apart in address order and bufp has to be walked. The SAVE
-\ side never wraps, so Y = col*8 still addresses it. See spr_draw_slot
-\ for how often this happens.
-.spr_rest_row_slow
-{
-    lda bufp   : sta spr_tmp
-    lda bufp+1 : sta spr_tmp+1
-    ldx #0
-    .loop
-    ldy spr_mul8, x
-    lda (svp), y
-    ldy #0
-    sta (bufp), y
-    jsr spr_next_col
-    inx
-    cpx spr_count
-    bne loop
-    lda spr_tmp   : sta bufp    ; back to the row's first column, NOT
-    lda spr_tmp+1 : sta bufp+1  ; advanced: the caller's SCANSTEP does that
-    rts
-}
+\ The bodies for a character row that crosses the end of the buffer:
+\ two ordinary ladder calls instead of one. See spr_draw_row_split for
+\ the whole story - this is the same thing without the data pointer.
 
-\ bufp on to the next byte column, wrapping at the end of the buffer.
-.spr_next_col
+.spr_rest_row_split
 {
+    lda spr_split
+    bne split
+    jmp (spr_entry)             ; this character row is whole
+
+    .split
+    tax                         ; columns 0 to k-1
+    lda spr_rest_entry_lo-1, x
+    sta c1+1
+    lda spr_rest_entry_hi-1, x
+    sta c1+2
+    lda spr_count               ; and k to count-1
+    sec
+    sbc spr_split
+    tax
+    lda spr_rest_entry_lo-1, x
+    sta c2+1
+    lda spr_rest_entry_hi-1, x
+    sta c2+2
+
+    .c1
+    jsr &ffff
+
+    lda spr_split
+    asl a : asl a : asl a
+    sta spr_bias                ; k*8, the same along both pointers
     clc
-    lda bufp
-    adc #8
-    sta bufp
-    lda bufp+1
-    adc #0
-    cmp #HI(screen_top)
-    bcc ok
-    sbc #HI(screen_size)
-    .ok
+    lda svp : adc spr_bias : sta svp
+    clc
+    lda bufp : adc spr_bias : sta bufp
+    lda bufp+1 : adc #0
+    sec
+    sbc #HI(screen_size)        ; and back round the 16K buffer
+    sta bufp+1
+
+    .c2
+    jsr &ffff
+
+    sec                         ; put them back: the caller's SCANSTEP
+    lda svp : sbc spr_bias : sta svp        ; walks the unbiased pointers
+    sec
+    lda bufp : sbc spr_bias : sta bufp
+    lda bufp+1 : sbc #0
+    clc
+    adc #HI(screen_size)
     sta bufp+1
     rts
 }
@@ -296,6 +359,69 @@ ENDMACRO
     lda #SWRAM_DATA
     sta &f4
     sta &fe30
+    rts
+}
+
+\ ******************************************************************
+\ *	spr_straddle_exact - does a row of this sprite really cross &8000?
+\ ******************************************************************
+\ Called only when the cheap SPR_REACH test says it might, which is 12%
+\ of sprites; about one in ten of those really does. Sets spr_wrap.
+\
+\ SPR_REACH is how far the walk reaches VERTICALLY - three character
+\ rows and change - but a row only straddles if its own columns do, a
+\ reach of at most 55 bytes. So ask spr_split_calc's question of each
+\ character row the sprite touches instead: at most four of them, and
+\ the answer within one is the same for all eight of its scanlines.
+
+.spr_straddle_exact
+{
+    sec                         ; the first character row's base
+    lda bufp
+    sbc spr_scan
+    sta spr_tmp
+    lda bufp+1
+    sbc #0
+    sta spr_tmp+1
+
+    lda spr_scan                ; character rows touched, 1 to 4
+    clc
+    adc spr_rows
+    adc #7
+    lsr a : lsr a : lsr a
+    tax
+
+    .seg_loop
+    sec                         ; bytes from this base to the end
+    lda #0
+    sbc spr_tmp
+    tay
+    lda #HI(screen_top)
+    sbc spr_tmp+1
+    bne next_seg                ; 256 or more: nowhere near it
+    tya
+    lsr a : lsr a : lsr a       ; byte columns that fit before the end
+    cmp spr_count
+    bcs next_seg                ; all of them: this row is whole
+    inc spr_wrap                ; 1 to count-1: this row is split
+    rts
+
+    .next_seg
+    dex
+    beq done
+    clc                         ; on to the next character row
+    lda spr_tmp
+    adc #LO(row_stride)
+    sta spr_tmp
+    lda spr_tmp+1
+    adc #HI(row_stride)
+    bpl no_wrap
+    sbc #HI(screen_size)-1      ; carry is clear here
+    .no_wrap
+    sta spr_tmp+1
+    jmp seg_loop
+
+    .done
     rts
 }
 
@@ -485,25 +611,43 @@ ENDMACRO
     lda spr_r0
     and #7
     sta spr_scan
+    \\ + character row * 640. The two 32-entry tables this used are gone,
+    \\ to make room: 640 is &280, so LO(n*640) is 0 or 128 by the parity
+    \\ of n, and HI(n*640) is (5n) >> 1 - one shift that hands the parity
+    \\ over in the carry on its way past.
     lda spr_r0
-    lsr a
-    lsr a
-    lsr a
-    tax
+    lsr a : lsr a : lsr a       ; n, the character row 0-19
+    sta spr_tmp
+    asl a : asl a               ; 4n
     clc
-    lda corner_addr
-    adc mult640_LO, x
+    adc spr_tmp                 ; 5n
+    lsr a                       ; HI(n*640), carry = n AND 1
+    sta spr_tmp
+    lda #0
+    bcc row_even
+    lda #128                    ; LO(n*640)
+    .row_even
+    clc
+    adc corner_addr
     sta bufp
     lda corner_addr+1
-    adc mult640_HI, x
+    adc spr_tmp
     sta bufp+1
-    ldx spr_c0
+    \\ + column * 8, its 80-entry tables gone the same way. spr_c0 is
+    \\ 0-79, so c*8 is under 640: the high byte is c >> 5 and the low is
+    \\ (c AND 31) * 8. The high half first, because the shifts would eat
+    \\ the low half's carry.
+    lda spr_c0
+    lsr a : lsr a : lsr a : lsr a : lsr a
+    sta spr_tmp
+    lda spr_c0
+    and #31
+    asl a : asl a : asl a
     clc
-    lda bufp
-    adc mult8_LO, x
+    adc bufp
     sta bufp
     lda bufp+1
-    adc mult8_HI, x
+    adc spr_tmp
     sta bufp+1
     lda spr_scan
     clc
@@ -521,11 +665,13 @@ ENDMACRO
     .no_wrap
 
     \\ Can any of this sprite's rows straddle the end of the buffer?
-    \\ Testing it per row cost a call and ~25 cycles 21 times; it only
-    \\ depends on where the sprite starts, because the walk advances at
-    \\ most SPR_REACH beyond bufp. Clear of that and every row can take
-    \\ the fast path blind. True about 88% of the time (SPR_REACH of
-    \\ the 16K buffer); the rest walk bufp per column.
+    \\ SPR_REACH is the furthest byte the walk can touch beyond bufp, so
+    \\ clear of that and every row takes the fast path blind - true about
+    \\ 88% of the time, and 12 cycles to establish. But it is a very
+    \\ loose test: the walk only reaches that far VERTICALLY, and a row
+    \\ straddles only if its own seven columns do. Of the 12% it flags,
+    \\ about one in ten really straddles, and the other nine were paying
+    \\ 97 cycles a byte for nothing. So the flagged ones ask properly.
     lda #0
     sta spr_wrap
     clc
@@ -534,7 +680,7 @@ ENDMACRO
     lda bufp+1
     adc #HI(SPR_REACH)
     bpl no_straddle
-    inc spr_wrap
+    jsr spr_straddle_exact
     .no_straddle
 
     \\ ---- svp = this slot's save page in this bank -----------------
@@ -586,18 +732,23 @@ ENDMACRO
     sta spr_sv_on, y
 
     \\ ---- the row body ---------------------------------------------
-    lda spr_wrap
-    bne wrapped
     ldx spr_count
     lda spr_draw_entry_lo-1, x
-    sta call+1
+    sta spr_entry               ; the whole-row body, for spr_draw_row_split
     lda spr_draw_entry_hi-1, x
+    sta spr_entry+1
+    lda spr_wrap
+    bne wrapped
+    lda spr_entry
+    sta call+1
+    lda spr_entry+1
     sta call+2
     bne lut                     ; always
     .wrapped
-    lda #LO(spr_draw_row_slow)
+    jsr spr_split_calc          ; the first character row
+    lda #LO(spr_draw_row_split)
     sta call+1
-    lda #HI(spr_draw_row_slow)
+    lda #HI(spr_draw_row_split)
     sta call+2
 
     \\ ---- the ORA table: identity, or this frame's hit flash --------
@@ -621,7 +772,6 @@ ENDMACRO
     sta spr_lut2+2
     sta spr_lut1+2
     sta spr_lut0+2
-    sta spr_lutw+2
     .lut_ok
 
     .rows
@@ -694,37 +844,81 @@ ENDMACRO
     EQUB HI(spr_draw_row1), HI(spr_draw_row2), HI(spr_draw_row3), HI(spr_draw_row4)
     EQUB HI(spr_draw_row5), HI(spr_draw_row6), HI(spr_draw_row7)
 
-\ The wrapping row: bufp walked a column at a time, the save still
-\ addressed at col*8 because it never wraps.
-.spr_draw_row_slow
-    lda bufp   : sta spr_tmp
-    lda bufp+1 : sta spr_tmp+1
-    ldx #0
-    stx spr_col
-    .sdw_loop
-    ldy spr_col
-    lda (src), y
-    sta spr_byte
-    ldy #0
-    lda (bufp), y               ; the background
-    ldx spr_col
-    ldy spr_mul8, x
-    sta (svp), y                ; saved at col*8
-    ldx spr_byte
-    and SPR_MASK, x
-    .spr_lutw ora SPR_LUT_IDENT, x
-    ldy #0
-    sta (bufp), y
-    jsr spr_next_col
-    inc spr_col
-    ldx spr_col
-    cpx spr_count
-    bne sdw_loop
-    lda spr_tmp   : sta bufp    ; not advanced: the caller walks
-    lda spr_tmp+1 : sta bufp+1
-    rts
+\ ******************************************************************
+\ *	spr_draw_row_split - the character row that leaves the buffer
+\ ******************************************************************
+\ Replaces the walked fallback that served this case at 97 cycles a byte
+\ against 36, and cost it on nine sprites in ten that never needed it
+\ (BUGS.md #9).
+\
+\ AT MOST ONE CHARACTER ROW OF A SPRITE CAN STRADDLE: consecutive ones
+\ are 640 bytes apart and a sprite is at most 56 wide. That row's eight
+\ scanlines are drawn as two ordinary ladder calls - columns 0 to k-1
+\ where the pointers already are, then k to count-1 the same distance
+\ along the save and the data but 16K back round the buffer. BOTH
+\ POINTERS TAKE THE SAME BIAS, k*8, which is the whole trick: the
+\ existing unrolled bodies serve the second half unchanged and there is
+\ no second ladder. Every other character row takes the whole-row body,
+\ reached by a tail JMP so its own RTS returns to the row loop.
 
-.spr_mul8 EQUB 0, 8, 16, 24, 32, 40, 48
+.spr_draw_row_split
+{
+    lda spr_split
+    bne split
+    jmp (spr_entry)             ; this character row is whole
+
+    .split
+    tax                         ; columns 0 to k-1
+    lda spr_draw_entry_lo-1, x
+    sta c1+1
+    lda spr_draw_entry_hi-1, x
+    sta c1+2
+    lda spr_count               ; and k to count-1
+    sec
+    sbc spr_split
+    tax
+    lda spr_draw_entry_lo-1, x
+    sta c2+1
+    lda spr_draw_entry_hi-1, x
+    sta c2+2
+
+    .c1
+    jsr &ffff
+
+    lda spr_split
+    asl a : asl a : asl a
+    sta spr_bias                ; k*8, the same along screen and save
+    clc
+    lda svp : adc spr_bias : sta svp
+    clc
+    lda bufp : adc spr_bias : sta bufp
+    lda bufp+1 : adc #0
+    sec
+    sbc #HI(screen_size)        ; and back round the 16K buffer
+    sta bufp+1
+    clc
+    lda src : adc spr_split : sta src   ; the data is k bytes along
+    bcc c2
+    inc src+1
+
+    .c2
+    jsr &ffff
+
+    sec                         ; put them back: the caller's SCANSTEP
+    lda svp : sbc spr_bias : sta svp        ; walks the unbiased pointers
+    sec
+    lda bufp : sbc spr_bias : sta bufp
+    lda bufp+1 : sbc #0
+    clc
+    adc #HI(screen_size)
+    sta bufp+1
+    sec
+    lda src : sbc spr_split : sta src
+    bcs out
+    dec src+1
+    .out
+    rts
+}
 
 .spr_lut_cur EQUB HI(SPR_LUT_IDENT)
 

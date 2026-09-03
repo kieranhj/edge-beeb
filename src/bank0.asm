@@ -58,6 +58,27 @@ PRINT "WAVE data =", ~wave_data
 INCBIN "src/data/anim_decode.bin"
 PRINT "ANIM_DECODE =", ~anim_decode
 
+\ coll_map row bases. The map is 800 bytes and crosses pages, so the read
+\ is (ptr),Y with the column in Y. They live up here rather than in main
+\ RAM because their only reader is coll_read, which runs from game_tick
+\ with bank 0 resting - and main RAM below &2000 has none to spare.
+.coll_row_lo
+FOR n,0,COLL_ROWS-1,1
+    EQUB LO(coll_map + n*COLL_COLS)
+NEXT
+.coll_row_hi
+FOR n,0,COLL_ROWS-1,1
+    EQUB HI(coll_map + n*COLL_COLS)
+NEXT
+
+\ The frame meter lives up here, not in main RAM: it is a DEV-only
+\ facility and main RAM below &2000 has no room for one. Bank 0 is the
+\ resting SWRAM state, paged in whenever the main loop is running its
+\ own code, so a plain JSR reaches it - the only routines that page it
+\ out are spr_restore_all and spr_draw_all, and no mark is taken inside
+\ either. See src/timing.asm.
+INCLUDE "src/timing.asm"
+
 .bank0_end
 
 SAVE "BANK0", bank0_start, bank0_end

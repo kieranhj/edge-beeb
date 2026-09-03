@@ -10,7 +10,8 @@ DEV = 1-RELEASE
 \ Debug flags. Each must be off under RELEASE; add new ones to DEBUG_ANY and
 \ to the !BOOT stamp at the bottom of this file so a build says what it is.
 DEBUG_COLL = DEV            ; a fatal hit flashes instead of killing
-DEBUG_ANY = DEBUG_COLL
+DEBUG_TIMING = DEV          ; the frame meter: see src/timing.asm
+DEBUG_ANY = DEBUG_COLL OR DEBUG_TIMING
 IF RELEASE
     ASSERT DEBUG_ANY=0
 ENDIF
@@ -121,6 +122,16 @@ MACRO PAGE_ALIGN
 H%=P%
 ALIGN &100
 PRINT "Skipping ", P%-H%, "bytes"
+ENDMACRO
+
+\ Close off one phase of the main loop into the TIM_ slot named. Four
+\ bytes and ~80 cycles here, and nothing at all without DEBUG_TIMING;
+\ the work is in bank 0. See src/timing.asm.
+MACRO TIMMARK slot
+IF DEBUG_TIMING
+    lda #slot
+    jsr tim_mark
+ENDIF
 ENDMACRO
 
 \ ******************************************************************
@@ -274,10 +285,11 @@ GUARD &9F
 .spr_skip_c     skip 1      ; columns and rows clipped off the left and top
 .spr_skip_r     skip 1
 .spr_scan       skip 1      ; scanline within the first character row
-.spr_wrap       skip 1      ; the row span crosses the end of the buffer
-.spr_col        skip 1      ; column index, in the wrapped path only
-.spr_byte       skip 1      ; and the data byte it is drawing
-.spr_tmp        skip 2      ; and where its row started
+.spr_wrap       skip 1      ; one of this sprite's character rows crosses the end
+.spr_split      skip 1      ; byte columns of THIS character row before it, 0 = whole
+.spr_bias       skip 1      ; spr_split * 8: the same step along screen and save
+.spr_entry      skip 2      ; the whole-row body, for the split body to tail into
+.spr_tmp        skip 2      ; scratch: the bufp arithmetic and the straddle walk
 
 \\ Player and collisions (src/player.asm)
 .joy            skip 1      ; the C64's joystick byte: a CLEAR bit is pressed
@@ -296,6 +308,13 @@ GUARD &9F
 .crtc_park      skip 2      ; scroll address for the bank being drawn (main loop writes)
 .crtc_live      skip 2      ; scroll address the IRQ programs at fire 1
 .rupt_state     skip 1      ; 0 = fire 1 pending, 1 = fire 2 pending, 2 = done
+
+IF DEBUG_TIMING
+.tim_ptr        skip 2      ; the maximum slot the next mark writes
+.tim_val        skip 2      ; us since tim_start, at the last mark
+.tim_prev       skip 2      ; and what it was at the mark before that
+.tim_phase      skip 2      ; the difference: one phase of the loop
+ENDIF
 
 \ ******************************************************************
 \ *	CODE START
@@ -386,6 +405,9 @@ GUARD CODE_TOP
 
     \\ Initialise variables
 
+IF DEBUG_TIMING
+    jsr tim_init
+ENDIF
     jsr spr_init
     jsr coll_init
     jsr score_reset
@@ -426,18 +448,25 @@ GUARD CODE_TOP
 
     .loop
 
+IF DEBUG_TIMING
+    jsr tim_start
+ENDIF
+
     \\ Every sprite's background comes back before anything is drawn:
     \\ a draw between another slot's restore and its draw would be
     \\ captured into that slot's save. The new scroll column is not.
 
     jsr spr_restore_all
+    TIMMARK TIM_RESTORE
 
     lda char_col
     and #SPR_PHASE_MASK
     sta spr_phase
 
     jsr scroll_frame            \\ plots this frame's byte column
+    TIMMARK TIM_SCROLL
     jsr spr_draw_all
+    TIMMARK TIM_DRAW
 
     \\ Game logic. Two ticks a frame: one pass of this loop is two of the
     \\ C64's, so its per-frame constants transcribe unchanged (decision 23).
@@ -448,11 +477,16 @@ GUARD CODE_TOP
     jsr game_tick
 
     jsr scroll_advance          \\ AFTER the draw - see scroll_advance
+    TIMMARK TIM_LOGIC
 
     inc frame_count
 
     \\ Hand the frame over and wait for the flip
     sei
+IF DEBUG_TIMING
+    \\ Inside the SEI so field_count cannot move under the subtraction.
+    jsr tim_handover
+ENDIF
     lda crtc_addr
     sta crtc_park
     lda crtc_addr+1
@@ -876,6 +910,9 @@ ELSE
 IF DEBUG_COLL
     EQUS "REM DEBUG_COLL: a fatal hit flashes, it does not kill", 13
 ENDIF
+IF DEBUG_TIMING
+    EQUS "REM DEBUG_TIMING: the frame meter is running", 13
+ENDIF
 ENDIF
 EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
 EQUS "*RUN Edge", 13
@@ -950,6 +987,27 @@ ORG GAME_STATE
 .spr_sv_rows    skip 2*SPR_SLOTS
 .spr_sv_cols    skip 2*SPR_SLOTS
 .spr_sv_wrap    skip 2*SPR_SLOTS
+
+\ The frame meter (src/timing.asm). Microseconds, worst case since boot;
+\ double them for 2 MHz cycles. tim_over is the one that matters.
+IF DEBUG_TIMING
+\ The five maxima are addressed by the TIM_ index, so they must stay
+\ in this order and adjacent.
+.tim_slots_start
+.tim_max_restore skip 2         ; TIM_RESTORE: spr_restore_all
+.tim_max_scroll  skip 2         ; TIM_SCROLL:  scroll_frame
+.tim_max_draw    skip 2         ; TIM_DRAW:    spr_draw_all
+.tim_max_logic   skip 2         ; TIM_LOGIC:   read_joystick, 2 x game_tick, scroll_advance
+.tim_max_total   skip 2         ; TIM_TOTAL:   the lot, tim_start to handover
+.tim_fields      skip 1         ; worst fields a frame took; FRAME_LOCK is late
+.tim_over        skip 1         ; frames that missed their flip, saturating
+.tim_slots_end
+ASSERT tim_max_restore = tim_slots_start + 2 * TIM_RESTORE
+ASSERT tim_max_scroll  = tim_slots_start + 2 * TIM_SCROLL
+ASSERT tim_max_draw    = tim_slots_start + 2 * TIM_DRAW
+ASSERT tim_max_logic   = tim_slots_start + 2 * TIM_LOGIC
+ASSERT tim_max_total   = tim_slots_start + 2 * TIM_TOTAL
+ENDIF
 
 .game_state_end
 ASSERT game_state_end <= GAME_STATE_TOP

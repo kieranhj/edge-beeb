@@ -28,19 +28,23 @@ into you. What is missing is the game *around* it: `coll_flag` and `comp_flag` a
 reads them, so there are no lives, no respawn and no end. The panel still shows a colour-bar
 placeholder and `DEBUG_COLL` makes a fatal hit flash rather than kill.
 
-**The frame budget** is 79,872 cycles at 25 Hz. Measured, worst case with eight sprites live: scroll
-11,153, sprite restore 15,093, sprite draw 34,143, and the two logic ticks 3,278 — **63,667, or
-80%**. The pool is often not full, and an empty slot costs the blitter nothing.
+**The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
+`DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
+flips**, and eight explosions on screen at once cost 66,960, 84%. `BUGS.md` #9 - the game dropping
+below 25 Hz while shooting - is fixed: the walked path for a sprite crossing the end of the 16K
+buffer was 97 cycles a byte against 36, and was being taken on 12% of sprites where 1.4% needed it.
 
-**That figure is now known to be optimistic and the frame does overrun.** `BUGS.md` #9: the game
-drops below 25 Hz while shooting, about 50 s in. The draw was measured while `BUGS.md` #8 was
-silently skipping every sprite past x = 140, so enemies entering from the right cost nothing then
-and cost full price now; explosion frames are the densest artwork in the game and shooting is what
-makes them. **Settle this before Layer 6 puts a HUD on every frame** — if it is the budget, the
-answer is the compiled blitter deferred in decision 19.
+The old estimate of 63,667 was optimistic by 45%, because it was taken while `BUGS.md` #8 was
+silently skipping every sprite past x = 140.
 
-**Main RAM** (Layer 5 build): code and tables `&0E00-&1F9A`, **`&66` free** below `&2000` — Layer 6
-will not fit without moving something else out. Game state `&0800-&08E9`; collision character map
+**There is no margin left for Layer 6d.** 90% with the panel still a placeholder means the HUD, the
+title screen and the state machine all have to come out of the sprites. The costed options are in
+`BUGS.md` #9 and in the Blitter Anatomy artifact: per-row spans recover a quarter of the bytes the
+blitter touches, and compiling the densest frames recovers half the cycles but does not fit.
+
+**Main RAM** (Layer 6a build, DEV): code and tables `&0E00-&1FCE`, **`&32` free** below `&2000`.
+That is with `DEBUG_TIMING` on; `RELEASE` has more. The frame meter's code and `coll_row_lo/hi` are
+up in bank 0, and the multiply tables are gone entirely. Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
 tiles, map, col_decode, waves) high water `&BC38`; **banks 1 and 2** (sprites, one per pixel shift)
 `&B153` and `&B78B`. Take live figures from the build listing, not from here.
@@ -94,17 +98,49 @@ shields, bullet-to-enemy and player-to-enemy collisions, and the explosion frame
 `anim_decode` are exported to bank 0 (decision 28) and the whole game-state block moved to `&0800`
 (decision 27), because the image no longer had room for the layer.
 
-### Layer 6 — game flow
+### Layer 6 — game flow, in five parts
 
-Lives, respawn shield timer, the life-lost explosion (`explosion_dirs`), the state machine
-(titles → init → loop → life lost → game over; completion sequence), the HUD on the panel, the
-title screen with the zoom scroller, pause and Q-to-abort. `coll_flag` and `comp_flag` are already
-set and waiting to be read. **The score counters exist** — Layer 4 ported `bump_score_*` and the
-high-score compare; they are six decimal digits one to a byte, the C64's own layout, not BCD.
-What is missing is putting them on the panel.
+Split 2026-09-03 because the original layer was four unrelated jobs in a bundle, and because
+`BUGS.md` #9 has to be settled before anything else is allowed onto the frame.
 
-**Settle `BUGS.md` #9 first**: the frame already overruns in busy play, and a HUD adds work to
-every frame.
+#### 6a — the frame budget — done
+
+`BUGS.md` #9 settled. The frame meter (`src/timing.asm`, behind `DEBUG_TIMING`, its code in
+sideways bank 0 because main RAM had none to spare) times each phase of the loop off the User VIA's
+T2 and counts the frames that miss their flip. It found the overrun, and it found that all of it was
+the walked path for a sprite straddling the end of the buffer.
+
+Two changes, both resting on the same observation - **at most one character row of a sprite can
+straddle, and within it the split column is the same for all eight scanlines**. First
+`spr_straddle_exact`, so only the sprites that really cross take the slow route; then the slow route
+itself replaced by `spr_draw_row_split` / `spr_rest_row_split`, which draw that one character row as
+two ordinary ladder calls with the same bias on both pointers. `spr_draw_row_slow`,
+`spr_rest_row_slow`, `spr_next_col` and `spr_mul8` are gone.
+
+Room for it came from moving `coll_row_lo/hi` to bank 0 and deleting all four multiply tables for
+the shifts that were hiding in them - 336 bytes of table for about 60 of code.
+
+#### 6b — the life cycle
+
+Read `coll_flag`: lives, the life-lost explosion (`explosion_dirs`), respawn and the shield timer.
+Transcription, inside the existing loop.
+
+#### 6c — the state machine
+
+Titles → init → loop → life lost → game over; `comp_flag` and the completion sequence; pause and
+Q-to-abort.
+
+#### 6d — the HUD
+
+Score, lives and the rest on the panel, in place of the colour-bar placeholder. **The score counters
+already exist** — Layer 4 ported `bump_score_*` and the high-score compare; six decimal digits one
+to a byte, the C64's own layout, not BCD. Depends on 6a for the budget and 6b for having lives to
+show.
+
+#### 6e — the title screen
+
+The zoom scroller. Shares almost nothing with the rest, and is the first thing that will want the
+`&32` now free below `&2000`.
 
 ### Layer 7 — sound
 
@@ -132,7 +168,11 @@ publish.
 | 3 — sprite engine v2 | [`docs/layer-3-sprites.md`](docs/layer-3-sprites.md) | done 2026-09-03 |
 | 4 — player | [`docs/layer-4-player.md`](docs/layer-4-player.md) | done 2026-09-03 |
 | 5 — enemies | [`docs/layer-5-enemies.md`](docs/layer-5-enemies.md) | done 2026-09-03 |
-| 6 — game flow | | next |
+| 6a — frame budget | | done 2026-09-03 |
+| 6b — life cycle | | |
+| 6c — state machine | | |
+| 6d — HUD | | |
+| 6e — title screen | | |
 | 7 — sound | | |
 | 8 — graphics pipeline B | | |
 | 9 — polish and release | | |

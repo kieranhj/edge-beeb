@@ -7,7 +7,7 @@ ruled out. Index first, detail below.
 |---|---|---|
 | 1 | gone (Layer 3) | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`). The routine it was about no longer exists |
 | 2 | fixed (Layer 3) | No sprite clipping: `x_pos >= 80` indexed past `mult8_*`. The engine now clips the frame's box to 80 columns x 160 scanlines at all four edges (decision 2) |
-| 9 | **open** | The game drops below 25 Hz while shooting, about 50 s into the level. Suspected frame overrun, not yet measured |
+| 9 | fixed (Layer 6a) | The game dropped below 25 Hz while shooting: the walked path for a sprite crossing the end of the buffer cost 97 cycles a byte and was being taken nine times too often. Split into two ladder calls instead; 100 s of play now peaks at 90% of the frame with no missed flips |
 | 3 | fixed (Layer 4) | `read_keyboard` had no movement bounds. `player_manage` clamps x to `$10-$9b` and y to `$5a-$e5`, the C64's own, and `read_joystick` no longer moves the player at all |
 | 8 | fixed (Layer 5) | Sprites at x >= 140 were never drawn: the byte column was halved with an arithmetic shift, but the value does not fit a signed byte |
 | 7 | fixed (Layer 5) | A stationary sprite rocked two pixels back and forth with the scroll: `scroll_advance` ran before the sprite draw |
@@ -120,35 +120,118 @@ anywhere past x = 139.
 
 ## 9. The game drops below 25 Hz while shooting, ~50 s in
 
-**Open.** Reported by KC, 2026-09-03: the game slows below 25 Hz when shooting, around 50 seconds
-into the level.
+**Confirmed 2026-09-03, and it is the frame budget.** Reported by KC: the game slows below 25 Hz
+when shooting, around 50 seconds into the level.
 
-**Not measured yet.** What follows is the suspicion and how to confirm it, not a diagnosis.
+Measured with the frame meter (`src/timing.asm`, `DEBUG_TIMING`), which times each phase of the
+main loop off the User VIA's T2 and counts the frames that miss their flip. All figures below are
+**2 MHz cycles against a frame of 79,872**; the meter itself records microseconds, which are half.
 
-The frame is 79,872 cycles and the last measurement put the worst case at 63,667 - 80% - so there
-is not much margin, and three things all push the same way at once:
+| | 14 s in, no firing | 54 s in, no firing | with eight explosions live |
+|---|---|---|---|
+| `spr_restore_all` | 12,528 | 17,108 | 24,506 |
+| `scroll_frame` | 12,532 | 12,710 | 12,710 |
+| `spr_draw_all` | 29,906 | 39,320 | **51,842** |
+| logic + `scroll_advance` | 5,404 | 8,590 | 8,590 |
+| **whole frame, worst** | 58,320 | 71,414 | **92,490** |
+| | 73% | 89% | **116%** |
+| frames that missed the flip | 0 | 0 | 1 |
 
-- **`BUGS.md` #8 raised the real sprite load.** Until it was fixed, every sprite at x >= 140 was
-  silently skipped. The 34,143-cycle draw figure was measured while that was true, so enemies
-  entering from the right edge were costing nothing. They cost full price now, and the measurement
-  is optimistic by an unknown amount.
-- **Explosion frames are the densest artwork in the game.** Shooting is what creates them, which
-  fits "while shooting" exactly. The interpreted blitter costs ~37 cycles per byte inside the
-  bounding box whether the byte is opaque or not, and the explosion boxes are large.
-- **The wave table gets busier as it goes.** 50 seconds is about 1,250 game frames, well into it,
-  so more of the pool is live at once.
+So the budget table in `PLAN.md` was optimistic by about 45%, exactly as suspected: `BUGS.md` #8
+had been hiding every sprite past x = 140 when the 34,143-cycle draw was measured. Ordinary busy
+play at 54 seconds is already at 89% with nothing shot; put eight explosions on the screen and the
+frame runs 12,618 cycles over and `FRAME_LOCK` holds it for a third field. That is the drop KC saw,
+and it is not a glitch in the rupture: the meter's `tim_over` counts a frame that arrived late,
+which is precisely what the symptom is.
 
-When the loop does overrun two fields, `FRAME_LOCK` does not tear - it waits for the next flip, so
-the frame rate drops to 3 fields (16.7 Hz) and back. That is consistent with "slows down" rather
-than "glitches".
+The eight-explosion column was produced deterministically rather than by shooting for a minute:
+with the game 54 s in, `sprite_pos` and `sprite_dp` for slots 2-7 were poked to explosion frames at
+spread on-screen positions and the loop run for three frames. Explosion boxes are 6 columns x 21
+rows, the largest in the game, so this is the real worst case and not a contrivance.
 
-**To confirm:** sample `frame_count` against `field_count` over a few hundred fields while shooting
-into a busy wave - the ratio was exactly 1:2 in the Layer 5 soak, before the #8 fix and without
-firing. Then measure `spr_draw_all` with explosions live, and compare against the 34,143 the budget
-table still quotes.
+**Where the time goes.** The sprites are 76,348 of the 92,490 - 83% of the frame's work. The
+interpreted blitter costs **36 cycles for every byte of the bounding box** it draws (data fetch,
+background read, save, mask, colour table, store) and the restore another **13** to replay it, and
+it pays that whether the byte is opaque or transparent. Across all 119 frames of sprite data,
+10,579 bounding-box bytes hold 7,785 opaque ones: **26% of what the blitter draws is nothing at
+all**. Tightening each row to its own first and last opaque byte would recover almost all of that -
+the per-row spans total 7,976 bytes, only 2% more than the opaque count - because the rows are
+essentially contiguous.
 
-**If it is the budget**, the fix is the compiled blitter deferred in decision 19 - `PROPOSAL.md`
-§3.6's compiled player and bullet, and the 30% of bounding-box bytes that are transparent and cost
-the interpreted path the same as opaque ones (`docs/layer-3-sprites.md`). That deferral was taken on
-the grounds that "the interpreted path fits the frame"; this is the first evidence that it does not
-always, and it should be revisited before Layer 6 adds the HUD to every frame.
+### The worst case is worse than that, and it is the walked path
+
+The figures above were sampled from play. Placing six explosions so that their rows **straddle the
+end of the 16K buffer** - which the engine handles by walking `bufp` a column at a time - gives the
+real ceiling:
+
+| | eight explosions | six of them straddling |
+|---|---|---|
+| `spr_restore_all` | 24,506 | 56,720 |
+| `spr_draw_all` | 51,842 | 93,934 |
+| **whole frame** | 92,490 (116%) | **127,368 (159%)** |
+
+`spr_draw_row_slow` costs **97 cycles a byte against 36**, and `spr_rest_row_slow` 58 against 13.
+
+### Fixed, 2026-09-03, in two steps
+
+**Step one: the test that sends sprites to the walked path is now exact.** The engine asked one
+cheap question per sprite - does `bufp + SPR_REACH` cross the end? - where `SPR_REACH` is
+3 x 640 + 6 x 8 = 1,968, the furthest the walk can reach **vertically**. But a row straddles only if
+its own seven columns do, which is a reach of at most 55 bytes. The test flagged **12%** of sprites
+where about **1.4%** really straddle: nine sprites in ten were paying 97 cycles a byte for nothing.
+`spr_straddle_exact` now asks properly, and it is four compares rather than twenty-one because of
+one observation:
+
+> **The split column is the same for all eight scanlines of a character row.** Every term of a
+> byte's address except the scanline is a multiple of 8 - the buffer origin, the row offset, the
+> column - so within a character row the columns sit at `base + scan + 0, 8, 16 ...` and whether
+> the last of them reaches `&8000` does not depend on `scan`. A character row straddles or it does
+> not. And consecutive character rows are 640 bytes apart while a sprite is at most 56 wide, so
+> **at most one character row of a sprite can straddle at all.**
+
+That made it rarer. It did not make it cheaper, and #9 is about the tail: a straddling explosion
+still cost what it always had.
+
+**Step two: the walked path is gone.** The same observation is what makes the real fix small. The
+one character row that straddles has its eight scanlines drawn as **two ordinary ladder calls** -
+columns `0` to `k-1` where the pointers already are, then `k` to `count-1` the same distance along
+the save and the data but 16K back round the buffer. `svp` and `bufp` take the **same** bias,
+`k*8`, which is the whole trick: the existing unrolled bodies serve the second half unchanged and
+there is no second ladder. Every other character row takes the whole-row body, reached by a tail
+`JMP` so its own `RTS` returns to the row loop. `spr_split_calc` recomputes `k` at each character
+row crossing, from inside `spr_scan_row`, and costs five cycles for the sprites that never straddle.
+
+`spr_draw_row_slow`, `spr_rest_row_slow`, `spr_next_col` and `spr_mul8` are deleted.
+
+### Measured
+
+| | before | after |
+|---|---|---|
+| 100 s of play, worst frame | - | **72,106 (90%)**, and **no missed flips** in ~2,500 game frames |
+| eight explosions, none straddling | - | 66,960 (84%) |
+| eight explosions, as sampled | 92,490 (116%), flips missed | - |
+| six straddling explosions, `spr_draw_all` | 93,934 | 48,116 |
+| six straddling explosions, `spr_restore_all` | 56,720 | 22,296 |
+| six straddling explosions, whole frame | **127,368 (159%)** | **85,326 (107%)** |
+
+So the walked path was the whole of the overrun. With it gone the plain eight-explosion frame is
+66,960, and the 92,490 measured at the top of this entry was that plus two or three sprites in the
+walked path at roughly 9,000 cycles each.
+
+**What is left over.** A frame in which *six* sprites straddle at once is still 107%, and that is
+the constructed extreme: it needs six sprites simultaneously inside a 55-byte window of a 16K
+buffer, which does not happen by accident. Real margin for the HUD comes from the span and
+compiled-blitter work, not from here.
+
+**Verified in jsbeeb**: sprites poked to positions giving every split column k = 1 to 5, confirmed
+straddling by reading `spr_sv_wrap`, drawn whole and unbroken, and the background left clean when
+they were hidden again - so the restore replays the split correctly in both banks.
+
+**Room it needed.** `coll_row_lo/hi` moved to bank 0 (their only reader runs with bank 0 resting),
+and all four multiply tables are gone, replaced by the shifts that were hiding in them: `HI(c*8)`
+is `c >> 5` and `LO(c*8)` is `(c AND 31) * 8` for `c` under 80; `HI(n*640)` is `(5n) >> 1` and
+`LO(n*640)` is 0 or 128 by the parity of `n`, which that shift hands over in the carry. 336 bytes
+of table for about 60 of code.
+
+The deferral in decision 19 was taken on the grounds that "the interpreted path fits the frame".
+At 90% with no margin for Layer 6d, it only just does.
