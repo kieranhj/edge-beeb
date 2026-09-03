@@ -39,7 +39,7 @@ and cost full price now; explosion frames are the densest artwork in the game an
 makes them. **Settle this before Layer 6 puts a HUD on every frame** — if it is the budget, the
 answer is the compiled blitter deferred in decision 19.
 
-**Main RAM** (Layer 5 build): code and tables `&0E00-&1F88`, **`&78` free** below `&2000` — Layer 6
+**Main RAM** (Layer 5 build): code and tables `&0E00-&1F9A`, **`&66` free** below `&2000` — Layer 6
 will not fit without moving something else out. Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
 tiles, map, col_decode, waves) high water `&BC38`; **banks 1 and 2** (sprites, one per pixel shift)
@@ -96,9 +96,15 @@ shields, bullet-to-enemy and player-to-enemy collisions, and the explosion frame
 
 ### Layer 6 — game flow
 
-Lives, respawn shield timer, 6-digit BCD score and hi-score, HUD on the panel, state machine
-(titles → init → loop → life lost → game over; completion sequence), title screen with the zoom
-scroller, pause and Q-to-abort.
+Lives, respawn shield timer, the life-lost explosion (`explosion_dirs`), the state machine
+(titles → init → loop → life lost → game over; completion sequence), the HUD on the panel, the
+title screen with the zoom scroller, pause and Q-to-abort. `coll_flag` and `comp_flag` are already
+set and waiting to be read. **The score counters exist** — Layer 4 ported `bump_score_*` and the
+high-score compare; they are six decimal digits one to a byte, the C64's own layout, not BCD.
+What is missing is putting them on the panel.
+
+**Settle `BUGS.md` #9 first**: the frame already overruns in busy play, and a HUD adds work to
+every frame.
 
 ### Layer 7 — sound
 

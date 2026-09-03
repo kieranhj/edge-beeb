@@ -14,9 +14,10 @@ Try the current build in a browser:
 **https://bbc.xania.org/?disc=https://bitshifters.github.io/content/wip/edge-beeb.ssd&autoboot&model=Master**
 
 **Z** and **X** steer left and right, **K** and **M** up and down, **L** fires. Boot takes
-eight to ten seconds of black screen while three sideways banks load off the disc. The published
-build is a development one: slots 2–7 hold drifting test enemies, the panel shows a colour-bar
-placeholder, and flying into scenery flashes the ship instead of killing you.
+eight to ten seconds of black screen while three sideways banks load off the disc and the scroll
+is wound forward a screen. The published build is a development one: the panel shows a colour-bar
+placeholder, and flying into scenery flashes the ship instead of killing you. It also still drops
+below 25 Hz in busy moments — see `BUGS.md` #9.
 
 ## What works
 
@@ -47,7 +48,8 @@ Collision reads a character map the scroll keeps as it plots — the C64 reads c
 screen it displays, which a bitmap port cannot do — and puts them through the original's own
 `col_decode` table.
 
-Roughly 80% of the 79,872-cycle frame is spoken for with eight sprites live.
+Roughly 80% of the 79,872-cycle frame is spoken for with eight sprites live — measured, but known
+to be optimistic, and the frame does overrun in play (`BUGS.md` #9).
 
 ## Building
 

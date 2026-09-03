@@ -18,7 +18,9 @@
    cycles saved, and the four page-aligned `map_c64_to_beeb_p0-3` tables (1K) are gone from main
    RAM. `plane_hi` (zero page) is set once per frame to `HI(char_data) + 8 * (char_col AND 3)`.
 
-4. **`tools/export_sprites.py`** writes `src/data/sprites.bin` in the Layer 3 proposal format:
+4. **`tools/export_sprites.py`** writes `src/data/sprites.bin` in the Layer 3 proposal format
+   (**superseded**: Layer 3 changed the format and the file, and the exporter now writes a complete
+   bank image per pixel shift, `sprites0.bin` and `sprites1.bin` - see decision 18):
    119 frames × two shifts × 7 × 21 bytes, then a bounding-box table. Colours: 01 → blue
    (`$d025`), 11 → white (`$d026`), 10 → the frame's `sprite_col_dcd` colour. **Nothing consumes
    it yet**: the plotter still reads the raw C64 bytes (moved to bank 1) and converts nibbles at

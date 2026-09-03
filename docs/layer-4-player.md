@@ -113,9 +113,11 @@ closed both.
 
 ## Memory
 
-Code `&0E00-&1BB0`, tables to `&1E29`, **`&1D7` free** below `CODE_TOP`. That is getting tight, and
-Layers 5 and 6 are the two that add the most code; the collision map going to `&04A0` rather than
-into the image is what bought the room there still is.
+As of this layer: code `&0E00-&1BB0`, tables to `&1E29`, **`&1D7` free** below `CODE_TOP`. That was
+already tight, and Layer 5 needed more - which is why it moved the whole game-state block out to
+`&0800` (decision 27). Take live figures from the build listing; `CLAUDE.md` carries the current
+map. The collision map going to `&04A0` rather than into the image is what bought the room there
+was to begin with.
 
 `&04A0-&07BF` collision map, `&07C0-&07FF` its overrun slack. Banks unchanged.
 

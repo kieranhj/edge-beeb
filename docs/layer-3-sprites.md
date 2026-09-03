@@ -4,9 +4,9 @@ First pass. Eight software sprites over the scrolling buffer, in both shadow ban
 play-area edges, drawn from offline-converted MODE 2 data. The 2019 plotter, its two nibble LUTs
 and its two 126-byte stashes are gone.
 
-**Status: built, running and measured in jsbeeb; not yet seen by KC in b-em, and not yet checked
-against a buffer oracle.** The open items are at the bottom and one of them is a design call KC
-should eyeball (the bank phase).
+**Status when written: built, running and measured in jsbeeb, not yet seen in b-em.** KC has since
+reviewed it, and two defects in this layer's code were found in Layer 5 - `BUGS.md` #8 and #9. The
+open items at the bottom carry their Layer 5 status. Still no buffer oracle.
 
 ## What was built
 
@@ -97,6 +97,10 @@ Breakpoints on the entry points, clock from `read_registers.elapsed_cycles`:
 | **total sprite work** | **49,236** | **6,155** |
 | the three together | 60,389 of 79,872 | **76% of the frame** |
 
+**These figures are optimistic** and were superseded before Layer 5 shipped: they were taken while
+`BUGS.md` #8 was silently skipping every sprite past x = 140, so enemies entering from the right
+edge cost nothing at the time. See `BUGS.md` #9.
+
 For comparison: the 2019 plotter was ~17,500 a sprite, and Paradroid finished at 5,814 for the same
 7 × 21 footprint with the rotor compiled. So this is a **2.8× improvement, interpreted**, and it
 leaves ~19,000 cycles a frame for the player, the waves, collisions and the music — which is roughly
@@ -115,7 +119,7 @@ The scroll's 11,153 is the first real measurement of it; the plan had estimated 
 - Memory: code `&0E00-&190x`, high water `&1AEA`, `&516` free below `CODE_TOP`. Bank 0 `&B500`,
   bank 1 `&B153`, bank 2 `&B78B`.
 
-## Open — for KC
+## Open — for KC *(status as of Layer 5, 2026-09-03)*
 
 1. **The bank phase, `SPR_PHASE_MASK` in `main.asm`, is currently 0 and needs an eye on it.**
    The two banks are drawn at the same origin (`corner_addr + 8`) and displayed at the same CRTC
@@ -124,17 +128,30 @@ The scroll's 11,153 is the first real measurement of it; the plan had estimated 
    `PROPOSAL.md` §3.1 had assumed the opposite (a sprite at fixed x using shift 0 in one bank and
    shift 1 in the other). **If a stationary sprite shimmers one pixel at 50 Hz, set the mask to 1.**
    Both shifts are used either way, because odd and even x still need them.
+   **Still 0 and still unconfirmed** after Layer 5, and the 2px rock KC did report turned out to be
+   `BUGS.md` #7, an ordering fault, not this.
 2. **`SPR_X_OFF` and `SPR_Y_OFF` are derived, not confirmed** (12 and 90). The C64 stores x halved
    and its bitmap starts at raster 50; Layer 4 confirms them against the original's own bounds.
+   **Effectively confirmed by Layer 4 and 5**: the collision map, the movement bounds and the wave
+   table's spawn positions all line up with the original using these, and `SPR_X_OFF` was
+   independently exercised by `BUGS.md` #8.
 3. **No buffer oracle yet.** `CLAUDE.md` asks for one and it is the right check for this layer:
    redraw the strip from the map at the current scroll position, with the sprites restored, and diff
-   it byte for byte at both bank parities. Worth building before Layer 5 puts six moving enemies in.
+   it byte for byte at both bank parities. **Still not built**, and Layer 5 has since put six moving
+   enemies in.
+
+**Two defects in this layer's code were found later** and are worth reading with the above:
+`BUGS.md` #8, the byte column taken with an arithmetic shift when `x - SPR_X_OFF` does not fit a
+signed byte, which hid every sprite past x = 140 from Layer 3 until Layer 5; and `BUGS.md` #9, the
+frame overrunning in play, which makes the cycle figures below optimistic.
 
 ## Rejected, or deferred
 
 - **Compiling the player and bullet** (`PROPOSAL.md` §3.6). Not done: the interpreted path already
   fits the frame, and compiling is only worth its complexity once Layer 4 and 5 have shown what the
   real load is. The 30% transparent-inside-the-box figure above says what it would buy.
+  **Layers 4 and 5 have now shown it**, and `BUGS.md` #9 says it does not always fit: this deferral
+  is the thing to revisit first if that turns out to be the budget.
 - **A shared inner loop instead of seven fall-through bodies.** The bodies cost 100 bytes of code
   image and save the per-column counter and test — about 8 cycles a byte, a quarter of the cost.
 - **Per-row wrap testing** as Paradroid does. One test per sprite that sends the whole sprite down
@@ -142,10 +159,10 @@ The scroll's 11,153 is the first real measurement of it; the plan had estimated 
 - **Storing the flash frames** as the CPC does (a whole bank of them). The recolour table is free per
   byte and costs 512 bytes a bank.
 
-## Debug
+## Debug — gone
 
-`DEBUG_SPRITES` (on in DEV builds, in `DEBUG_ANY` and stamped in `!BOOT`) fills the pool with the
-player, his bullet and six enemies, animates them from the C64's own `anim_decode` ranges, drifts
-the enemies left and wraps them round so every frame clips something through both edges, and flashes
-slot 2 every 64 frames. `read_keyboard` moves slot 0 on Z/X/:/? in the C64's units. All of it goes
-when Layer 4 gives the player and Layer 5 the waves.
+`DEBUG_SPRITES` filled the pool with the player, his bullet and six enemies, animated them from the
+C64's own `anim_decode` ranges, drifted them left and wrapped them round so every frame clipped
+something through both edges, and flashed slot 2 every 64 frames; `read_keyboard` moved slot 0 on
+Z/X/:/? in the C64's units. **All of it went in Layers 4 and 5**, as planned, when the player and
+the waves became real. Neither the flag nor the harness exists now.

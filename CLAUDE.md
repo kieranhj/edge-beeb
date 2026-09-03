@@ -7,7 +7,7 @@ Guidance for Claude Code when working in this repository.
 A port of the C64 game *Edge Grinder* (Cosine, Format War contest) to the **BBC Master 128**, in
 6502 assembly for the **BeebASM** assembler. A horizontal scrolling shooter: 1-pixel-per-frame
 scroll at 25 Hz, a five-tile-high tile map 302 tiles long, player, bullet and up to six enemies
-from a 54-wave table.
+from the original's 201-wave table.
 
 **`PLAN.md` is the live planning document.** Read it before starting work: it records the state of
 the port, what is left, and one paragraph per layer. **`PROPOSAL.md`** (2026-09-02) is the design
@@ -54,7 +54,7 @@ month and this is a Master.
 | Game loop | 25 Hz: the VSync IRQ flips the banks every `FRAME_LOCK` = 2 fields once the loop has parked a frame; a slow frame costs whole fields, never a tear |
 | Display split | Two CRTC cycles: 5-row panel at `&3000` **in both shadow banks** (every panel write goes to both), then 34 rows with the 20-row play area and VSync at absolute row 34. `src/rupture.asm` |
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
-| Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw. `src/sprite.asm`, `docs/layer-3-sprites.md` |
+| Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw, **a figure now known to be optimistic** (`BUGS.md` #9). `src/sprite.asm`, `docs/layer-3-sprites.md` |
 | Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
 | Controls | Z/X left/right, K/M up/down, L fire. Internal key numbers are **measured** (OSBYTE 121 in a BASIC session holding the key), never recalled |
 
@@ -95,14 +95,14 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 
 | File | Contents |
 |---|---|
-| `main.asm` | constants, zero page map, boot, main loop, `move_pages`, SAVEs, `!BOOT`, includes |
+| `main.asm` | constants, zero page map, boot, main loop, `scroll_frame` / `scroll_advance` / `scroll_prewind`, `move_pages`, SAVEs, `!BOOT`, the `&0800` game-state block, includes |
 | `scroll.asm` | map reader, tile readers, column buffer, column copy |
-| `sprite.asm` | the sprite engine: `SCANSTEP`, `spr_restore_all`, `spr_draw_all`, clipping, the flash tables, the C64's per-slot arrays, and the `DEBUG_SPRITES` harness |
+| `sprite.asm` | the sprite engine: `SCANSTEP`, `spr_restore_all`, `spr_draw_all`, clipping, the hit-flash tables |
 | `keyboard.asm` | `keydown` (direct VIA matrix read) and `read_joystick`, which packs the five keys into the C64's `$dc00` byte |
 | `player.asm` | movement, fire latch, bullet, background collisions, grind scoring, score, `game_tick` |
 | `enemy.asm` | the wave manager and reader, enemy movement, bounds, the two enemy collision passes, explosions |
 | `rupture.asm` | the two-cycle rupture, IRQ handler and install, `setup_display` (wrap, CRTC, palette, panel clear) |
-| `tables.asm` | main-RAM data tables |
+| `tables.asm` | initialised main-RAM tables only; the mutable state lives at `&0800` (see `main.asm`) |
 | `bank0.asm` | the SWRAM data bank |
 | `bank1.asm`, `bank2.asm` | the two SWRAM sprite banks, one per pixel shift |
 
@@ -125,16 +125,16 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
   display from `*RUN` until both banks are cleared and the panel drawn; R8 does NOT hide the
   CRTC cursor, so R10 = `&20` goes with it. `VDU 22` resets both.
 
-## Memory (Layer 4 build; take live figures from the listing)
+## Memory (Layer 5 build; take live figures from the listing)
 
 | Region | Contents |
 |---|---|
 | ZP `&00-&9F` | variables, guarded; wiped at boot |
-| `&0400` | column buffer, 160 B |
-| `&0800-&08E9` | game state: the C64's `$0340` block. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
+| `&0400-&049F` | column buffer, 160 B |
 | `&04A0-&07BF` | collision character map, 40 × 20; `&07C0-&07FF` is its overrun slack. The language workspace - ours once `*RUN` has handed over, verified by sentinel |
-| `&0E00-&1BB0` | code (`GUARD CODE_TOP` = `&2000`); `&1D7` free above the tables and getting tight |
-| to `&1E29` | tables, the sprite engine's per-slot arrays, and the C64's game-state block (the C64's own `sprite_pos` / `sprite_dp` / `sprite_pls_tmr`, plus what each bank's last draw did) |
+| `&0800-&08E9` | game state: the C64's `$0340` block - `sprite_pos`, `sprite_dp`, the `enemy_*` arrays, the score, and what each bank's last sprite draw did. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
+| `&0E00-&1DF3` | code (`GUARD CODE_TOP` = `&2000`) |
+| to `&1F9A` | initialised tables: multiply tables, `coll_row` bases, the sprite row-body dispatch tables, the OSFILE block. **`&66` free** - Layer 6 needs something moved out first |
 | `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly |
 | `&3000-&3C7F` × 2 | status panel, 5 rows × 640, in BOTH banks, displayed by rupture cycle A |
 | `&4000-&7FFF` × 2 | play buffers, main and shadow |
@@ -174,7 +174,12 @@ that the tables and the data agree.
   `corner_addr` update. Anything called from in there - `tile_cnt_bump`, `coll_advance` - must count
   in Y. Getting this wrong breaks the scroll outright; `BUGS.md` #5.
 - **Sprites do not take the scroll's bank phase** (`SPR_PHASE_MASK = 0`, decision 22), which
-  reverses `PROPOSAL.md` §3.1. Unconfirmed on a display - see `docs/layer-3-sprites.md`.
+  reverses `PROPOSAL.md` §3.1. Now supported by observation: with `BUGS.md` #7 fixed a stationary
+  ship is steady with the mask at 0. See `docs/layer-3-sprites.md`.
+- **The scroll is wound a whole screen before play starts** (`scroll_prewind`), because the C64's
+  `map_read_rst` ends in its own fast winder and the wave table's timings are authored against a
+  full screen. Anything that resets the map must wind it too, or every wave spawns a screen ahead
+  of the scenery it was drawn for; `BUGS.md` #6.
 - The C64 music is a binary by Sean Connolly. Arkos Tracker is the CPC port's driver, and the BBC
   tune will be converted from the CPC's (decision 5).
 

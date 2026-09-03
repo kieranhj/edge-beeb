@@ -129,7 +129,7 @@ were free at the time and are not now.
 - Shooting an enemy scores 40 and flashes it; with shields down to 1 the next hit scores **400**
   (80 → 480 in the score, exactly) and starts the explosion.
 - 1,500 fields with the pool running: no trails, no corruption, scenery and sprites clean.
-- Bank 0 now ends at `&BC38` with `&3C8` free; the image at `&1F88` with `&78` free.
+- Bank 0 now ends at `&BC38` with `&3C8` free; the image at `&1F9A` with `&66` free.
 - Both banks come up full: the play area is scenery from the first displayed frame, and the first
   wave flies the corridor the table drew it for.
 
