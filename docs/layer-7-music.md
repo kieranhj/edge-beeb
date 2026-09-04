@@ -68,6 +68,15 @@ Four things make HAZEL the right home rather than a desperate one:
 - **Its resident content is the filing system's workspace**, and the filing system is finished the
   moment the banks are loaded. `MUSIC` is therefore the **last** of the five files loaded, and
   nothing may touch the disc afterwards.
+
+  That has a consequence beyond the run (KC): **BREAK must clear memory**, or the machine comes back
+  with the DFS workspace still wrecked. Measured before the fix - a soft BREAK out of the game gave
+  `Acorn MOS` with no DFS banner, and `*CAT` returned nothing at all. `OSBYTE 200` with X = 3 is the
+  first thing `main` does: bit 1 makes BREAK behave as a power-on reset, which re-initialises the
+  workspace, and bit 0 disables ESCAPE with it, which is welcome anyway - it cannot abort the bank
+  loads, and the ESCAPE key is read straight off the VIA matrix rather than through the MOS.
+  Measured after: BREAK gives a clean `Acorn 1770 DFS`, `*.` catalogues the disc, and SHIFT+BREAK
+  reloads and runs the game.
 - **`&BFFF` and `&C000` are adjacent, and both are visible at once.** Sideways bank 3 and HAZEL are
   paged by different registers over different windows, so a pointer walking off the end of the bank
   lands in HAZEL and the player does not have to know the join is there. That is what lets the tune

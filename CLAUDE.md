@@ -118,6 +118,11 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
 - VSync handler → fire 1 = 53 scanlines with `T1_I1 = 56*SL - 4*SL - 2`; fire 1 → fire 2 =
   40.0 scanlines with `T1_I2 = 40*SL - 2`. T1 ticks at 1 MHz, SL = 64. Measured 2026-09-02.
 - OSFILE writes a file's catalogue addresses back into its parameter block after a load.
+- **We take HAZEL, so BREAK must clear memory.** HAZEL (`&C000-&DFFF`, ACCCON bit 3) is the filing
+  system's workspace; `MUSIC` overwrites it, so `MUSIC` is loaded LAST and nothing touches the disc
+  after it. A SOFT break would leave the wreckage in place - measured: no DFS banner and `*CAT`
+  returns nothing. `OSBYTE 200, 3` at the top of `main` makes BREAK a power-on reset (bit 1) and
+  disables ESCAPE with it (bit 0). Do not remove it, and do not add a disc access after the load.
 - The shadow display bit flips cleanly inside the VSync handler. **Nothing displayed may live
   below `&3000`**: jsbeeb and b-em disagree about what the video fetches there with D set (b-em:
   garbage on alternate frames). Decision 17.

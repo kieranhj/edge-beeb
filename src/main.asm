@@ -379,6 +379,21 @@ GUARD CODE_TOP
 {
     txs
 
+    \\ BREAK must clear memory from here on (KC). We take HAZEL, which is the
+    \\ filing system's own workspace, so once MUSIC is copied up there the DFS
+    \\ workspace is gone. A SOFT break leaves it that way and the machine comes
+    \\ back with no filing system at all - measured: no DFS banner and *CAT
+    \\ returns nothing. OSBYTE 200 bit 1 makes BREAK behave as a power-on reset,
+    \\ which re-initialises it; bit 0 disables ESCAPE with it, which is welcome
+    \\ anyway - it cannot abort the bank loads, and we read the ESCAPE key
+    \\ straight off the VIA matrix rather than through the MOS.
+    \\
+    \\ First thing done, before anything can be interrupted or broken into.
+    lda #200
+    ldx #3
+    ldy #0
+    jsr osbyte
+
     \\ Blank the display until setup_display has cleared everything: the
     \\ banks stage through &4000, which is on screen if the machine booted in
     \\ a graphics mode. R8 skew bits (Paradroid's R8_BLANK); VDU 22 resets R8
