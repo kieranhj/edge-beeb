@@ -767,9 +767,9 @@ ENDIF
     adc #HI(char_data)
     sta plane_hi
 
-    \\ Rotate right hand column
-
-    jsr rotate_column_buffer
+    \\ The right-hand column is NOT shifted here any more. copy_column_buffer
+    \\ does it on the way out at the bottom of the frame, which is the same
+    \\ shift one frame earlier and saves a whole 160-byte pass.
 
     \\ Column reader for tile 1
 

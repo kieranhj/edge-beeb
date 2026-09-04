@@ -288,6 +288,11 @@
     sta write_column_data+1
     sta read_column_data+1
     sta copy_col_char_loop+1
+    sta rot_col_data+1          ; the shifted write-back walks WITH the read,
+                                ; so it has to be wound back with it. Missing
+                                ; this left row 0 unshifted - the top character
+                                ; row smeared - and put its write into &04A0,
+                                ; the first eight bytes of the collision map
 
     clc
     lda corner_addr
@@ -304,27 +309,27 @@
     rts
 }
 
-.rotate_column_buffer
-{
-    \\ Shift all pixels left
-    ldx #0
-    .loop
-    lda column_buffer, X
-    asl a
-    and #&aa    ; mask out right pixel
-    sta column_buffer, X
-    inx
-    cpx #column_size
-    bcc loop
-
-    rts
-}
-
 .copy_column_buffer
 \{
-    \\ Copy column buffer to screen
+    \\ Copy the column buffer to the screen, AND shift it left one pixel
+    \\ on the way out. These used to be two separate 160-byte loops: the
+    \\ shift was its own routine, rotate_column_buffer, run at the top of
+    \\ scroll_frame before the twenty plot_char_y calls.
+    \\
+    \\ Fusing them is exact, not an approximation. What reaches the screen
+    \\ is shift(last frame's buffer) OR this frame's characters, and it
+    \\ makes no difference whether the shift happens at the end of the
+    \\ frame that produced the value or at the start of the frame that
+    \\ consumes it. Doing it here saves the other loop's own LDA, its
+    \\ index arithmetic and its branch - 11 cycles on every one of the
+    \\ 160 bytes, about 1,760 a frame - and the code gets SMALLER.
+    \\ docs/performance.md.
+    \\
+    \\ The buffer needs no initial value: one pass of this leaves it
+    \\ holding nothing but that frame's right-hand pixels, so whatever
+    \\ was in it at boot is gone after the first column.
     ldy #column_size/8
-    
+
     .copy_col_row_loop
 
     ldx #7
@@ -332,15 +337,21 @@
     lda column_buffer, X
     .write_beeb_data
     sta &3000, X
+    asl a
+    and #&aa    ; mask out right pixel: the old right one is the new left
+    .rot_col_data
+    sta column_buffer, X
     dex
     bpl copy_col_char_loop
 
-    \\ Increment to next row
+    \\ Increment to next row. BOTH column-buffer addresses move now: the
+    \\ read at the top of the loop and the shifted write-back.
 
     clc
     lda copy_col_char_loop+1
     adc #8
     sta copy_col_char_loop+1
+    sta rot_col_data+1
     \\ won't overflow
 
     clc

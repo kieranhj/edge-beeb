@@ -114,20 +114,60 @@ Ranked by cycles saved per byte of code spent. **Space is the binding constraint
 145 bytes free in main RAM, 178 in bank 0 (`docs/memory-map.md`), and the scroll and sprite engine
 are both in main RAM.
 
-### 1. Unroll the scroll's three inner loops - the best deal in the build
+### 1. The scroll's shift and copy - DONE, 2026-09-04
 
-All three pay `dex`/`bpl` or `inx`/`cpx`/`bcc` on every single byte:
+**This was first written up as "unroll the scroll's three inner loops, ~2,700 cycles for 150-250
+bytes". That was wrong about two of the three, and the third turned out not to need unrolling at
+all.** What was missed: `plot_char_y` and `copy_column_buffer` both index off **self-modified
+base addresses**, rewritten every character row. Unrolling by eight does not multiply the `LDX`;
+it multiplies the ADDRESSES THAT HAVE TO BE PATCHED, from two per row to sixteen. That costs about
+64 cycles a row against a saving of 24, so both are net losses. **A self-modified base is an
+argument against unrolling, not a detail beside it.**
 
-| Loop | now | unrolled x8 | saved |
-|---|--:|--:|--:|
-| `rotate_column_buffer` - 160 bytes | 20 cyc/byte | 13 | ~1,120 |
-| `plot_char_y` inner - 20 x 8 bytes | 18 cyc/byte | 13 | ~800 |
-| `copy_column_buffer` inner - 20 x 8 bytes | 14 cyc/byte | 9 | ~800 |
+`rotate_column_buffer` was the one with no patched base - it walked all 160 bytes off a fixed one -
+and it did not want unrolling either. It wanted **deleting**:
 
-**~2,700 cycles a frame - 23% of the scroll, 3.4% of the frame - for roughly 150-250 bytes.**
+> The shift and the copy were two separate 160-byte passes over the same buffer, one at the top of
+> `scroll_frame` and one at the bottom. `copy_column_buffer` now does both: it writes the byte to
+> the screen, then shifts it and writes it back. What reaches the screen is unchanged - it is
+> shift(last frame's buffer) OR this frame's characters either way, and it makes no difference
+> whether the shift happens at the end of the frame that produced a value or the start of the frame
+> that consumes it.
 
-A cross-check that the model is sound: statically counting these three plus the tile reads gives
-10,000-11,800 cycles against the 11,784 the meter measured.
+| | cycles |
+|---|--:|
+| gone: the whole separate loop, `LDA`, index arithmetic, branch and all | -3,212 |
+| added to the copy's existing loop: `ASL`, `AND`, `STA abs,X`, and one more base patch a row | +1,520 |
+| **net** | **-1,692** |
+
+**Measured: `scroll_frame` 5,951 us before, 5,106 us after, at an identical scroll position -
+-845 us, which is -1,690 cycles.** The model predicted 1,692. That is 2.1% of the frame, 14% of the
+scroll, and the code got **11 bytes SMALLER**.
+
+Two notes on how it was checked, because the first two attempts at checking it were wrong:
+
+- **Comparing the phase MAXIMA showed only -214 cycles and nearly hid the win.** A maximum lands on
+  whichever frame happened to catch an interrupt, so it is a poor differential instrument. Zero the
+  slots, run four fields, and compare single frames.
+- **Comparing screen bytes at the same FRAME NUMBER is not comparing like with like.** The faster
+  build is further through the map: `scroll_prewind` winds a whole screen through `scroll_frame` at
+  startup, so the change made the init frame shorter (190 fields against 197) and the game four
+  frames ahead by the time the sample was taken. Step to an equal `char_col`/`tile_total` first.
+  Done that way, the play buffer and the collision map are **byte-identical** to the old build.
+
+And the bug it introduced on the way, caught by KC looking at the screen: **the shifted write-back
+walks with the read, so it has to be wound back with it.** `set_corner_addr` resets the read
+address to the top of the column buffer every frame and the new write-back address was not reset
+beside it, which left character row 0 never shifted - a smeared top row - and put its eight bytes
+into `&04A0`, the first slots of the collision map. One `sta rot_col_data+1`.
+
+### 1b. What is left in the scroll
+
+`plot_char_y` (~2,880 cycles a frame) and `copy_column_buffer` (~2,240 plus the shift) are now the
+scroll's cost, and both are pinned by their self-modified bases as above. Getting at them means
+changing the addressing scheme - putting the row offset in the index rather than the address - not
+unrolling, and the screen's 640-byte row stride does not fit an 8-bit index, so there is no easy
+version. Left alone.
 
 ### 2. Address the sprite save area absolutely, not indirectly
 
@@ -161,9 +201,12 @@ of the C64's. The cost is in the right place.
 ### The shape of it
 
 **The sprite engine is the frame**, and the only large win there is compiled bodies, which is a
-memory decision rather than a code one. Items 1 and 2 together are worth **5,000-5,500 cycles a
-frame, about 7%**, for a few hundred bytes: enough to take the worst frame from 107% of budget to
-roughly 100%, and the typical one from 78% to 71%.
+memory decision rather than a code one.
+
+Item 1 is done and worth **1,690 cycles a frame, 2.1%**, for eleven bytes less code. Item 2 is
+worth another 2,000-2,800 and is still open. Together that is about 4-5% - enough to take the
+worst frame from 107% of budget to roughly 102%, and the typical one from 78% to 74%. Closing the
+rest means the sprite engine, and the sprite engine means bank space.
 
 ## The frame-meter fix that came out of this
 
