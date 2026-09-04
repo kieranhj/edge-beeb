@@ -126,4 +126,4 @@ The frame budget is unmoved: `life_cycle` is about 30 cycles a tick.
 
 - **Titles, pause and Q-to-abort** are 6c. `comp_flag` is still set and still not read.
 - **`lives` is not displayed.** The panel is still the colour-bar placeholder; 6d.
-- The completion sequence, its bonus and the "mega hero" message are 6c.
+- The completion sequence and its bonus are 6c; the "mega hero" message is 9c.

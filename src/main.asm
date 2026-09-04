@@ -1555,6 +1555,19 @@ ORG GAME_STATE
 .star_lo        skip STAR_BANK + STAR_COUNT
 .star_hi        skip STAR_BANK + STAR_COUNT
 
+\ The "mega hero" message's state (Layer 9c). Here rather than in bank 1
+\ beside its code and its bitmaps, because that bank has tens of bytes
+\ left and this block has hundreds. mega_o and mega_m are indexed by 0
+\ for the "MEGA" block and 2 for the "HERO" one, as mega_gd is.
+.mega_o         skip 4      ; where in the buffer each block has got to
+.mega_m         skip 3      ; the eight cells each is working through
+.mega_j         skip 1      ; which byte of the two bitmaps, 0-29
+.mega_n         skip 1      ; which of its eight cells
+.mega_b         skip 1      ; the block mega_one is doing
+.mega_ofs       skip 2      ; the cell mega_plot is to write
+.mega_src       skip 2      ; and the sixteen bytes to write into it
+.mega_guard     skip 1      ; 0 = a letter, anything else the shadow
+
 \ The frame meter (src/timing.asm). Microseconds, worst case since boot;
 \ double them for 2 MHz cycles. tim_over is the one that matters.
 IF DEBUG_TIMING

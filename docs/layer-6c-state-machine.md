@@ -117,15 +117,16 @@ never before it. Then:
    still — the original calls neither `scroll_manage` nor anything that plots, so the main loop
    skips `scroll_frame` and `scroll_advance` in this mode.
 
-**The "mega hero" message is not built.** It is written as character codes into a text screen we do
-not have. Everything else in the sequence is here.
+~~**The "mega hero" message is not built.**~~ **It is, since 2026-09-04**, and it never needed the
+font this section said it wanted: `mega_hero_txt` is two 240-byte on/off bitmaps and one repeated
+character. It goes in between the sprites being hidden and the bonus, a cell a field, which is where
+the original puts it. [`docs/layer-9c-mega-hero.md`](layer-9c-mega-hero.md).
 
-> **Corrected 2026-09-04: it does not need a font, and does not wait for Layer 8.** This section
-> used to say it wanted "a font drawn for the job". It does not. `mega_hero_txt` is two 240-byte
-> on/off bitmaps, 6 rows of 40 cells each: `comp_mess` writes character `$80` where the byte is
-> `$20` and blank where it is `$00`, the second block backwards for the 180-degree rotated twin -
-> the titles' two zoom bands exactly. `tools/export_zoom.py` already exports the MODE 2 block cell
-> that needs, and `bank1.asm` already plots a rotated mirror band. See `PLAN.md` 9c.
+> The correction that unblocked it, kept because it is the shape of the mistake: this section used
+> to say the message wanted "a font drawn for the job", and it does not. A second claim made while
+> correcting it was wrong too - the second block is **not** a 180-degree rotated twin. The original
+> reads it backwards and writes it at the index it read from, so the picture goes on the right way
+> up and only the reveal runs in reverse.
 
 ### Where the bangs land (decision 33)
 
@@ -167,4 +168,4 @@ jsbeeb, Master 128, DEV build.
 - **The zoom scroller and the credits' movement** are 6e. The page is static.
 - **The panel is still the colour-bar placeholder**, so the score and the bonus it just counted are
   invisible; 6d.
-- **The "mega hero" message**, above.
+- ~~**The "mega hero" message**~~ - built 2026-09-04, see above.

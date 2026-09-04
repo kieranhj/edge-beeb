@@ -30,9 +30,9 @@ and **the HUD** - the original's own status bar, rendered whole from its charset
 map, with the score, the high score and the lives bars decoded onto it every frame; and **the
 music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL, muted and unmuted on Q; and **a loading screen**, a whole MODE 2 picture up while the banks load behind it, with every data file on the disc ZX0-compressed; and **a parallax starfield**, ten stars drifting left
 at two speeds, both slower than the level, the CPC's ten rather than the C64's, whose own is dead
-code. The
-completion's "mega hero" message is still to draw - and 9c says it needs no font, which is what
-Layer 6c thought was holding it up. **The whole 349-second tune
+code; and the completion's **"MEGA HERO" message**, a cell a field over the frozen play area,
+which turned out to need no font at all - it is two on/off bitmaps and one repeated character, and
+Layer 6c had it parked behind an alphabet that does not exist. **The whole 349-second tune
 ships**, spread over four separate regions of memory, because a `.vgi` is eleven independent
 register streams and only each stream has to be contiguous (decision 48).
 
@@ -204,8 +204,8 @@ set, so a character is four double-width pixels, which is one of our 4-fat-pixel
 C64's 38-column layout lands at 1:1 with no rescaling. `tools/export_title.py`; the data and its
 plotter are in bank 3, reached through a trampoline in main RAM. The zoom scroller is 6e.
 
-**Completion** is the fly-off, the 5,000-a-life bonus and the explosion finale, all of it but the
-"mega hero" message, which needs a font drawn for the job (Layer 8). Two decisions. **32**: P pauses,
+**Completion** is the fly-off, the 5,000-a-life bonus and the explosion finale; the "mega hero"
+message that goes between the first two was added in 9c. Two decisions. **32**: P pauses,
 ESCAPE aborts, both key numbers measured. **33**: the finale's positions come out of our own code,
 which is what the C64 reads too.
 
@@ -408,19 +408,27 @@ frame to hide the CPC's half-character R3 step. Ten plots and ten clears a frame
 plot into the column-ordered play buffer instead, in both banks. **A CPC feature, not a C64 one:
 it needs a decision row.**
 
-**2. "MEGA HERO" — it does not need a font.** `docs/layer-6c-state-machine.md` parked it as
-"character codes into a text screen we do not have… waits for Layer 8 and a font drawn for the
-job". That is not what the data is. `mega_hero_txt` is **two 240-byte on/off bitmaps**, 6 rows of
-40 cells each: a byte is `$20` or `$00`, and `comp_mess` writes character `$80` where it is set
-and blank where it is clear, the second block written backwards for the 180-degree rotated twin —
-the titles' two zoom bands exactly. One cell a field, a typewriter reveal, with a trailing clear
-one row down and one column right.
+**2. "MEGA HERO" — done 2026-09-04, and it never needed a font.**
+[`docs/layer-9c-mega-hero.md`](docs/layer-9c-mega-hero.md).
+`docs/layer-6c-state-machine.md` parked it as "character codes into a text screen we do not have…
+waits for Layer 8 and a font drawn for the job". That is not what the data is. `mega_hero_txt` is
+**two 240-byte on/off bitmaps**, 6 rows of 40 cells each: a byte is `$20` or `$00`, and `comp_mess`
+writes character `$80` where it is set and blank where it is clear. One character, repeated. One
+cell a field, a typewriter reveal, with a trailing clear one row down and one column right — the
+drop shadow, punched out of the scenery.
 
-We already have every piece: `tools/export_zoom.py` exports a 16-byte MODE 2 block cell for this
-same job, and `bank1.asm` already plots a rotated mirror band. So this is an exporter of about
-500 bytes and a per-field plot, with **no new artwork and no font**, and it closes the last hole
-in the completion sequence. (The CPC's `MEGAHERO.ASM` is the same message as a 14 x 8 mode-0
-grid if that shape suits better.)
+A C64 character is four multicolour pixels, so it is four of our fat pixels, so forty of them are
+our whole 160-pixel width and a cell is the zoom scroller's 16 bytes exactly. `tools/export_mega.py`
+converts the character — in the light green `comp_mess` writes into colour RAM, not the cyan
+`col_decode` would give it — and both bitmaps, 77 bytes; `mega_mess` in bank 1 draws it into both
+banks, a cell a field, and blocks for the 240 fields as the original does. Verified byte for byte
+against the bitmaps in both banks, all 480 cells and all their shadows.
+
+**A claim made when this item was written was wrong**: the second block is not a 180-degree rotated
+twin. The original reads it backwards and writes it at the index it read from, so it goes on the
+right way up and only the *reveal* runs in reverse — "MEGA" fills in from its top left and "HERO"
+from its bottom right, and they meet in the middle. (The CPC's `MEGAHERO.ASM` is the same message
+as a 14 x 8 mode-0 grid, and was not needed.)
 
 **3. The win tune.** `source_cpc/Music/` holds **two** songs: `EDGEA.SKS`, which is ours, and
 **`WON4.SKS`, 1,536 bytes** — a quarter the size. The CPC switches to it the moment the mega-hero
@@ -509,5 +517,6 @@ CPC's rather than the C64's.
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |
 | 9c — the parallax starfield | [`docs/layer-9c-starfield.md`](docs/layer-9c-starfield.md) | done 2026-09-04, decisions 50 and 51 |
-| 9c — the rest of the outstanding features | | **open 2026-09-04**: "mega hero", the win tune, redefinable keys, the fades and dedication, a BBC scroll text |
+| 9c — the "MEGA HERO" message | [`docs/layer-9c-mega-hero.md`](docs/layer-9c-mega-hero.md) | done 2026-09-04 |
+| 9c — the rest of the outstanding features | | **open 2026-09-04**: the win tune, redefinable keys, the fades and dedication, a BBC scroll text |
 | 9 — polish and release | | |

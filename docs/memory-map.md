@@ -2,7 +2,8 @@
 
 Every figure here is **measured from the build**, not from the source by eye: beebasm's `PRINT`
 statements write the high-water marks into the assembly listing, and these tables are what the
-listings said after the whole tune went in (2026-09-04, decisions 47-49). They go stale the moment
+listings said after the whole tune went in (2026-09-04, decisions 47-49) and the "MEGA HERO"
+message after it. They go stale the moment
 anything grows, so **take live numbers from the listing rather than trusting this page**:
 
 ```powershell
@@ -27,7 +28,7 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 | `&0400-&049F` | 160 | column buffer | 0 |
 | `&04A0-&07BF` | 800 | collision character map, 40 × 20 | 0 |
 | `&07C0-&07FF` | 64 | the collision map's overrun slack | 64, spent on purpose |
-| `&0800-&0977` | 376 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **740** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends at `&096B` - the frame meter is the difference. The starfield's 92 bytes (decisions 50 and 51) are the last thing in it: 40 for the stars and 52 for where each bank last plotted them |
+| `&0800-&0985` | 390 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **634** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends 12 lower - the frame meter is the difference. The last two things in it are the starfield's 92 bytes (decisions 50 and 51) - 40 for the stars and 52 for where each bank last plotted them - and the "MEGA HERO" message's 15, which are up here because bank 1, where its code is, had tens of bytes left and this has hundreds |
 | `&0C00-&0C5F` | 96 | **`VGI_STATE`**: the VGI player's decode state, eleven streams' worth (decision 49). Not in the image - nothing in it needs initialising | 160 to `&0D00` |
 | `&0D00-&0DFF` | 256 | paged-ROM extended vectors. Not claimed, not tested | 256, unverified — see below |
 | `&0E00-&2158` | 5,465 | code to `&1FF9`, then the boot-only data, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **187** to `LOAD_STREAM` — but see the ceiling below: only **7** of them are usable by anything read in play. `!BOOT` used to be assembled in here and is not any more (decision 49) |
@@ -38,7 +39,7 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 | `&E000-&FFFF` | 8,192 | MOS ROM. `&FFFE` on this Master reads `&E59E` — measured — so paging HAZEL in cannot break IRQ dispatch | — |
 
 **Region A's 32 bytes are the tightest thing in the build now** - the whole tune is 23,486 bytes of
-stream in 24,320 bytes of region - and bank 0's 25 the next: Layer 6e's `title_page` has to be in
+stream in 24,320 bytes of region - and the 11 left in bank 1's hole and bank 0's 16 the next: Layer 6e's `title_page` has to be in
 bank 0, because bank 0 code may call into main RAM and be returned to and bank 1 code may not. A
 RELEASE build has 191 in bank 0, the frame meter being the difference. Main RAM is no longer the
 problem it was: moving `!BOOT` out of the code image's address space (decision 49) took it from 111
@@ -68,13 +69,19 @@ that survives into the game.
 | Slot | Bank | Contents | High water | Free | `-Akl` | `-Akl -Cpc` |
 |---|---|---|---|---|---|---|
 | — | ANDY | the Master's own 4K, `&8000-&8FFF`, ROMSEL bit 7 — **measured 2026-09-04**, see below. One of the tune's eleven register streams lives here (decision 48) | `&8F9E` | **98** | 4,096 | 4,096 |
-| 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFE7` | **25** | 25 | 25 |
-| 5 | `BANK1` | sprite data, pixel shift 0, the titles' zoom scroller (Layer 6e), then `explosion_dirs` and the starfield's tables (Layer 9c) in what used to be dead space, then a tune stream at `MUSIC_B1_BASE` = `&B900`, then the starfield's code | `&BEC6` | **314** | 2,038 | 2,032 |
+| 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFF0` | **16** | 16 | 16 |
+| 5 | `BANK1` | sprite data, pixel shift 0, the titles' zoom scroller (Layer 6e), then `explosion_dirs`, the starfield's tables and the "MEGA HERO" message's data and `mega_one` (Layer 9c) in what used to be dead space, then a tune stream at `MUSIC_B1_BASE` = `&B900`, then the starfield's and the message's code | `&BFAA` | **86**, and **11** left in the hole below `&B900` | 1,370 | 1,364 |
 | 6 | `BANK2` | the same, shift 1, then a tune stream at `MUSIC_B2_BASE` = `&BA00` | `&BF47` | **185** | 1,909 | 1,727 |
 | 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the HUD glyphs and `status_decode`; then region A of the tune | `&8F8E`, then `music_lo` fills `&9100-&BFFF` | **370**, all below the tune, and **0** above it | **12,399** | **12,191** |
 
-A RELEASE build takes bank 0 to `&BF41`: **191** free, the frame meter (`src/timing.asm`) being the
+A RELEASE build takes bank 0 to `&BF4A`: **182** free, the frame meter (`src/timing.asm`) being the
 difference.
+
+**Bank 1 is in two pieces and both are nearly full.** The 171 bytes between the starfield's tables
+and the tune's B1 stream at `&B900` hold `explosion_dirs`, the starfield's tables and the message's
+data with **11** to spare; the tail past the stream holds the starfield's and the message's code
+with **86**. `ASSERT P% <= MUSIC_B1_BASE` is what catches the first of those overflowing, and the
+`GUARD` the second.
 
 **Bank 3 stopped being where the music argument happens.** The panel image left it for a disc file
 (decision 47), which is 3,200 bytes, and what took their place is region A of the tune - `&9100`
@@ -137,10 +144,10 @@ survived a run of the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared
 
 ## Where the room actually is
 
-The tune took the two big pieces. What is left, largest first: **648** in the `&0800` block, **314**
-in bank 1, **370** in bank 3 below the tune, **185** in bank 2, **167** in main RAM code, **160**
-at `&0C00`, **98** in ANDY, **38** above the music player in HAZEL, **32** in region A and **25** in
-bank 0. Everything is inside a few hundred bytes of its ceiling now.
+The tune took the two big pieces. What is left, largest first: **634** in the `&0800` block, **370**
+in bank 3 below the tune, **185** in bank 2, **167** in main RAM code, **160**
+at `&0C00`, **98** in ANDY, **86** in bank 1's tail, **38** above the music player in HAZEL, **32**
+in region A, **16** in bank 0 and **11** in bank 1's hole. Everything is inside a few hundred bytes of its ceiling now.
 
 `&0D00` and the 1,792 bytes at `&3C80` are worth another 2K if they survive a sentinel, and they are
 the obvious next place to look; the 896 in the MAIN bank at `&3C80` is directly addressable and

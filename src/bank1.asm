@@ -575,6 +575,73 @@ EQUB STAR_NEAR, STAR_NEAR, STAR_NEAR, STAR_NEAR, STAR_NEAR
 EQUB STAR_FAR,  STAR_FAR,  STAR_FAR,  STAR_FAR,  STAR_FAR
 
 
+\ ---- the "mega hero" message's data (Layer 9c) ------------------
+\ In the same hole as the starfield's tables, and for the same reason:
+\ 171 bytes were left between them and the tune's B1 stream at &B900,
+\ and the code that reads this is past it. The commentary is with the
+\ code, at the end of the bank.
+MEGA_ROW_1 = 3                  ; the C64's screen row 8, and its row 16: our
+MEGA_ROW_2 = 11                 ; play area is its rows 5-24, so both come
+MEGA_CELLS = 240                ; down five. Six rows of forty cells.
+MEGA_LAG   = 41                 ; the shadow: one row down, one cell right
+MEGA_O1    = 8 + MEGA_ROW_1 * row_stride
+MEGA_O2    = 8 + MEGA_ROW_2 * row_stride + (MEGA_CELLS - 1) * TTL_CELL
+MEGA_SHADE = MEGA_LAG * TTL_CELL
+
+.mega_data
+IF GFX_CPC
+INCBIN "src/data/mega-cpc.bin"
+ELSE
+INCBIN "src/data/mega.bin"
+ENDIF
+mega_block = mega_data          ; character $80, one 16-byte cell
+mega_key   = mega_data + 16     ; which of its bytes the "is a letter here
+                                ; already?" test compares - the first that is
+                                ; not blank, so the answer stays meaningful
+                                ; when the artwork does not have ink in byte 0
+mega_bits1 = mega_data + 17     ; "MEGA", 240 bits, bit 7 the first cell
+mega_bits2 = mega_data + 47     ; "HERO", stored back to front
+
+\ The only table it has: may block 2's shadow blank a cell that already
+\ carries a letter? Indexed by 0 for block 1 and 2 for block 2, as the
+\ rest of its state is - and the rest of its state is in the &0800 block
+\ in main RAM, because this bank has tens of bytes left and that has
+\ hundreds.
+.mega_gd    EQUB 0 : EQUB 0 : EQUB &ff
+
+
+\ ******************************************************************
+\ *	mega_one - one block's cell for this field. A = 0 or 2.
+\ ******************************************************************
+
+.mega_one
+{
+    sta mega_b
+    tax
+    asl mega_m, x               ; this cell's bit, out of the top
+    bcc done
+
+    lda mega_o, x   : sta mega_ofs
+    lda mega_o+1, x : sta mega_ofs+1
+    lda #LO(mega_block) : sta mega_src
+    lda #HI(mega_block) : sta mega_src+1
+    lda #0
+    sta mega_guard
+    jsr mega_plot
+
+    clc                         ; and the shadow, MEGA_LAG cells on
+    lda mega_ofs   : adc #LO(MEGA_SHADE) : sta mega_ofs
+    lda mega_ofs+1 : adc #HI(MEGA_SHADE) : sta mega_ofs+1
+    lda #LO(ttl_blank) : sta mega_src
+    lda #HI(ttl_blank) : sta mega_src+1
+    ldx mega_b
+    lda mega_gd, x
+    sta mega_guard
+    jsr mega_plot
+    .done
+    rts
+}
+
 IF MUSIC_AKL = 0
 \ The tune's B1 streams (decision 48). Nothing in this bank reads them:
 \ they are here because the .vgi's eleven register streams do not have to be
@@ -808,6 +875,179 @@ ENDIF
     rts
 }
 
+\ ******************************************************************
+\ *	Layer 9c: the completion sequence's "MEGA HERO" message
+\ ******************************************************************
+\ *	The C64's comp_mess draws it a cell a field over the frozen play
+\ *	area: character $80 in light green wherever mega_hero_txt holds
+\ *	$20 - six rows of forty at screen row 8, and the same again at row
+\ *	16 revealed from its LAST cell backwards, so the two blocks meet
+\ *	in the middle. It is not a font and never needed one: it is two
+\ *	240-cell on/off bitmaps and one repeated character, which is what
+\ *	docs/layer-6c-state-machine.md corrected on 2026-09-04.
+\ *
+\ *	A C64 character is four multicolour pixels, so it is four of our
+\ *	fat pixels, so forty of them are our whole 160-pixel width and one
+\ *	cell is 16 bytes - the zoom scroller's cell exactly, and copied the
+\ *	same way. tools/export_mega.py converts the character and both
+\ *	bitmaps; the second is stored back to front, so one ASL a step
+\ *	serves a block that reveals forwards and a block that reveals back.
+\ *
+\ *	THE SHADOW IS THE ORIGINAL'S. Beside every cell it draws, the C64
+\ *	blanks the cell 41 on - one row down and one to the right - which
+\ *	punches the scenery out behind the letters and leaves them a drop
+\ *	shadow. Block 1 runs forwards, so the cell it blanks cannot have
+\ *	been drawn yet and needs no test; block 2 runs backwards, so the
+\ *	cell it blanks may already carry a letter, and the original reads
+\ *	the screen to find out before it blanks. Both transcribe.
+\ *
+\ *	IT BLOCKS, and the whole loop is up here, because comp_mess in
+\ *	bank 0 has twenty-five bytes left and this is two hundred. Nothing
+\ *	in a sideways bank may call main RAM - but field_wait is three
+\ *	instructions over a main-RAM variable and inlines, and for the five
+\ *	seconds this takes nothing runs but the music interrupt.
+\ *
+\ *	BOTH BANKS, every cell. field_wait hands no frame over, so the
+\ *	display stands still on one bank while this runs - but the finale
+\ *	after it flips again, and a message in one bank only would strobe
+\ *	at 25 Hz from the moment it did.
+\ ******************************************************************
+
+
+\ ******************************************************************
+\ *	mega_mess - the message, a cell a field, and then return
+\ ******************************************************************
+
+.mega_mess
+{
+    lda #LO(MEGA_O1) : sta mega_o
+    lda #HI(MEGA_O1) : sta mega_o+1
+    lda #LO(MEGA_O2) : sta mega_o+2
+    lda #HI(MEGA_O2) : sta mega_o+3
+    lda #0
+    sta mega_j
+
+    .group
+    ldx mega_j
+    lda mega_bits1, x
+    sta mega_m
+    lda mega_bits2, x
+    sta mega_m+2
+    inc mega_j
+    lda #8
+    sta mega_n
+
+    .cell
+    \ field_wait, inlined: it is a read of a main-RAM variable and
+    \ nothing more, and this bank cannot call the routine itself.
+    lda field_count
+    .same
+    cmp field_count
+    beq same
+
+    lda #0
+    jsr mega_one
+    lda #2
+    jsr mega_one
+
+    clc                         ; block 1 forwards, block 2 backwards
+    lda mega_o   : adc #TTL_CELL : sta mega_o
+    lda mega_o+1 : adc #0        : sta mega_o+1
+    sec
+    lda mega_o+2 : sbc #TTL_CELL : sta mega_o+2
+    lda mega_o+3 : sbc #0        : sta mega_o+3
+
+    dec mega_n
+    bne cell
+    lda mega_j
+    cmp #MEGA_CELLS / 8
+    bne group
+    rts
+}
+
+
+\ ******************************************************************
+\ *	mega_plot - one cell into BOTH banks
+\ ******************************************************************
+\ *	mega_ofs is the offset from corner_addr, mega_src the sixteen
+\ *	bytes to put there, and mega_guard says whether a cell already
+\ *	carrying a letter is to be left alone. Two byte columns of eight
+\ *	rather than one run of sixteen: the buffer wraps at 16K and a
+\ *	sixteen-byte run can straddle the wrap, but an eight-byte column
+\ *	starting on an eight-byte boundary cannot.
+\ ******************************************************************
+
+.mega_plot
+{
+    lda &fe34
+    pha
+    and #255 - 4                ; the CPU sees MAIN
+    jsr pass
+    lda &fe34
+    ora #4                      ; and then SHADOW
+    jsr pass
+    pla
+    sta &fe34
+    rts
+
+    .pass
+    sta &fe34
+    ldx #0
+    jsr ptrs
+    lda mega_guard
+    beq columns
+    ldy mega_key
+    lda (write_ptr), y
+    cmp mega_block, y
+    beq out                     ; a letter is there already: leave it alone
+    .columns
+    jsr copy8
+    ldx #8
+    jsr ptrs
+    jsr copy8
+    .out
+    rts
+
+    \ X = the byte column within the cell, 0 or 8.
+    .ptrs
+    clc
+    lda corner_addr
+    adc mega_ofs
+    sta write_ptr
+    lda corner_addr+1
+    adc mega_ofs+1
+    sta write_ptr+1
+    txa
+    clc
+    adc write_ptr
+    sta write_ptr
+    bcc no_carry
+    inc write_ptr+1
+    .no_carry
+    lda write_ptr+1
+    cmp #HI(screen_top)
+    bcc in_range
+    sbc #HI(screen_size)
+    sta write_ptr+1
+    .in_range
+    txa
+    clc
+    adc mega_src
+    sta read_ptr
+    lda mega_src+1
+    adc #0
+    sta read_ptr+1
+    rts
+
+    .copy8
+    ldy #7
+    .cl
+    lda (read_ptr), y
+    sta (write_ptr), y
+    dey
+    bpl cl
+    rts
+}
 
 
 .bank1_end

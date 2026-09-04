@@ -379,12 +379,15 @@ INCLUDE "src/timing.asm"
 \ ******************************************************************
 \ *	comp_mess - the game is won: the bonus, then the finale
 \ ******************************************************************
-\ *	The C64's comp_mess, minus the "mega hero" message it draws over
-\ *	the play area: that is written in character codes into a text
-\ *	screen we do not have, and it waits for Layer 8 and a font drawn
-\ *	for the job. What is here is the rest of it, in order - every
-\ *	sprite hidden, 5,000 points a remaining life counted on with the
-\ *	original's own 50-frame pause between them, and then the finale.
+\ *	The C64's comp_mess, whole and in its order: every sprite hidden,
+\ *	the "mega hero" message drawn a cell a field over the frozen play
+\ *	area, 5,000 points a remaining life counted on with the original's
+\ *	own 50-field pause between them, and then the finale.
+\ *
+\ *	The message is up in bank 1 (Layer 9c) - the 240-field loop as
+\ *	well as the plotting, because this bank has twenty-five bytes
+\ *	left. It is not a font and never needed one; the commentary is
+\ *	there with the code.
 \ *
 \ *	It BLOCKS, on field_wait, exactly as the original blocks on
 \ *	sync_wait. Nothing is moving and nothing is being drawn, so there
@@ -404,6 +407,14 @@ INCLUDE "src/timing.asm"
     inx
     cpx #2*SPR_SLOTS
     bne hide
+
+    \ The "mega hero" message, a cell a field, over the frozen play
+    \ area. All of it - the 240-field loop included - is in bank 1,
+    \ because there are twenty-five bytes left in this one.
+    lda #SWRAM_SPRITES0
+    ldx #LO(mega_mess)
+    ldy #HI(mega_mess)
+    jsr bank_call
 
     ldy lives
     beq no_bonus                \\ cannot happen in play; a loop of 256 if it did
