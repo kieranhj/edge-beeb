@@ -123,10 +123,18 @@
     \ HAZEL, which is still paged in here.
     lda music_mute
     bne muted
+IF MUSIC_AKL
+    jsr akl_frame               ; the Arkos replay + the AY -> SN conversion
+ELSE
     jsr vgm_update
+ENDIF
     jmp music_done
     .muted
+IF MUSIC_AKL
+    jsr akl_silence
+ELSE
     jsr sn_reset
+ENDIF
     .music_done
 
     lda &f4                     ; and back to whatever was interrupted: the

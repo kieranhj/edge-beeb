@@ -37,6 +37,66 @@
 \ *	which is what a frame already at 90% needs. See docs/layer-7-music.md.
 \ ******************************************************************
 
+IF MUSIC_AKL
+
+\ ******************************************************************
+\ *	The Arkos build. Everything the music needs is in HAZEL:
+\ *
+\ *	  &C000  src/aklplayer.asm, the AKL tracker replay, and
+\ *	         src/ay2sn.asm, the AY -> SN76489 conversion, with their
+\ *	         tables and per-channel state
+\ *	  &CC00  the WHOLE tune as Arkos tracker data, 4,741 bytes
+\ *
+\ *	No ring workspace, no half in bank 3, and no truncation: the
+\ *	tune is 349 seconds instead of 203. What it costs is that the
+\ *	SN76489 conversion happens at run time, per frame, instead of
+\ *	offline with whole-song analysis - so it does not sound the same
+\ *	as the VGI build. That is the comparison this switch exists for.
+\ ******************************************************************
+
+CLEAR 0, &FFFF
+ORG HAZEL_BASE
+GUARD MUSIC_AKL_SONG
+.hazel_start
+
+INCLUDE "src/aklplayer.asm"
+INCLUDE "src/ay2sn.asm"
+.akl_code_end
+
+\ One frame of music: replay the tracker, then convert what it produced.
+\ rupt_vsync calls this where the VGI build calls vgm_update.
+.akl_frame
+{
+    jsr akl_play
+    jmp ay2sn
+}
+.akl_frame_end
+
+CLEAR MUSIC_AKL_SONG, MUSIC_AKL_SONG + 1
+ORG MUSIC_AKL_SONG
+GUARD &E000
+.akl_song
+INCBIN "src/data/music_akl.bin"
+.akl_song_end
+.hazel_end
+
+HAZEL_LOAD_PAGES = (hazel_end - hazel_start + 255) DIV 256
+
+SAVE "MUSIC", hazel_start, hazel_end
+
+PRINT "------"
+PRINT "HAZEL - the Arkos replay and the whole tune"
+PRINT "------"
+PRINT "PLAYER+CONVERTER size =", ~akl_frame_end - hazel_start
+PRINT "PLAYER ROOM LEFT =", ~MUSIC_AKL_SONG - akl_frame_end
+PRINT "TUNE size =", ~akl_song_end - akl_song
+PRINT "LOAD PAGES =", HAZEL_LOAD_PAGES
+PRINT "HIGH WATERMARK =", ~P%
+PRINT "FREE =", ~&E000 - P%
+PRINT "------"
+
+ELSE
+
 CLEAR 0, &FFFF
 ORG HAZEL_BASE
 GUARD MUSIC_PLAYER
@@ -75,3 +135,5 @@ PRINT "LOAD PAGES =", HAZEL_LOAD_PAGES
 PRINT "HIGH WATERMARK =", ~P%
 PRINT "FREE =", ~HAZEL_WORK - P%
 PRINT "------"
+
+ENDIF ; MUSIC_AKL

@@ -9,6 +9,8 @@ DEV = 1-RELEASE
 
 \ Debug flags. Each must be off under RELEASE; add new ones to DEBUG_ANY and
 \ to the !BOOT stamp at the bottom of this file so a build says what it is.
+\ MUSIC_AKL is stamped there too, but it is not one of these: it is legal
+\ under RELEASE and so is deliberately not in DEBUG_ANY.
 DEBUG_COLL = 0              ; collisions never take a life (the C64 source's
                             ; own "patch me out to disable collisions!").
                             ; OFF in DEV too: dying is the normal case
@@ -218,6 +220,20 @@ MUSIC_LO_BASE = HAZEL_BASE - MUSIC_LO_SIZE      ; &9D00
 MUSIC_PLAYER  = &D200       ; the player's code, above the tune's high half
 ASSERT MUSIC_LO_BASE >= &8000
 
+\ MUSIC_AKL picks the OTHER music subsystem, for the comparison Layer 7 left
+\ open: src/aklplayer.asm replays the Arkos tracker data directly and
+\ src/ay2sn.asm converts AY registers to the SN76489 every frame, instead of
+\ lib/vgiplayer.asm decoding a pre-converted register log. It is passed on the
+\ command line beside RELEASE, because beebasm has no IFDEF and refuses a
+\ symbol defined twice, so main.asm cannot carry a default.
+\
+\ The whole subsystem then fits inside HAZEL - player, converter, tables and
+\ the WHOLE 349-second tune - so bank 3's music_lo disappears and its 8,960
+\ bytes come free. The tune is not truncated in this build.
+MUSIC_AKL_SONG = &CC00      ; the tracker data; tools/export_music_akl.py
+ASSERT MUSIC_AKL_SONG > HAZEL_BASE
+ASSERT MUSIC_AKL_SONG < &E000
+
 \ Build flag for lib/vgiplayer.asm, which the library expects on the command
 \ line; set here instead so a bare beebasm invocation cannot get it wrong.
 \ 0 is the compact looped decoder, 1 the unrolled one - half a K more code
@@ -373,9 +389,29 @@ GUARD &9F
 .crtc_live      skip 2      ; scroll address the IRQ programs at fire 1
 .rupt_state     skip 1      ; 0 = fire 1 pending, 1 = fire 2 pending, 2 = done
 
+IF MUSIC_AKL
+\ src/aklplayer.asm's working pointers. Everything else it keeps - the
+\ per-channel state, the tables, the register file - is absolute, up in
+\ HAZEL with the code, so only the indirect reads need to be down here.
+.ptr            skip 2      ; the track / linker pointer being read
+.iptr           skip 2      ; the instrument pointer being read
+.tptr           skip 2      ; scratch indirect: the table lookups
+.cell           skip 1      ; the byte being decoded
+.iofs           skip 1      ; Y, parked while Y is needed for a table
+.per            skip 2      ; the period being computed
+.tmp            skip 2
+.mixer          skip 1      ; R7 as the three channels build it up
+.akl_tick       skip 1      ; ticks until the next line
+.akl_speed      skip 1
+.akl_height     skip 1      ; lines left in this pattern
+.akl_prevh      skip 1      ; the height to reuse when a pattern does not say
+.lnk            skip 2      ; the linker pointer
+.jvec           skip 2      ; the effect dispatch vector
+ELSE
 \ The VGI music player's four bytes (lib/vgiplayer.h.asm): two indirect
 \ pointers. Everything else it keeps is absolute, up in HAZEL with the code.
 INCLUDE "lib/vgiplayer.h.asm"
+ENDIF
 
 \ The ZX0 depacker (src/zx0depack.asm) borrows six of the above. It runs
 \ only at boot, before any of them is live, and it is over before the
@@ -1129,6 +1165,14 @@ ENDIF
 IF DEBUG_TIMING
     EQUS "REM DEBUG_TIMING: the frame meter is running", 13
 ENDIF
+ENDIF
+\ MUSIC_AKL is NOT a DEBUG_ flag: it is legal under RELEASE and it changes
+\ what the disc contains, so it is stamped outside the RELEASE test. Saying
+\ nothing means the default - lib/vgiplayer.asm and the tune cut to 203 s.
+IF MUSIC_AKL
+    EQUS "REM MUSIC_AKL: Arkos replay, whole 349s tune", 13
+ELSE
+    EQUS "REM MUSIC: VGI player, tune cut to 203s", 13
 ENDIF
 EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
 EQUS "*RUN Edge", 13

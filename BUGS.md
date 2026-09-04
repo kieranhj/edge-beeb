@@ -322,3 +322,44 @@ and is sound - the restore runs slot 0 up and the draw slot 7 down, which is the
 `life_lost` itself is a faithful transcription and corrupts nothing; every array it writes was
 checked against its bounds. The layer's own state - `lives`, the shield, `player_live` - was
 correct throughout, which is why the state readings looked healthy while the screen did not.
+
+
+## 12. Every drum in the Arkos build played as a pitched tone
+
+**Symptom** (KC): "There are spurious tones when the drums kick in." Only in the `MUSIC_AKL` build;
+the VGI build is unaffected, since its stream is converted offline.
+
+**Cause**: `src/ay2sn.asm` built the SN76489 noise-control byte as `&E0 | rate`. **Bit 2 of that
+byte is the feedback bit and it selects WHITE noise**; with it clear the chip plays *periodic*
+noise, which is not a drum at all - it is a short repeating LFSR pattern, i.e. a buzzy pitched
+tone. So every percussion hit in the tune came out as a note.
+
+Diagnosed by comparing the noise-control bytes in the two streams rather than by ear:
+
+```
+shipping  &E3 rate 3 PERIODIC   x944     <- ym2sn's tuned-noise bass, deliberate
+shipping  &E4 rate 0 WHITE      x362
+shipping  &E5 rate 1 WHITE      x364     <- the drums, white, as they should be
+shipping  &E6 rate 2 WHITE      x364
+shipping  &E7 rate 3 WHITE      x757
+runtime   &E0 rate 0 PERIODIC   x364     <- ours, every one of them wrong
+runtime   &E1 rate 1 PERIODIC   x364
+runtime   &E2 rate 2 PERIODIC   x364
+```
+
+**The fix**: `ora #&e4`, with a comment at the site saying what bit 2 is for.
+
+**A second bug found beside it**: the channel-3 volume was hard-coded to `&F0` - full blast - so
+every drum was at maximum whatever the tune asked for. On the AY the noise is heard at the volume
+of whichever channel has it open, and that channel usually has its *tone* disabled, so the volume
+has to be taken **before** `ay2sn` forces a tone-disabled channel to attenuation 15. It is now
+captured into `noise_att` at that point, loudest channel winning.
+
+**Measured after the fix**: across the whole 17,446-frame tune the noise byte is now `&E4`/`&E5`/
+`&E6` - white in every case - and channel 3's attenuation varies 0-6 while playing (14,426 frames
+silent) instead of being pinned at 0. The running game still matches the simulation uniquely:
+twelve captured fields match simulated frame 427 and nothing else.
+
+**Still not right, and known**: `ym2sn` uses noise rate 3 - the noise clocked by tone generator 3 -
+on 1,701 of its frames, which is the tuned-noise trick, and `src/ay2sn.asm` never emits rate 3 at
+all. That is the crudeness that remains in the mapping; the spurious tones were not it.

@@ -230,6 +230,24 @@ of bank 3 to a boot-time load (71% of the tune, no format work), scatter the for
 independent register streams into ANDY and the bank scraps as well (all of it), or cut the tune
 musically - and all of them are KC's call.
 
+### Layer 7, second pass - the Arkos replay - built, and the choice is open
+
+[`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md), decision 40. `.\build.ps1 -Akl`
+builds a second disc in which `src/aklplayer.asm` replays the **Arkos tracker data itself** and
+`src/ay2sn.asm` converts to the SN76489 every frame, instead of the VGI player decoding a
+pre-converted register log. The whole 349-second tune is 4,741 bytes that way, so player, converter
+and tune together are 7,640 and **fit in HAZEL alone** - `music_lo` leaves bank 3 and takes 8,960
+bytes of it with it, and nothing is truncated. It costs +854 us on the worst frame and nine missed
+flips against seven, on the same brutal test.
+
+The replay is not in doubt: byte-exact against Arkos's own player over all 17,446 frames, and twelve
+fields captured out of the running game match the simulation uniquely. **What is open is how it
+sounds.** `ym2sn.py` does whole-song analysis a per-frame converter cannot - a priority bass channel
+synthesised with periodic noise, the hardware envelope averaged across each frame - so the Arkos
+build is the tune *re-voiced*, not the same tune smaller. `tools/sn2wav.py` renders either stream to
+a WAV for the comparison. **KC's ear decides**; until then both builds exist side by side and the
+default is unchanged.
+
 ### Layer 8 — graphics pipeline B (the artist)
 
 `PROPOSAL.md` §5.2. Palette file and templates out, `validate_art.py` in (exact palette, pair
@@ -276,6 +294,7 @@ Still to do: starfield, real-hardware test, release build, publish.
 | 6d — HUD | [`docs/layer-6d-hud.md`](docs/layer-6d-hud.md) | done 2026-09-03 |
 | 6e — title screen | | |
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
+| 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | built 2026-09-04 behind `MUSIC_AKL`; whole tune, KC's ear decides |
 | 8 — graphics pipeline B | | |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |

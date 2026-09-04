@@ -365,11 +365,18 @@ NEXT
     lda &fe34
     ora #HAZEL_BIT
     sta &fe34
+IF MUSIC_AKL
+    lda #LO(MUSIC_AKL_SONG)     ; the Arkos replay: song address, subsong 0
+    ldx #HI(MUSIC_AKL_SONG)
+    ldy #0
+    jsr akl_init
+ELSE
     lda #HI(HAZEL_WORK)
     ldx #LO(MUSIC_LO_BASE)
     ldy #HI(MUSIC_LO_BASE)
     sec
     jsr vgm_init
+ENDIF
     lda &fe34
     and #255-HAZEL_BIT
     sta &fe34
@@ -388,6 +395,15 @@ NEXT
 \ *	the join is at &C000 whatever the tune's length.
 \ ******************************************************************
 
+IF MUSIC_AKL
+
+\ Nothing here in the Arkos build: the whole tune is tracker data and it
+\ lives in HAZEL with the player, so all 8,960 bytes of this are free.
+PRINT "BANK 3 code/data ends at", ~P%, "- no music_lo (MUSIC_AKL)"
+PRINT "BANK 3 FREE ABOVE CODE =", ~&C000 - P%
+
+ELSE
+
 ASSERT P% <= MUSIC_LO_BASE
 PRINT "BANK 3 code/data ends at", ~P%, "- music_lo starts at", ~MUSIC_LO_BASE
 
@@ -395,6 +411,8 @@ ORG MUSIC_LO_BASE
 .music_lo
 INCBIN "src/data/music_lo.bin"
 ASSERT P% = HAZEL_BASE
+
+ENDIF
 
 .bank3_end
 
