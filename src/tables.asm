@@ -11,6 +11,8 @@
 
 .data_start
 
+.loadsc1_filename EQUS "LoadSc1",13
+.loadsc2_filename EQUS "LoadSc2",13
 .bank0_filename EQUS "Bank0",13
 .bank1_filename EQUS "Bank1",13
 .bank2_filename EQUS "Bank2",13
@@ -27,7 +29,7 @@ EQUB &22,&22,&8a,&8a,&45,&45,&26,&26
 
 .osfile_params
 .osfile_nameaddr
-EQUW bank0_filename
+EQUW loadsc1_filename
 ; file load address
 .osfile_loadaddr
 EQUD &4000

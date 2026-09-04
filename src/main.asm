@@ -266,7 +266,27 @@ PLAY_R7     = 34 - PANEL_ROWS              ; VSync at absolute row 34, as MODE 2
 PANEL_ADDR  = &3000
 PANEL_BYTES = PANEL_ROWS * row_stride      ; 3200, to &3C7F
 ASSERT PANEL_ADDR + PANEL_BYTES <= screen_start
-CODE_TOP    = &2000         ; &2000-&2FFF is reserved for the Layer 3 sprite saves
+\ The loading screen (Layer 9a): a full MODE 2 picture in main RAM, shown
+\ while the banks load. It is the MOS's own screen address, because the
+\ mode change now happens FIRST and the picture is simply what MODE 2 is
+\ displaying. Two halves, because of where their streams have to sit.
+LOADSCR_ADDR  = &3000
+LOADSCR_ADDR2 = &5800       ; halfway: 16 of the 32 character rows
+ASSERT LOADSCR_ADDR2 - LOADSCR_ADDR = 16 * row_stride
+
+\ Where a ZX0 stream is staged before it is unpacked (decision 38).
+\ LOAD_STREAM is main RAM below the screen, the only ground the loading
+\ screen's own stream can use: ZX0 unpacks forwards, so a stream may not be
+\ overtaken by its own output, and one covering the whole 20K screen would
+\ have to start above &8000 to stay ahead of it. It is also the ceiling of
+\ the code image - the depacker is boot code and is allowed to run past
+\ SPR_SAVE's base, which nothing reads until the game starts.
+\ DEPK_STREAM is the SHADOW screen, free the whole time the picture is up in
+\ main, and roomy: the four bank streams and the music's go there.
+LOAD_STREAM = &2200
+DEPK_STREAM = &3000
+CODE_TOP    = LOAD_STREAM   ; and &2000-&2FFF is the Layer 3 sprite saves,
+                            ; which boot code may sit in and boot streams fill
 
 \ T1 runs at 1 MHz: one scanline = 64 ticks. Fire 1 lands on A row 2,
 \ fire 2 on B row 2 (see rupture.asm). -4 scanlines for the CA1 service
@@ -354,6 +374,19 @@ GUARD &9F
 \ pointers. Everything else it keeps is absolute, up in HAZEL with the code.
 INCLUDE "lib/vgiplayer.h.asm"
 
+\ The ZX0 depacker (src/zx0depack.asm) borrows six of the above. It runs
+\ only at boot, before any of them is live, and it is over before the
+\ first sprite is drawn. Declared HERE rather than in the depacker so
+\ beebasm sees them before the loader's first zero-page reference: an
+\ undefined symbol in pass 1 assembles as an absolute address and the
+\ pass-2 size change is an error.
+zxsrc = read_ptr            ; -> the compressed stream
+zxdst = write_ptr           ; -> the output
+zxofs = bufp                ; the current offset
+zxlen = svp                 ; gamma accumulator / count
+zxbit = spr_slot            ; the bit buffer, sentinel-marked
+zxwrk = spr_tmp             ; -> the copy source
+
 IF DEBUG_TIMING
 .tim_ptr        skip 2      ; the maximum slot the next mark writes
 .tim_val        skip 2      ; us since tim_start, at the last mark
@@ -394,10 +427,10 @@ GUARD CODE_TOP
     ldy #0
     jsr osbyte
 
-    \\ Blank the display until setup_display has cleared everything: the
-    \\ banks stage through &4000, which is on screen if the machine booted in
-    \\ a graphics mode. R8 skew bits (Paradroid's R8_BLANK); VDU 22 resets R8
-    \\ and setup_display writes it again after the clears.
+    \\ Blank the display until the loading screen is unpacked: whatever
+    \\ mode the machine booted in, its screen is about to be walked over.
+    \\ R8 skew bits (Paradroid's R8_BLANK); VDU 22 resets R8, so the mode
+    \\ change writes it again, and so does setup_display after the clears.
     CRTC 8, &30
     CRTC 10, &20                ; and the MOS cursor, which R8 does not hide
 
@@ -411,6 +444,47 @@ GUARD CODE_TOP
     cpx #&a0
     bcc zp_loop
 
+
+    \\ Mode change FIRST now, not last: the loading screen is a MODE 2
+    \\ picture and it has to be up before the banks come in. The old
+    \\ ordering was there because the banks staged through &4000, which
+    \\ MODE 2 puts on screen; they stage in the SHADOW screen now, so
+    \\ there is nothing left to hide.
+    lda #22
+    jsr oswrch
+    lda #2
+    jsr oswrch
+    CRTC 8, &30                 ; VDU 22 turned the display back on
+    CRTC 10, &20                ; and put the cursor back
+
+    \\ The loading screen: two halves into main &3000-&7FFF, each from a
+    \\ stream staged at LOAD_STREAM below it.
+    lda #LO(loadsc1_filename)
+    ldy #HI(loadsc1_filename)
+    ldx #HI(LOAD_STREAM)
+    jsr load_stream
+    lda #LO(LOADSCR_ADDR)
+    ldx #HI(LOADSCR_ADDR)
+    jsr unpack_to
+
+    lda #LO(loadsc2_filename)
+    ldy #HI(loadsc2_filename)
+    ldx #HI(LOAD_STREAM)
+    jsr load_stream
+    lda #LO(LOADSCR_ADDR2)
+    ldx #HI(LOADSCR_ADDR2)
+    jsr unpack_to
+
+    CRTC 8, 0                   ; and there it is
+
+    \\ Display MAIN (D=0), CPU sees SHADOW (X=1). That is the state the
+    \\ game itself runs in, and here it is what keeps the picture up:
+    \\ every stream from now on stages in the shadow screen at
+    \\ DEPK_STREAM, which is 20K of RAM nobody is looking at.
+    lda &fe34
+    and #255-1
+    ora #4
+    sta &fe34
 
     \\ Load the SWRAM banks: 0 = chars/tiles/map (slot 4), 1 = sprites (slot 5).
     \\ Bank 0 is the resting state; only plot_sprite pages bank 1 in.
@@ -446,26 +520,12 @@ GUARD CODE_TOP
     sta &f4
     sta &fe30
 
-    \ Mode change LAST, after every load: the banks stage through &4000,
-    \ which is on screen the moment MODE 2 is selected.
-	\\ Set MODE
-
-	lda #22
-	jsr oswrch
-	lda #2
-	jsr oswrch
-    CRTC 8, &30                 ; VDU 22 turned the display back on; off again
-    jsr setup_display           ; until the buffers and panel are drawn
+    CRTC 8, &30                 ; the loading screen has done its job
+    jsr setup_display           ; blanked until the buffers and panel are drawn
     jsr score_boot              ; the C64's initialised score, lives and 012345
     ldx #LO(music_init)         ; the tune starts before the titles and loops
     ldy #HI(music_init)
     jsr bank3_call
-
-    \\ Shadow state: display main (D=0), CPU writes shadow (X=1)
-    lda &fe34
-    and #255-1
-    ora #4
-    sta &fe34
 
     \\ Initialise variables
 
@@ -940,93 +1000,90 @@ SCROLL_PREWIND = 4 * COLL_COLS
 
 INCLUDE "src/scroll.asm"
 
-\\ Load a 16K bank file: A/Y = filename ptr, X = SWRAM slot.
-\\ OSFILE loads it to &4000 (below the mode-7 screen the MOS is showing)
-\\ and move_pages copies it up to &8000 in the selected slot, wiping the
-\\ staging copy. Must run before the mode change and before any IRQ takeover.
-.load_bank
-{
-    stx &f4
-    stx &fe30
-    jsr load_stage
-    lda #HI(&4000)
-    ldx #HI(&8000)
-    ldy #HI(&4000)
-    jmp move_pages
-}
+\\ ---- the loader: OSFILE a ZX0 stream in, unpack it out --------------
+\\
+\\ Every file on the disc but Edge and !BOOT ships ZX0-compressed, with a
+\\ catalogue load address tools/make_disc.py writes (decision 38). None of
+\\ them could be loaded straight to where they belong even uncompressed:
+\\ the filing system has the DFS ROM paged in at &8000 while it works, so
+\\ a bank's bytes would land in the ROM socket, and HAZEL is the filing
+\\ system's own workspace. So each stages in RAM and is unpacked from
+\\ there. All of it must run before any IRQ takeover.
 
-\\ The OSFILE half, shared with load_hazel: A/Y = filename, loads to &4000.
-.load_stage
+\\ A/Y = filename, X = the page the stream loads at. Leaves zxsrc pointing
+\\ at it, ready for unpack_to.
+.load_stream
 {
+    stx stream_page
     sta osfile_nameaddr
     sty osfile_nameaddr+1
 
     \\ OSFILE writes the file's catalogue addresses back into the block
-    \\ after a load, so the second call would honour BANK1's &8000 load
-    \\ address and land in the DFS ROM. Reset load = &4000, exec = 0
-    \\ (exec low byte 0 = "use the block's load address") every call.
+    \\ after a load, so the next call would honour the last file's load
+    \\ address and land wherever that was. Reset load and exec = 0 (exec
+    \\ low byte 0 = "use the block's load address") every call.
     lda #0
     sta osfile_loadaddr
     sta osfile_loadaddr+2
     sta osfile_loadaddr+3
     sta osfile_execaddr
-    lda #HI(&4000)
+    lda stream_page
     sta osfile_loadaddr+1
 
-	LDX #LO(osfile_params)
-	LDY #HI(osfile_params)
-	LDA #&FF
-    JMP osfile
+    ldx #LO(osfile_params)
+    ldy #HI(osfile_params)
+    lda #&FF
+    jsr osfile
+
+    \\ AFTER the call, not before: the depacker's zero page is borrowed
+    \\ from the game's, and there is nothing to gain by setting it up
+    \\ while the filing system is still running in it.
+    lda #0
+    sta zxsrc
+    lda stream_page
+    sta zxsrc+1
+    rts
+    .stream_page EQUB 0
 }
 
-\\ MUSIC into HAZEL. OSFILE cannot write there - the MOS would be
-\ overwriting the filing system's own workspace underneath itself - so
-\ the file stages through &4000 like a bank does, and move_pages copies
-\ it up with the Y bit set. Nothing may use the disc afterwards.
+\\ Unpack the stream at zxsrc to X:A.
+.unpack_to
+{
+    sta zxdst
+    stx zxdst+1
+    jmp zx0_unpack
+}
+
+\\ A 16K bank: A/Y = filename ptr, X = SWRAM slot. The stream stages in the
+\\ shadow screen, which the loading screen is not using, and unpacks
+\\ straight into the paged-in bank.
+.load_bank
+{
+    stx &f4
+    stx &fe30
+    ldx #HI(DEPK_STREAM)
+    jsr load_stream
+    lda #LO(&8000)
+    ldx #HI(&8000)
+    jmp unpack_to
+}
+
+\\ MUSIC into HAZEL, the same way, with the Y bit set over the unpack.
+\\ Nothing may use the disc afterwards.
 .load_hazel
 {
-    jsr load_stage
+    ldx #HI(DEPK_STREAM)
+    jsr load_stream
     lda &fe34
     ora #HAZEL_BIT
     sta &fe34
-    lda #HI(&4000)
+    lda #LO(HAZEL_BASE)
     ldx #HI(HAZEL_BASE)
-    ldy #HAZEL_LOAD_PAGES
-    jsr move_pages
+    jsr unpack_to
     lda &fe34
     and #255-HAZEL_BIT
     sta &fe34
     rts
-}
-
-\ A=from page, X=to page, Y=num pages
-.move_pages
-{
-    STA from_page+2
-    STA wipe_page+2
-    STX to_page+2
-
-    LDX #0
-    .loop
-    .from_page
-    LDA &FF00, X
-    .to_page
-    STA &FF00, X
-    lda #0
-    .wipe_page
-    sta &ff00, X
-
-    INX
-    BNE loop
-
-    INC from_page+2
-    INC to_page+2
-    INC wipe_page+2
-
-    DEY
-    BNE loop
-
-    RTS
 }
 
 INCLUDE "src/sprite.asm"
@@ -1036,6 +1093,11 @@ INCLUDE "src/keyboard.asm"
 INCLUDE "src/rupture.asm"
 INCLUDE "src/data/compiled_zp.asm"   \ what the compiled bodies assume
 INCLUDE "src/tables.asm"
+
+\ The ZX0 depacker LAST, after the tables: it is boot code and nothing
+\ else calls it, so it is the one thing in the image that may sit above
+\ SPR_SAVE's base and be walked over once the game starts.
+INCLUDE "src/zx0depack.asm"
 
 \ ******************************************************************
 \ *	End address to be saved
@@ -1091,7 +1153,7 @@ PRINT "DATA size =",~data_end-data_start
 PRINT "BSS size =",~bss_end-bss_start
 PRINT "------"
 PRINT "HIGH WATERMARK =", ~P%
-PRINT "FREE =", ~screen_start-P%
+PRINT "FREE =", ~CODE_TOP-P%     \ to LOAD_STREAM: the depacker sits in SPR_SAVE
 PRINT "------"
 
 \ ******************************************************************
@@ -1175,6 +1237,9 @@ ENDIF
 ASSERT game_state_end <= GAME_STATE_TOP
 PRINT "GAME STATE =", ~game_state_start, "to", ~game_state_end
 
+\ The loading screen is FIRST: it is the first thing off the disc, and
+\ tools/make_disc.py lays the image out in the order the boot reads it.
+INCLUDE "src/loading.asm"
 INCLUDE "src/bank0.asm"
 INCLUDE "src/bank1.asm"
 INCLUDE "src/bank2.asm"

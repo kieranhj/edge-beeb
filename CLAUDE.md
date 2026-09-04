@@ -71,14 +71,25 @@ make                  # wrappers: make, make run, make -Release
 beebasm has no `IFDEF`, so `main.asm` cannot carry a default; a bare invocation must pass it too:
 
 ```
-..\..\Bin\beebasm.exe -i src\main.asm -do build\EDGE.SSD -opt 3 -D RELEASE=0 -v
+..\..\Bin\beebasm.exe -i src\main.asm -do build\EDGE-RAW.SSD -opt 3 -D RELEASE=0 -v
+python tools\make_disc.py build\EDGE-RAW.SSD build\EDGE.SSD build\EDGE-200K.SSD
 ```
+
+**The build is two passes, and beebasm's own image is NOT bootable.** Every data file on the disc
+ships ZX0-compressed (decision 38) and the boot loader runs the depacker over everything it loads.
+`tools/make_disc.py` is what compresses them: it rewrites each catalogue load address to the
+staging address `main.asm` expects, round-trips every stream through `tools/zx0.py` before it will
+write it, and lays the files out in boot access order. Hand `build/EDGE.SSD` (or the padded copy)
+to an emulator, never `build/EDGE-RAW.SSD`. The compressor is `bin/zx0.exe`, the reference ZX0 by
+Einar Saukas from `BEEB/Repos/ZX0/win/`; `bin/` is gitignored, so a copy lives in the shared
+`BEEB/Bin/` too and `make_disc.py` looks in both.
 
 beebasm is `..\..\Bin\beebasm.exe` (1.11); a local `bin\beebasm.exe` wins if present. It resolves
 `INCLUDE`/`INCBIN` from the working directory, so the build runs from the project root.
 
-Everything the build produces goes in `build/` (gitignored): `EDGE.SSD`, `EDGE-200K.SSD` (padded;
-hand this one to jsbeeb and publish this one), `EDGE.lst` (the `-v` listing). beebasm writes its
+Everything the build produces goes in `build/` (gitignored): `EDGE-RAW.SSD` (beebasm's, not
+bootable), `EDGE.SSD`, `EDGE-200K.SSD` (padded; hand this one to jsbeeb and publish this one),
+`EDGE.lst` (the `-v` listing). beebasm writes its
 progress to stderr; in PowerShell do not redirect that stream or `$ErrorActionPreference = 'Stop'`
 throws on a successful build. Check the exit code.
 
@@ -103,6 +114,8 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `enemy.asm` | the wave manager and reader, enemy movement, bounds, the two enemy collision passes, explosions |
 | `rupture.asm` | the two-cycle rupture, IRQ handler and install, and the VSync-side call into the music player |
 | `tables.asm` | initialised main-RAM tables only; the mutable state lives at `&0800` (see `main.asm`) |
+| `zx0depack.asm` | the ZX0 depacker, lifted from Paradroid. Boot code, called only by the loader; the last thing in the image and the one part allowed above `SPR_SAVE`'s base |
+| `loading.asm` | the loading screen's two disc files, `LOADSC1` and `LOADSC2` |
 | `bank0.asm` | the SWRAM data bank, plus the run-once and out-of-room code: `setup_display`, `clear_play`, `panel_init`, `score_boot`, `status_call`, `title_page`, `pause_check`, `comp_mess`, `finale_tick`, the frame meter |
 | `bank1.asm`, `bank2.asm` | the two SWRAM sprite banks, one per pixel shift |
 | `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3): the tune's high half at `&C000`, `lib/vgiplayer.asm` at `&D200`, its 11-page ring workspace at `&D500`. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
@@ -127,10 +140,17 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
   below `&3000`**: jsbeeb and b-em disagree about what the video fetches there with D set (b-em:
   garbage on alternate frames). Decision 17.
 - jsbeeb's screenshot crops to the active display area: judge geometry by poked patterns.
-- **The mode change is the last thing boot does before the display setup**: the banks stage
-  through `&4000`, which is on screen the moment MODE 2 is selected. R8 = `&30` blanks the
-  display from `*RUN` until both banks are cleared and the panel drawn; R8 does NOT hide the
-  CRTC cursor, so R10 = `&20` goes with it. `VDU 22` resets both.
+- **The mode change is the FIRST thing boot does** (it was the last until Layer 9a): the loading
+  screen is a MODE 2 picture and has to be up before the banks come in. The banks stage in the
+  SHADOW screen now, so there is nothing left to hide from `&4000`. R8 = `&30` blanks the display
+  from `*RUN` until the picture is unpacked, and again from there until both banks are cleared and
+  the panel drawn; R8 does NOT hide the CRTC cursor, so R10 = `&20` goes with it. `VDU 22` resets
+  both.
+- **A ZX0 stream may not be overtaken by its own output.** ZX0 unpacks forwards, so a stream that
+  shares memory with its output is safe only while the reader stays ahead of the writer - which
+  means placing it near the END of the output buffer. For a 20K screen at `&3000` that puts its
+  tail past `&8000`, so the loading screen stages below the screen instead and is split in two.
+  `tools/make_disc.py` refuses to write an image where any stream overlaps its output.
 
 ## Memory (Layer 6b build; take live figures from the listing)
 
@@ -140,9 +160,12 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
 | `&0400-&049F` | column buffer, 160 B |
 | `&04A0-&07BF` | collision character map, 40 × 20; `&07C0-&07FF` is its overrun slack. The language workspace - ours once `*RUN` has handed over, verified by sentinel |
 | `&0800-&08E9` | game state: the C64's `$0340` block - `sprite_pos`, `sprite_dp`, the `enemy_*` arrays, the score, and what each bank's last sprite draw did. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
-| `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `&2000`) |
-| to `&1F04` | initialised tables: the sprite row-body dispatch tables, `explosion_dirs`, the OSFILE block. **`&FC` free** in a DEV build; `RELEASE` ends at `&1EE7` |
-| `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly |
+| `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `LOAD_STREAM` = `&2200`) |
+| to `&1F04` | initialised tables: the sprite row-body dispatch tables, `explosion_dirs`, the OSFILE block |
+| to `&2121` | `src/zx0depack.asm`, boot code. **Deliberately above `SPR_SAVE`'s base**: it is dead before anything reads there. `&DF` free in a DEV build |
+| `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly. At boot it holds the depacker and, from `LOAD_STREAM` = `&2200`, the loading screen's streams |
+| `&3000-&7FFF` (main) | at boot only: the **loading screen**, a whole MODE 2 picture, displayed while the banks load |
+| `&3000-&7FFF` (shadow) | at boot only: `DEPK_STREAM`, where the bank and music streams stage. Nothing is displaying it - the picture is in main |
 | `&3000-&3C7F` × 2 | status panel, 5 rows × 640, in BOTH banks, displayed by rupture cycle A |
 | `&4000-&7FFF` × 2 | play buffers, main and shadow |
 | SWRAM slot 4 (`SWRAM_DATA`, resting state) | `BANK0`: `char_data &8000` (8K, four MODE 2 column planes), `tile_data` (211 × 16), `map_data` (302 × 5), `col_decode`, `wave_data` (201 × 9) and `anim_decode`. High water `&BC38` |
@@ -150,13 +173,15 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
 | SWRAM slot 6 (`SWRAM_SPRITES1`) | `BANK2`: the same, shift 1. High water `&B78B`. The two are identical in layout and **must stay adjacent**: the engine adds the shift to `SWRAM_SPRITES0` |
 | HAZEL `&C000-&DFFF` | `MUSIC`: the tune's high half at `&C000`, the VGI player at `&D200`, its 11 x 256 ring workspace at `&D500`. ACCCON bit 3 (Y). Loaded LAST - it is the filing system's workspace - and nothing may touch the disc after it. **The tune's low half is at `&9D00-&BFFF` in bank 3 and the two are one block**: the bank and HAZEL are visible at the same time, so a pointer walking off `&BFFF` lands in `&C000` |
 
-Banks are loaded by `load_bank` (OSFILE to `&4000`, copied up to `&8000`) at boot, in the MOS's
-boot mode with the display blanked, before the mode is set. **OSFILE overwrites its parameter block's addresses after a load**, so `load_bank`
-resets load/exec before every call; without that the second bank lands in the DFS ROM.
+Banks are loaded by `load_bank` (OSFILE the ZX0 stream to `DEPK_STREAM` in the shadow screen,
+unpack straight into the paged-in slot) at boot, **after** the mode change, with the loading screen
+up in main. **OSFILE overwrites its parameter block's addresses after a load**, so `load_stream`
+resets load/exec before every call; without that the second file lands wherever the first said.
 
 `src/data/` is generated by `tools/export_tiles.py`, `tools/export_sprites.py`,
-`tools/export_waves.py`, `tools/export_title.py`, `tools/export_panel.py` and
-`tools/compile_sprites.py` from `data/`, `source_c64/data/`
+`tools/export_waves.py`, `tools/export_title.py`, `tools/export_panel.py`,
+`tools/export_loading.py` and
+`tools/compile_sprites.py` from `assets/`, `data/`, `source_c64/data/`
 and the C64 source itself, and is committed. `tools/render_bbc.py` renders it back to PNG for checking -
 `render_bbc.py sprites 0|1` unpacks a whole sprite bank from its own box tables, which is the check
 that the tables and the data agree.

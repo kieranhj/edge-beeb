@@ -13,6 +13,10 @@ compile.txt
 /BANK0
 /BANK1
 /BANK2
+/BANK3
+/MUSIC
+/LOADSC1
+/LOADSC2
 /!BOOT
 
 # ---- Third-party tools (beebasm lives in ..\..\Bin; a local copy is optional) ----

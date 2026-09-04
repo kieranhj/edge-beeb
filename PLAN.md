@@ -236,8 +236,19 @@ gallery debug build, `publish-wip` links for testing.
 
 ### Layer 9 — polish and release
 
-Starfield, ZX0 disc compression if boot time warrants it, real-hardware test, release build,
-publish.
+**9a — the loading screen and ZX0 on the disc, done 2026-09-04.**
+`assets/TitlescreenBig.png` goes up as soon as the mode is set and stays there until
+`setup_display` takes over; behind it the four banks and the music load as before, but every data
+file on the disc now ships ZX0-compressed and is unpacked into place. The mode change moved to the
+front of boot — it was last because the banks staged through `&4000`, and they stage in the shadow
+screen now. The picture is **two** disc files because a ZX0 stream cannot be overtaken by its own
+output and one for the whole 20K screen would have to end past `&8000`; its halves stage at
+`&2200`, below the screen. The depacker is Paradroid's, lifted, and verified byte-exact against the
+source image in jsbeeb. 91,904 bytes of files becomes 37,632 — which, measured, pays for the
+picture and no more: 11.1 s of loading becomes 10.9 s, with something to look at. Decision 38,
+[`docs/layer-9-loader.md`](docs/layer-9-loader.md).
+
+Still to do: starfield, real-hardware test, release build, publish.
 
 ## Layer index
 
@@ -256,4 +267,5 @@ publish.
 | 6e — title screen | | |
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
 | 8 — graphics pipeline B | | |
+| 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9 — polish and release | | |

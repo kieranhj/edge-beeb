@@ -16,6 +16,7 @@ $relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
 
 $root    = $PSScriptRoot
 $build   = Join-Path $root 'build'
+$raw     = Join-Path $build 'EDGE-RAW.SSD'
 $ssd     = Join-Path $build 'EDGE.SSD'
 $padded  = Join-Path $build 'EDGE-200K.SSD'
 $listing = Join-Path $build 'EDGE.lst'
@@ -39,22 +40,28 @@ if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-N
 # !BOOT (with the build kind stamped in it) rather than using -boot.
 Push-Location $root
 try {
-    & $beebasm -i 'src\main.asm' -do $ssd -opt 3 -title EDGE -D $relDef -v |
+    & $beebasm -i 'src\main.asm' -do $raw -opt 3 -title EDGE -D $relDef -v |
         Out-File -FilePath $listing -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE) - see $listing" }
 } finally { Pop-Location }
 
-# Pad a copy to 200K (80 tracks x 10 sectors x 256 B). jsbeeb boots an
-# unpadded image, but the padded one is the convention for anything handed to
-# an emulator or published, so a size change signals the wrong file went out.
-$bytes = [System.IO.File]::ReadAllBytes($ssd)
-$full  = New-Object byte[] 204800
-[Array]::Copy($bytes, $full, $bytes.Length)
-[System.IO.File]::WriteAllBytes($padded, $full)
+# beebasm's image is NOT bootable. The boot loader runs the ZX0 depacker over
+# every file it loads, and make_disc.py is what compresses them - it also
+# moves each catalogue load address to the staging address main.asm expects,
+# and lays the files out in boot access order so the head never seeks back.
+# It writes the padded 200K copy too (80 tracks x 10 sectors x 256 B): jsbeeb
+# boots an unpadded image, but the padded one is the convention for anything
+# handed to an emulator or published.
+Push-Location $root
+try {
+    & python 'tools\make_disc.py' $raw $ssd $padded
+    if ($LASTEXITCODE -ne 0) { throw "make_disc.py failed ($LASTEXITCODE)" }
+} finally { Pop-Location }
 
 if ($Release) { "RELEASE build: every DEBUG_ flag off" }
 "Built  $ssd"
 "       $padded   padded, for jsbeeb"
+"       $raw   beebasm's own output, uncompressed and NOT bootable"
 "       $listing   assembly listing"
 
 if ($Run) { & $bem -m3 $ssd }
