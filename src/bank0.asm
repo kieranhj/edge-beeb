@@ -16,7 +16,11 @@ GUARD &C000
 \\ 256 chars x 8 rows x 4 planes = 8192 bytes.
 
 .char_data
+IF GFX_CPC
+INCBIN "src/data/chars-cpc.bin"
+ELSE
 INCBIN "src/data/chars.bin"
+ENDIF
 ASSERT P% = char_data + 8192
 PRINT "CHARACTER data =", ~char_data
 

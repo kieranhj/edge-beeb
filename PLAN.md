@@ -297,6 +297,23 @@ player rather than in place of it — crackled, and the write capture said why: 
 tune's real volume fifty times a second (`BUGS.md` #11). Decision 39,
 [`docs/layer-7-music.md`](docs/layer-7-music.md).
 
+## Layer 8a — the CPC artwork, behind `GFX_CPC`
+
+`.\build.ps1 -Cpc` builds the same game drawn with Trevor "Smila" Storey's Amstrad CPC art:
+all 119 sprite frames and all 256 background characters. A **comparison build** like
+`MUSIC_AKL` — a third option beside the C64 conversion and the hand-authored MODE 2 redraw
+Layer 8 is for — and the choice between the three is KC's. Nothing else changes, because the
+CPC port renumbered nothing: measured, its sprite bank matches the C64 sheet's opaque mask at
+offset 0 with 99.9% agreement against 76% for the next best, and its tile table is the C64's
+transposed with the same character numbers. So the tile table, the map, `col_decode`, the
+waves, `dp_dcd`, the panel, the HUD and the titles are shared and only the `INCBIN` changes.
+The palette is the in-game `Mode0Pal`, stored reversed; mode 0's fifteen colours collapse into
+MODE 2's eight by hue rather than by RGB distance. Two things fall out of sixteen-colour art:
+transparency is per byte, and the hit flash takes the whole sprite because there is no one
+per-sprite colour to single out. **The compiled bullet is dropped in this build**, 13 bytes
+short of fitting in bank 3, so frame meters do not compare across the two. Decision 41,
+[`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md).
+
 Still to do: starfield, real-hardware test, release build, publish.
 
 ## Layer index
@@ -317,6 +334,7 @@ Still to do: starfield, real-hardware test, release build, publish.
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
+| 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **open 2026-09-04**, behind `GFX_CPC`. Works; the choice of art is KC's |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |
 | 9 — polish and release | | |

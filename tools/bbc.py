@@ -48,6 +48,37 @@ C64_TO_BBC = {
     15: WHITE,        # light grey
 }
 
+# --- CPC ------------------------------------------------------------------
+
+# The CPC pens, in Mode0Pal order, as BBC physical colours (decision 41, the
+# GFX_CPC build). Mode 0 gives Smila fifteen colours against MODE 2's eight,
+# so this table collapses pairs; it is by hue, not by RGB distance, because
+# nearest-RGB sends pastel yellow, pink, pastel blue and white all to white
+# and flattens the art. Pen 15 is black and unused; pen 12 is the same colour
+# as pen 10 (&53 and &59 are both firmware bright cyan).
+#
+# The light blues all go to cyan, which is what decision 11 does with the
+# C64's own light blue.
+#
+CPC_TO_BBC = {
+    0: BLACK,       # &54 black
+    1: RED,         # &5C red
+    2: YELLOW,      # &43 pastel yellow
+    3: BLUE,        # &44 blue
+    4: GREEN,       # &56 green
+    5: RED,         # &4C bright red
+    6: MAGENTA,     # &47 pink - as C64_TO_BBC sends the C64's light red
+    7: BLUE,        # &58 bright blue
+    8: CYAN,        # &5F pastel blue
+    9: WHITE,       # &4B bright white
+    10: CYAN,       # &59 bright cyan
+    11: YELLOW,     # &5E dark yellow
+    12: CYAN,       # &53 bright cyan
+    13: CYAN,       # &57 sky blue
+    14: MAGENTA,    # &5D mauve
+    15: BLACK,      # &54 black, unused
+}
+
 # Sprites cannot use logical 0 (it is the transparency key for the mask
 # table), so black inside a sprite is written as logical 8, which the
 # palette maps back to physical black. Layer 3 sets that palette entry.

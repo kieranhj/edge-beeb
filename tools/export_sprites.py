@@ -33,7 +33,17 @@ colour, which is true of the C64 art (sprite_col_dcd never names blue or
 white as the per-sprite colour). Hand-drawn art with more colours needs
 per-colour tables instead: see docs/layer-3-sprites.md.
 
-Run from the project root: python tools/export_sprites.py
+With --cpc (decision 41) the frames come from the Amstrad port's sprite bank
+instead and are written to sprites0-cpc.bin, sprites1-cpc.bin, compiled-cpc.bin
+and compiled_zp-cpc.asm. A CPC frame carries its own fifteen colours and there
+is no per-sprite colour, so KEEP shrinks to the transparency key alone and the
+hit flash recolours the WHOLE sprite rather than just its one colour - the
+nearest thing the CPC art can be given. Nothing is compiled either, for want of
+13 bytes in bank 3: see CPC_COMPILE_DPS. Everything else, dp_dcd and lut_dcd
+included, is the C64's and unaltered: which frames flash, and when, is game
+logic, not art.
+
+Run from the project root: python tools/export_sprites.py [--cpc]
 """
 
 import os
@@ -54,7 +64,8 @@ BANK = 0x8000
 DATA_START = 0x0900       # offset of the frame data within the bank
 TABLE_STRIDE = 0x80
 
-KEEP = {0, bbc.C64_TO_BBC[bbc.C64_SPR_MC1], bbc.C64_TO_BBC[bbc.C64_SPR_MC2]}
+C64_KEEP = {0, bbc.C64_TO_BBC[bbc.C64_SPR_MC1], bbc.C64_TO_BBC[bbc.C64_SPR_MC2]}
+CPC_KEEP = {0}          # no shared colours to preserve: the flash takes it all
 LUT_PAGES = {None: 0x81, bbc.WHITE: 0x82, bbc.MAGENTA: 0x83}
 
 # Which animations get straight-line code in sideways slot 7 (decision 29).
@@ -63,6 +74,16 @@ LUT_PAGES = {None: 0x81, bbc.WHITE: 0x82, bbc.MAGENTA: 0x83}
 # uses the identity LUT: the colours are baked into compiled code, so anything
 # that hit-flashes cannot have any.
 COMPILE_DPS = [(0x12, 0x13)]      # the player bullet
+
+# Nothing is compiled in the CPC build, and the reason is 13 bytes. A compiled
+# body costs code per OPAQUE byte of the box, and the CPC's bullet - masked per
+# byte on the Amstrad, so it has fewer see-through bytes - compiles to 2,860
+# rather than 2,652. Bank 3 has 195 free below music_lo, so it lands 13 over,
+# and the only other way to make room is to cut the tune again. The frames fall
+# back to the interpreted path 117 of the 119 already take. MUSIC_AKL takes
+# music_lo out of bank 3 and would leave room, but the exporter has no idea
+# which music build it is being run for, so it stays off in both.
+CPC_COMPILE_DPS = []
 
 
 def frame_pixels(raw, colour_c64):
@@ -107,13 +128,13 @@ def mask_table():
     return out
 
 
-def recolour_table(target):
+def recolour_table(target, keep):
     out = bytearray()
     for b in range(256):
         left, right = bbc.mode2_unpack(b)
         if target is not None:
-            left = left if left in KEEP else target
-            right = right if right in KEEP else target
+            left = left if left in keep else target
+            right = right if right in keep else target
         out.append(bbc.mode2_byte(left, right))
     return out
 
@@ -123,26 +144,34 @@ def table(values):
     return bytes(values) + bytes(TABLE_STRIDE - len(values))
 
 
-def main():
+def main(cpc=False):
     os.makedirs(OUT, exist_ok=True)
-    sprites = bbc.load_sprites(count=FRAMES)
+    suffix = "-cpc" if cpc else ""
+    keep = CPC_KEEP if cpc else C64_KEEP
     col_dcd = bbc.parse_c64_table(C64_ASM, "sprite_col_dcd", DP_ENTRIES)
     dp_dcd = bbc.parse_c64_table(C64_ASM, "sprite_dp_dcd", DP_ENTRIES)
 
-    # Frame colour: every dp that maps to a frame names the same colour for it.
-    frame_colour = {}
-    for dp in range(DP_ENTRIES):
-        f = dp_dcd[dp] - VIC_BASE
-        assert 0 <= f < FRAMES, (dp, dp_dcd[dp])
-        c = col_dcd[dp] & 15
-        assert frame_colour.setdefault(f, c) == c, f
-    assert len(frame_colour) == FRAMES
+    if cpc:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "cpc"))
+        import bbcart
+        pixels = bbcart.sprites(FRAMES)
+    else:
+        sprites = bbc.load_sprites(count=FRAMES)
+        # Frame colour: every dp that maps to a frame names the same colour for it.
+        frame_colour = {}
+        for dp in range(DP_ENTRIES):
+            f = dp_dcd[dp] - VIC_BASE
+            assert 0 <= f < FRAMES, (dp, dp_dcd[dp])
+            c = col_dcd[dp] & 15
+            assert frame_colour.setdefault(f, c) == c, f
+        assert len(frame_colour) == FRAMES
+        pixels = [frame_pixels(sprites[f], frame_colour[f]) for f in range(FRAMES)]
 
     lut_dcd = []
     for dp in range(DP_ENTRIES):
         normal = bbc.C64_TO_BBC[col_dcd[dp] & 15]
         flash = bbc.C64_TO_BBC[col_dcd[dp] >> 4]
-        assert normal not in KEEP - {0} or normal == flash, dp
+        assert normal not in keep - {0} or normal == flash, dp
         lut_dcd.append(LUT_PAGES[None if flash == normal else flash])
 
     # Everything both banks need, before either is laid out, because the
@@ -150,14 +179,14 @@ def main():
     boxes = {}
     for shift in (0, 1):
         for f in range(FRAMES):
-            cells = shifted_bytes(frame_pixels(sprites[f], frame_colour[f]), shift)
+            cells = shifted_bytes(pixels[f], shift)
             r0, rn, c0, cn = box(cells)
             boxes[shift, f] = (r0, rn, c0, cn,
                                [row[c0:c0 + cn] for row in cells[r0:r0 + rn]])
 
     # The frames to compile, and the check that none of them ever flashes.
     want = set()
-    for lo, hi in COMPILE_DPS:
+    for lo, hi in (CPC_COMPILE_DPS if cpc else COMPILE_DPS):
         for dp in range(lo, hi):
             want.add(dp_dcd[dp] - VIC_BASE)
     for f in sorted(want):
@@ -167,9 +196,9 @@ def main():
                     f"frame {f} is reached by dp ${dp:02x}, which hit-flashes: "
                     "its colours cannot be baked into compiled code")
     todo = {(shift, f): boxes[shift, f][4] for shift in (0, 1) for f in sorted(want)}
-    slot, csize = compile_sprites.build(todo, f"{OUT}/compiled.bin",
-                                        f"{OUT}/compiled_zp.asm")
-    print(f"compiled.bin {csize} B: {len(todo)} bodies, "
+    slot, csize = compile_sprites.build(todo, f"{OUT}/compiled{suffix}.bin",
+                                        f"{OUT}/compiled_zp{suffix}.asm")
+    print(f"compiled{suffix}.bin {csize} B: {len(todo)} bodies, "
           f"high water &{0x8000 + csize:04X}")
 
     for shift in (0, 1):
@@ -187,9 +216,9 @@ def main():
         comp = [slot.get((shift, f), 0) for f in range(FRAMES)]
         bank = bytearray()
         bank += mask_table()
-        bank += recolour_table(None)
-        bank += recolour_table(bbc.WHITE)
-        bank += recolour_table(bbc.MAGENTA)
+        bank += recolour_table(None, keep)
+        bank += recolour_table(bbc.WHITE, keep)
+        bank += recolour_table(bbc.MAGENTA, keep)
         bank += table([a & 0xFF for a in addr])
         bank += table([a >> 8 for a in addr])
         bank += table(r0s)
@@ -203,10 +232,10 @@ def main():
         assert len(bank) == DATA_START, len(bank)
         bank += data
         assert len(bank) <= 0x4000, len(bank)
-        open(f"{OUT}/sprites{shift}.bin", "wb").write(bank)
-        print(f"sprites{shift}.bin {len(bank)} B: {len(data)} B of boxed frame data, "
+        open(f"{OUT}/sprites{shift}{suffix}.bin", "wb").write(bank)
+        print(f"sprites{shift}{suffix}.bin {len(bank)} B: {len(data)} B of boxed frame data, "
               f"high water &{BANK + len(bank):04X}")
 
 
 if __name__ == "__main__":
-    main()
+    main(cpc="--cpc" in sys.argv[1:])

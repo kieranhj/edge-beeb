@@ -234,6 +234,18 @@ MUSIC_AKL_SONG = &CC00      ; the tracker data; tools/export_music_akl.py
 ASSERT MUSIC_AKL_SONG > HAZEL_BASE
 ASSERT MUSIC_AKL_SONG < &E000
 
+\ GFX_CPC builds the game from the Amstrad CPC port's artwork instead of the
+\ C64's - every sprite frame, every character - for the comparison decision 41
+\ left open. Smila redrew the lot in mode 0's sixteen colours, and the CPC's
+\ frame, character and tile NUMBERS are the C64's exactly, so nothing but the
+\ pixels changes: the tile table, the map, col_decode, the wave table and
+\ dp_dcd are shared. Passed on the command line beside RELEASE for the same
+\ reason: beebasm has no IFDEF and refuses a symbol defined twice.
+\
+\ tools/export_tiles.py --cpc and tools/export_sprites.py --cpc write the
+\ data; tools/render_bbc.py --cpc renders it back for checking.
+ASSERT GFX_CPC=0 OR GFX_CPC=1
+
 \ Build flag for lib/vgiplayer.asm, which the library expects on the command
 \ line; set here instead so a bare beebasm invocation cannot get it wrong.
 \ 0 is the compact looped decoder, 1 the unrolled one - half a K more code
@@ -1130,7 +1142,11 @@ INCLUDE "src/player.asm"
 INCLUDE "src/enemy.asm"
 INCLUDE "src/keyboard.asm"
 INCLUDE "src/rupture.asm"
-INCLUDE "src/data/compiled_zp.asm"   \ what the compiled bodies assume
+IF GFX_CPC
+    INCLUDE "src/data/compiled_zp-cpc.asm"  \ what the compiled bodies assume
+ELSE
+    INCLUDE "src/data/compiled_zp.asm"      \ what the compiled bodies assume
+ENDIF
 INCLUDE "src/tables.asm"
 
 \ The ZX0 depacker LAST, after the tables: it is boot code and nothing
@@ -1173,6 +1189,11 @@ IF MUSIC_AKL
     EQUS "REM MUSIC_AKL: Arkos replay, whole 349s tune", 13
 ELSE
     EQUS "REM MUSIC: VGI player, tune cut to 203s", 13
+ENDIF
+\ GFX_CPC is not a DEBUG_ flag either, and it changes every pixel on the
+\ disc, so it is stamped outside the RELEASE test too.
+IF GFX_CPC
+    EQUS "REM GFX_CPC: the Amstrad CPC artwork", 13
 ENDIF
 EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
 EQUS "*RUN Edge", 13

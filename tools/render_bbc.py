@@ -7,6 +7,11 @@ diffed against an emulator screenshot.
   python tools/render_bbc.py map [a b]  -> tools/output/map.png      (tile columns a..b, default all)
   python tools/render_bbc.py sprites [s] -> tools/output/sprites.png  (8 per row, shift s)
 
+Add --cpc to read the GFX_CPC build's data instead (src/data/*-cpc.bin) and
+write to tools/output/*-cpc.png. tiles and map have no CPC copies of their own
+- they are the same numbers either way - so those read the CPC charset through
+the shared tile and map tables.
+
 Reads src/data/*.bin, so run the exporters first. Run from the project root.
 """
 
@@ -20,6 +25,7 @@ import bbc  # noqa: E402
 
 DATA = "src/data"
 OUT = "tools/output"
+SUFFIX = ""               # "-cpc" under --cpc; set by main()
 SCALE_X, SCALE_Y = 4, 2   # a fat pixel is 2 hires pixels wide; draw at 2x
 
 
@@ -29,7 +35,7 @@ def palette_rgb(logical):
 
 def char_image_rows():
     """256 characters as 8 rows x 4 columns of logical colour, from the planes."""
-    planes = open(f"{DATA}/chars.bin", "rb").read()
+    planes = open(f"{DATA}/chars{SUFFIX}.bin", "rb").read()
     chars = []
     for c in range(256):
         rows = []
@@ -98,7 +104,7 @@ def render_sprites(shift=0):
     """Unpack a sprite bank back into a sheet, boxes and all, so what the
     engine will actually read can be looked at. The layout is the one
     export_sprites.py writes and src/sprite.asm reads."""
-    d = open(f"{DATA}/sprites{shift}.bin", "rb").read()
+    d = open(f"{DATA}/sprites{shift}{SUFFIX}.bin", "rb").read()
     frames, per_row, cell_w, cell_h = 119, 8, 7, 21
     tab = {n: 0x400 + k * 0x80 for k, n in enumerate(
         ("lo", "hi", "r0", "rn", "c0", "cn"))}
@@ -117,18 +123,22 @@ def render_sprites(shift=0):
 
 
 def main():
+    global SUFFIX
     os.makedirs(OUT, exist_ok=True)
-    what = sys.argv[1] if len(sys.argv) > 1 else "map"
+    argv = [a for a in sys.argv[1:] if a != "--cpc"]
+    if len(argv) != len(sys.argv) - 1:
+        SUFFIX = "-cpc"
+    what = argv[0] if argv else "map"
     if what == "chars":
         img = render_chars()
     elif what == "tiles":
         img = render_tiles()
     elif what == "sprites":
-        img = render_sprites(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
+        img = render_sprites(int(argv[1]) if len(argv) > 1 else 0)
     else:
-        args = [int(v) for v in sys.argv[2:4]]
+        args = [int(v) for v in argv[1:3]]
         img = render_map(*args)
-    path = f"{OUT}/{what}.png"
+    path = f"{OUT}/{what}{SUFFIX}.png"
     img.save(path)
     print(path, img.size)
 

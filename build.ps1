@@ -3,9 +3,10 @@
 #   .\build.ps1            assemble into build/
 #   .\build.ps1 -Run       assemble and launch in b-em as a Master 128
 #   .\build.ps1 -Release   the build for other people: every DEBUG_ flag off
+#   .\build.ps1 -Cpc       the same game drawn with the Amstrad CPC's artwork
 #
 # make.bat is a thin wrapper over this file (`make`, `make run`, `make -Release`).
-param([switch]$Run, [switch]$Release, [switch]$Akl)
+param([switch]$Run, [switch]$Release, [switch]$Akl, [switch]$Cpc)
 
 $ErrorActionPreference = 'Stop'
 
@@ -14,15 +15,17 @@ $ErrorActionPreference = 'Stop'
 # passed on EVERY build; a bare beebasm invocation must pass it too.
 $relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
 $aklDef = if ($Akl) { 'MUSIC_AKL=1' } else { 'MUSIC_AKL=0' }
-# The disc title says which music build it is, so *CAT tells you without
-# booting it; !BOOT stamps the same thing where you cannot miss it.
-$discTitle = if ($Akl) { 'EDGEAKL' } else { 'EDGE' }
+$cpcDef = if ($Cpc) { 'GFX_CPC=1' } else { 'GFX_CPC=0' }
+# The disc title says which build it is, so *CAT tells you without booting
+# it; !BOOT stamps the same thing where you cannot miss it. -Akl and -Cpc
+# are independent, so the title names both when both are asked for.
+$discTitle = 'EDGE' + $(if ($Akl) { 'A' } else { '' }) + $(if ($Cpc) { 'C' } else { '' })
 
 $root    = $PSScriptRoot
 $build   = Join-Path $root 'build'
-# The Arkos build gets its own filenames so the two discs can sit side by side
-# and be compared; without that -Akl would quietly overwrite the normal one.
-$stem    = if ($Akl) { 'EDGE-AKL' } else { 'EDGE' }
+# Each variant gets its own filenames so the discs can sit side by side and be
+# compared; without that -Akl or -Cpc would quietly overwrite the normal one.
+$stem    = 'EDGE' + $(if ($Akl) { '-AKL' } else { '' }) + $(if ($Cpc) { '-CPC' } else { '' })
 $raw     = Join-Path $build "$stem-RAW.SSD"
 $ssd     = Join-Path $build "$stem.SSD"
 $padded  = Join-Path $build "$stem-200K.SSD"
@@ -47,7 +50,7 @@ if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-N
 # !BOOT (with the build kind stamped in it) rather than using -boot.
 Push-Location $root
 try {
-    & $beebasm -i 'src\main.asm' -do $raw -opt 3 -title $discTitle -D $relDef -D $aklDef -v |
+    & $beebasm -i 'src\main.asm' -do $raw -opt 3 -title $discTitle -D $relDef -D $aklDef -D $cpcDef -v |
         Out-File -FilePath $listing -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE) - see $listing" }
 } finally { Pop-Location }
@@ -67,6 +70,7 @@ try {
 
 if ($Release) { "RELEASE build: every DEBUG_ flag off" }
 if ($Akl)     { "ARKOS music build: src/aklplayer.asm + src/ay2sn.asm, whole tune" }
+if ($Cpc)     { "CPC graphics build: Smila's Amstrad art, sprites and charset" }
 "Built  $ssd"
 "       $padded   padded, for jsbeeb"
 "       $raw   beebasm's own output, uncompressed and NOT bootable"

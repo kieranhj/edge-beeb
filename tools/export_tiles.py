@@ -15,7 +15,13 @@ Writes to src/data/:
 Colours: bit pair 00 -> black, 01 -> brown ($d022), 10 -> white ($d023),
 11 -> col_decode low 3 bits; each then through C64_TO_BBC (decision 11).
 
-Run from the project root: python tools/export_tiles.py
+With --cpc (decision 41) the charset comes from the Amstrad port's art instead
+and is written to chars-cpc.bin; a CPC character carries its own colours, so
+col_decode's colour bits are not consulted at all. tiles.bin, map.bin and
+col_decode.bin are NOT rewritten - the CPC uses the same tile numbers, the same
+map and the same collision table, so both builds share the one copy.
+
+Run from the project root: python tools/export_tiles.py [--cpc]
 """
 
 import os
@@ -45,18 +51,27 @@ def char_pixels(char, cd):
     return [[char_colour(v, cd) for v in bbc.c64_pixels(row)] for row in char]
 
 
-def main():
+def main(cpc=False):
     os.makedirs(OUT, exist_ok=True)
-    chars = bbc.load_chars()
-    col_decode = bbc.parse_c64_table(C64_ASM, "col_decode", 256)
+    if cpc:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "cpc"))
+        import bbcart
+        pixels = bbcart.characters()
+    else:
+        col_decode = bbc.parse_c64_table(C64_ASM, "col_decode", 256)
+        pixels = [char_pixels(c, col_decode[n])
+                  for n, c in enumerate(bbc.load_chars())]
 
     planes = bytearray(4 * 2048)
-    for c, char in enumerate(chars):
-        px = char_pixels(char, col_decode[c])
+    for c, px in enumerate(pixels):
         for row in range(8):
             for p in range(4):
                 planes[p * 2048 + c * 8 + row] = bbc.mode2_byte(0, px[row][p])
-    open(f"{OUT}/chars.bin", "wb").write(planes)
+    name = "chars-cpc.bin" if cpc else "chars.bin"
+    open(f"{OUT}/{name}", "wb").write(planes)
+    if cpc:
+        print(f"{name} {len(planes)} B (CPC art; tiles/map/col_decode unchanged)")
+        return
 
     tiles = open("data/tiles.til.bin", "rb").read()
     open(f"{OUT}/tiles.bin", "wb").write(tiles)
@@ -73,4 +88,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(cpc="--cpc" in sys.argv[1:])

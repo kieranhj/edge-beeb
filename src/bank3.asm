@@ -21,7 +21,11 @@ GUARD &C000
 .bank3_start
 
 .compiled_data
+IF GFX_CPC
+INCBIN "src/data/compiled-cpc.bin"
+ELSE
 INCBIN "src/data/compiled.bin"
+ENDIF
 
 \ ******************************************************************
 \ *	The titles page's font and credits, and the code that draws them
