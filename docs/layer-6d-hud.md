@@ -74,6 +74,18 @@ file, and ours are in the `&0800` block which is not in the image — so they ar
 before the first titles page, and `game_init` leaves the high score alone thereafter. It is the
 C64's `$00,$01,$02,$03,$04,$05`: 012345.
 
+**The bar is centred here; on the C64 the border did that for it** (decision 42, 2026-09-04, KC:
+"looks like the HUD panel isn't centred"). The screen map is forty columns wide but the art only
+fills columns 0-37, and it is exactly mirror-symmetric about that span — measured, by rendering the
+map to pixels and comparing every scanline with its own reverse: symmetric over 0..37, asymmetric
+over 1..38, 2..39 and 0..39. The missing pair is eaten by the side borders, because `rout1` sets
+`$d016 = $17` for the panel raster — 38-column mode, x-scroll 7. Our MODE 2 row shows all forty
+columns and eats nothing, so the bar sat four pixels left of centre. `PANEL_SHIFT` in the exporter
+rotates every row right by one column: blank columns 38 and 39 become 39 and 0, the art lands on
+1-38, and row 4 — `$ff` in all forty columns — is unchanged by a rotation, so the solid bar under
+the panel still runs edge to edge. `HUD_COL_SHIFT` in `bank3.asm` puts the same +1 on the score,
+high-score and lives columns below.
+
 ## Where it all lives, and why
 
 Main RAM had **36 bytes** free below `&2000` when the layer started and bank 0 had 151, so the
@@ -118,6 +130,8 @@ number.
 ## Verified in jsbeeb
 
 - The panel appears in both banks and under both the titles and the game.
+- After decision 42: all forty scanlines of `panel.bin` are their own mirror, and the score, high
+  score and lives bars still sit inside their boxes on the titles page and in play.
 - Score poked to 987654 and high score to 678901 renders all ten digits correctly at the right
   cells; the panel read back out of screen RAM and rendered to PNG matches the exporter's own render
   of the same data. Re-checked after the glyphs were brightened, reading 138694 off a running game.

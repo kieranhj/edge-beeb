@@ -26,6 +26,17 @@ blue and light grey to white, which is what the surrounding pairs already use -
 and light green keeps its hue. The distinction between dark grey and blue is
 the one thing that is lost.
 
+The bar is CENTRED here, which on the C64 the border did for it. rout1 sets
+$d016 = $17 for the panel raster: 38-column mode, x-scroll 7. The map is 40
+columns wide but columns 38 and 39 are blank, and the art is exactly mirror-
+symmetric about columns 0..37 - the pair the side borders eat. On our 40-column
+MODE 2 row nothing is eaten, so the art landed four pixels left of centre.
+Rotating every row right by one column fixes it: columns 38, 39 blank become
+columns 39, 0, and the art sits at 1..38, centred. Row 4 is $ff in all forty
+columns, so the rotation leaves the bar under the panel edge to edge.
+PANEL_SHIFT is that rotation, and `hud_cell_lo/hi` in src/bank3.asm carries the
+same +1 on the score, high-score and lives columns.
+
 Output, both into sideways bank 3:
 
 src/data/panel.bin, 3200 bytes
@@ -54,6 +65,7 @@ OUT_HUD = os.path.join(ROOT, 'src', 'data', 'hud.bin')
 PANEL_ROWS = 5
 PANEL_COLS = 40
 PANEL_CELLS = PANEL_ROWS * PANEL_COLS
+PANEL_SHIFT = 1         # columns right, to centre the bar - see above
 
 # $d021, $d022, $d023 as rout1 sets them for the panel's raster.
 D021, D022, D023 = 0x00, 0x06, 0x01
@@ -150,7 +162,9 @@ def main():
 
     out = bytearray()
     for cell in range(PANEL_CELLS):
-        out += render(chars, screen[cell], cols[cell])
+        row, col = divmod(cell, PANEL_COLS)
+        src = row * PANEL_COLS + (col - PANEL_SHIFT) % PANEL_COLS
+        out += render(chars, screen[src], cols[src])
     assert len(out) == PANEL_ROWS * 640
 
     hud = bytearray()

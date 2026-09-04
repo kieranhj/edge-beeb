@@ -198,7 +198,9 @@ which is what the C64 reads too.
 bar is a fixed 5 x 40 character map assembled straight into its screen buffer in the multicolour
 STATUS charset, so it transcribes at 1:1 like the credits page did: `tools/export_panel.py` renders
 all 200 cells with their own colour-RAM bytes into a 3,200-byte MODE 2 image, and `panel_draw` is a
-straight copy (decision 34, which also fixes the C64 -> MODE 2 colour mapping). `status_decode`
+straight copy (decision 34, which also fixes the C64 -> MODE 2 colour mapping). The exporter
+rotates every row one column right to centre the bar, which the C64's 38-column side borders did
+for it (decision 42). `status_decode`
 decodes the score, the high score and the lives bars, and paints **only the cells that changed, per
 bank**; measured at about 370 cycles on its worst frame.
 

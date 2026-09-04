@@ -187,25 +187,30 @@ INCBIN "src/data/hud.bin"
 \ 16. A cell is SIXTEEN bytes - four fat pixels is two byte columns, and a
 \ byte column is eight - so it sits at PANEL_ADDR + row*640 + column*16, and
 \ 40 of them is the 640-byte row exactly.
+\ HUD_COL_SHIFT is export_panel.py's PANEL_SHIFT: the exporter rotates the
+\ panel one column right to centre it, because the C64's 38-column border ate
+\ the two blank columns at the end and ours does not. These cells move with it.
+HUD_COL_SHIFT = 1
+
 .hud_cell_lo
-FOR c, 6, 11, 1
+FOR c, 6 + HUD_COL_SHIFT, 11 + HUD_COL_SHIFT, 1
     EQUB LO(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
 NEXT
-FOR c, 26, 31, 1
+FOR c, 26 + HUD_COL_SHIFT, 31 + HUD_COL_SHIFT, 1
     EQUB LO(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
 NEXT
-FOR c, 16, 21, 1
+FOR c, 16 + HUD_COL_SHIFT, 21 + HUD_COL_SHIFT, 1
     EQUB LO(PANEL_ADDR + 2*row_stride + c*HUD_GLYPH_BYTES)
 NEXT
 
 .hud_cell_hi
-FOR c, 6, 11, 1
+FOR c, 6 + HUD_COL_SHIFT, 11 + HUD_COL_SHIFT, 1
     EQUB HI(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
 NEXT
-FOR c, 26, 31, 1
+FOR c, 26 + HUD_COL_SHIFT, 31 + HUD_COL_SHIFT, 1
     EQUB HI(PANEL_ADDR + 1*row_stride + c*HUD_GLYPH_BYTES)
 NEXT
-FOR c, 16, 21, 1
+FOR c, 16 + HUD_COL_SHIFT, 21 + HUD_COL_SHIFT, 1
     EQUB HI(PANEL_ADDR + 2*row_stride + c*HUD_GLYPH_BYTES)
 NEXT
 
