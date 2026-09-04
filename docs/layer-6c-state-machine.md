@@ -118,7 +118,14 @@ never before it. Then:
    skips `scroll_frame` and `scroll_advance` in this mode.
 
 **The "mega hero" message is not built.** It is written as character codes into a text screen we do
-not have; it waits for Layer 8 and a font drawn for the job. Everything else in the sequence is here.
+not have. Everything else in the sequence is here.
+
+> **Corrected 2026-09-04: it does not need a font, and does not wait for Layer 8.** This section
+> used to say it wanted "a font drawn for the job". It does not. `mega_hero_txt` is two 240-byte
+> on/off bitmaps, 6 rows of 40 cells each: `comp_mess` writes character `$80` where the byte is
+> `$20` and blank where it is `$00`, the second block backwards for the 180-degree rotated twin -
+> the titles' two zoom bands exactly. `tools/export_zoom.py` already exports the MODE 2 block cell
+> that needs, and `bank1.asm` already plots a rotated mirror band. See `PLAN.md` 9c.
 
 ### Where the bangs land (decision 33)
 

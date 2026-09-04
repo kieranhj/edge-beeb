@@ -55,6 +55,7 @@ month and this is a Master.
 | Display split | In play, two CRTC cycles: 5-row panel at `&3000` **in both shadow banks** (every panel write goes to both), then 34 rows with the 20-row play area and VSync at absolute row 34. **On the titles, four** - panel, top zoom band, credits, bottom zoom band - with the bands hardware-scrolled round an 8K ring, one in each bank, and **the display bank switched inside the frame**. Six T1 fires instead of two, and the handler is in bank 1. `src/rupture.asm`, `src/bank1.asm`, decision 44 |
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
 | Music | The CPC port's Arkos song through `SongToYm`, `ym2sn` and `vgipacker` to a `.vgi`; `lib/vgiplayer.asm` in HAZEL decodes one byte per register stream per field from `rupt_vsync`. **The whole 349 seconds ships, spread over FOUR regions of memory** - a `.vgi` is eleven independent streams and only each stream has to be contiguous (decision 48). `tools/export_music.py` places them and `tools/verify_vgi.py` proves the placement byte for byte against a jsbeeb capture |
+| Starfield | Ten stars drifting left at **two speeds**, a half and a quarter of the level's, so the play area reads as three planes; plotted only into blank background so they never cover the scenery. **The ten are the CPC port's, not the C64's** - the original animates a character the released game never displays, measured (decision 50) - and **the drift is ours** (decision 51), both originals' stars being still. `src/bank1.asm`, `docs/layer-9c-starfield.md` |
 | Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw, **a figure now known to be optimistic** (`BUGS.md` #9). `src/sprite.asm`, `docs/layer-3-sprites.md` |
 | Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
 | Controls | Z/X left/right, K/M up/down, L fire, P pause (P or fire unpauses), ESCAPE abort (only while paused), Q mute. Internal key numbers are **measured** (OSBYTE 121 in a BASIC session holding the key), never recalled - Z 97, X 66, K 70, M 101, L 86, P 55, Q 16, ESCAPE 112. `*FX229,1` first, or BASIC eats ESCAPE. **Q is read in the VSync handler**, so it works on the titles and in the finale as well as in play (decision 39). **The tune stops while the game is paused** and Q is not read there at all, there being nothing to mute (decision 43) |
@@ -148,13 +149,13 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `player.asm` | movement, fire latch, bullet, background collisions, grind scoring, score, `game_tick`, and the life cycle: `life_cycle`, `life_lost`, `game_over_init`, `player_dropin`, `comp_tick` |
 | `enemy.asm` | the wave manager and reader, enemy movement, bounds, the two enemy collision passes, explosions |
 | `rupture.asm` | the two-cycle rupture, IRQ handler and install, and the VSync-side call into the music player |
-| `tables.asm` | initialised main-RAM tables only; the mutable state lives at `&0800` (see `main.asm`) |
+| `tables.asm` | initialised main-RAM data. It sits ABOVE `SPR_SAVE`'s base and is therefore **boot-only** - the disc filenames and the OSFILE block. Nothing read in play may go here (`BUGS.md` #13); the mutable state lives at `&0800` (see `main.asm`) |
 | `zx0depack.asm` | the ZX0 depacker, lifted from Paradroid. Boot code, called only by the loader; the last thing in the image and the one part allowed above `SPR_SAVE`'s base |
 | `loading.asm` | the loading screen's two disc files, `LOADSC1` and `LOADSC2` |
 | `panel.asm` | the status panel image as the disc file `PANEL` (decision 47). It used to live in bank 3; it is 3,200 bytes read exactly twice, and bank 3's tail is where the tune has to be |
 | `andy.asm` | ANDY's share of the tune as the disc file `ANDY`: 4K at `&8000-&8FFF`, ROMSEL bit 7 (decision 48). Loaded before `MUSIC` and unpacked after it, because the loader cannot write into ANDY while the filing system is running |
 | `bank0.asm` | the SWRAM data bank, plus the run-once and out-of-room code: `setup_display`, `clear_play`, `panel_init`, `score_boot`, `status_call`, `title_page`, `pause_check`, `comp_mess`, `finale_tick`, the frame meter |
-| `bank1.asm` | the SWRAM sprite bank for pixel shift 0, and after it **the titles' zoom scroller** (Layer 6e): its font, its message, its four-cycle rupture and the code that drives them. There because nothing on the titles reads a sprite, and reached through `bank_call` in main RAM |
+| `bank1.asm` | the SWRAM sprite bank for pixel shift 0, and after it **the titles' zoom scroller** (Layer 6e): its font, its message, its four-cycle rupture and the code that drives them. There because nothing on the titles reads a sprite, and reached through `bank_call` in main RAM. Then **the starfield** (Layer 9c, decisions 50 and 51): its tables in what used to be dead space below the tune's B1 stream, its code in the bank's tail |
 | `bank2.asm` | the SWRAM sprite bank for pixel shift 1 |
 | `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3). Default: region A of the tune from `&C000`, the generated stream map and `lib/vgiplayer.asm` at `&D300`, its 11-page ring workspace at `&D500`. Under `MUSIC_AKL`: `aklplayer.asm` + `ay2sn.asm` at `&C000` and the whole tune as tracker data at `&CC00`. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
 | `aklplayer.asm` | `MUSIC_AKL` only: a 6502 port of Arkos Tracker 2's "lightweight" (AKL) replay, producing the fourteen AY registers a frame. X is the channel throughout, Y the byte offset being read. Byte-exact against Arkos's own player over all 17,446 frames |
@@ -225,7 +226,7 @@ that one says how much of it is gone, and where the room that is left actually i
 | `&0800-&08E9` | game state: the C64's `$0340` block - `sprite_pos`, `sprite_dp`, the `enemy_*` arrays, the score, and what each bank's last sprite draw did. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
 | `&0C00-&0C5F` | `VGI_STATE`: the VGI player's 96 bytes of decode state, in the MOS user-font page (decision 49) |
 | `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `LOAD_STREAM` = `&2200`). `!BOOT` is assembled at `&2400`, not here: it is a disc file nothing loads or runs from RAM |
-| to `&1F04` | initialised tables: the sprite row-body dispatch tables, `explosion_dirs`, the OSFILE block |
+| after the code | initialised data, **boot-only because it is above `SPR_SAVE`**: the disc filenames and the OSFILE block. `explosion_dirs` used to be here and is in bank 1 now (`BUGS.md` #13) |
 | to `&2147` | `src/zx0depack.asm`, boot code. **Deliberately above `SPR_SAVE`'s base**: it is dead before anything reads there. `&B9` free in a DEV build |
 | `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly. At boot it holds the depacker and, from `LOAD_STREAM` = `&2200`, the loading screen's streams |
 | `&3000-&7FFF` (main) | at boot only: the **loading screen**, a whole MODE 2 picture, displayed while the banks load |
@@ -235,7 +236,7 @@ that one says how much of it is gone, and where the room that is left actually i
 | on the titles only | the display wrap goes to **8K**, so `&6000-&7FFF` is a ring in each bank: the top zoom band's is in MAIN, the bottom's in SHADOW, and the credits are 6 rows at `&4000` in SHADOW. `title_page` puts the 16K wrap back on the way out |
 | ANDY `&8000-&8FFF` | the Master's own 4K, selected by **bit 7 of ROMSEL** and overlaying only the low 4K of whichever bank is paged - measured, see below. One of the tune's eleven streams (decision 48) |
 | SWRAM slot 4 (`SWRAM_DATA`, resting state) | `BANK0`: `char_data &8000` (8K, four MODE 2 column planes), `tile_data` (211 × 16), `map_data` (302 × 5), `col_decode`, `wave_data` (201 × 9) and `anim_decode` |
-| SWRAM slot 5 (`SWRAM_SPRITES0`) | `BANK1`: sprite data, pixel shift 0, then the titles' zoom scroller and its own rupture handler, then a tune stream at `&B900` |
+| SWRAM slot 5 (`SWRAM_SPRITES0`) | `BANK1`: sprite data, pixel shift 0, then the titles' zoom scroller and its own rupture handler, then the starfield, then a tune stream at `&B900` |
 | SWRAM slot 6 (`SWRAM_SPRITES1`) | `BANK2`: the same, shift 1, then a tune stream at `&BA00` - a page higher than bank 1's, because the CPC artwork's sprite bank 2 is bigger. The two banks are identical in sprite layout and **must stay adjacent**: the engine adds the shift to `SWRAM_SPRITES0` |
 | HAZEL `&C000-&DFFF` | `MUSIC`: region A of the tune from `&C000`, the stream map and the VGI player at `&D300`, its 11 x 256 ring workspace at `&D500`. ACCCON bit 3 (Y). Loaded LAST - it is the filing system's workspace - and nothing may touch the disc after it. **Region A begins at `&9100` in bank 3 and the two are one block**: the bank and HAZEL are visible at the same time, so a pointer walking off `&BFFF` lands in `&C000`, and two streams do |
 
@@ -270,6 +271,14 @@ plays happily for thousands of frames before the stream runs off the end of what
 
 ## Facts about the current code that the old docs got wrong
 
+- **Main RAM's real ceiling is `SPR_SAVE` = `&2000`, NOT `LOAD_STREAM` = `&2200`, for anything read
+  or executed in play.** `&2000-&2FFF` is the blitter's saved-background area and is rewritten every
+  frame from the first sprite onwards. Boot code and boot data may live there and do -
+  `src/zx0depack.asm`, the OSFILE block, the disc filenames, and `!BOOT` at `&2400` - because they
+  are dead before anything reads there. A runtime table drifted over the line unnoticed and the
+  player's explosion pieces stopped flying (`BUGS.md` #13). `main.asm` now carries
+  `ASSERT code_end <= SPR_SAVE`, and the listing prints CODE CEILING beside it; the build's FREE
+  figure is measured to `LOAD_STREAM` and overstates the room for anything permanent.
 - The 2019 plotter, its nibble LUTs and its two 126-byte stashes are **gone** (Layer 3), and with
   them `BUGS.md` #1. Sprites read pre-converted MODE 2 data from banks 1 and 2.
 - `src/data/sprites.bin` is gone too; the exporter now writes `sprites0.bin` and `sprites1.bin`,

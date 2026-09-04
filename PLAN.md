@@ -17,7 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5, 6a-6e, 7 and 9a-9b are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
+**Layers 0 to 5, 6a-6e, 7, 9a-9b and the starfield of 9c are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
 over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K/M/L with the C64's
@@ -28,8 +28,11 @@ game over and a new game; and **the state machine** — a titles page carrying t
 credits, pause on P, abort on ESCAPE, and the completion sequence the wave table's end triggers;
 and **the HUD** - the original's own status bar, rendered whole from its charset and its colour
 map, with the score, the high score and the lives bars decoded onto it every frame; and **the
-music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL, muted and unmuted on Q; and **a loading screen**, a whole MODE 2 picture up while the banks load behind it, with every data file on the disc ZX0-compressed. The
-completion's "mega hero" message waits for a font to draw it with. **The whole 349-second tune
+music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL, muted and unmuted on Q; and **a loading screen**, a whole MODE 2 picture up while the banks load behind it, with every data file on the disc ZX0-compressed; and **a parallax starfield**, ten stars drifting left
+at two speeds, both slower than the level, the CPC's ten rather than the C64's, whose own is dead
+code. The
+completion's "mega hero" message is still to draw - and 9c says it needs no font, which is what
+Layer 6c thought was holding it up. **The whole 349-second tune
 ships**, spread over four separate regions of memory, because a `.vgi` is eleven independent
 register streams and only each stream has to be contiguous (decision 48).
 
@@ -53,8 +56,21 @@ costed options for buying margin back are in `BUGS.md` #9 and in the Blitter Ana
 per-row spans recover a quarter of the bytes the blitter touches, and compiling the densest
 explosion frames recovers half the cycles but does not all fit.
 
-**Main RAM** (Layer 9b build, DEV): code, tables and the ZX0 depacker `&0E00-&2147`, **`&B9`
-free** below `LOAD_STREAM` = `&2200`. The ceiling moved up in 9a: the depacker is boot code and is
+**The starfield costs 676 us a frame, 1.7%** (decisions 50 and 51), and it is spent out of that same
+thin margin: on a matched A/B over 2,684 frames of parked-ship play the missed flips went from 1 to
+19. Eighteen of those belong to the stars existing at all and one to the drift, which is only 114 us
+of the 676. The worst-frame figure appears to jump from 94.8% to 105.6%, but most of that is a frame
+crossing into a third field and catching one more music interrupt; the added work is the 676 us and
+nothing else. The lever, if 19 is too many, is the star count - the cost is linear and the ten are
+the CPC's, not the C64's.
+
+**Main RAM** (Layer 9c build, DEV): code, tables and the ZX0 depacker `&0E00-&2159`, **`&A7`
+free** below `LOAD_STREAM` = `&2200` - but that is not the number that matters. **The real ceiling
+for anything read in play is `SPR_SAVE` = `&2000`, and `code_end` is `&1FF9`: seven bytes under it in
+a DEV build, 36 in a RELEASE one.** Nothing was checking, `explosion_dirs` drifted over the line into
+the blitter's save area, and the player's explosion pieces stopped flying (`BUGS.md` #13, fixed: the
+table is in bank 1 and `main.asm` now asserts the ceiling). The next thing that wants main-RAM code
+will have to move the boot loader above `&2000`, where `!BOOT` and the depacker already are. The ceiling moved up in 9a: the depacker is boot code and is
 allowed to sit above `SPR_SAVE`'s base at `&2000`, because nothing reads there until the game
 starts and it is dead by then. That is with `DEBUG_TIMING` on; `game_init` moved to bank 0 in Layer
 7 to make room for the HAZEL loader and the IRQ's music call. Bank 0 has `&B2` left; **bank 3 is
@@ -353,6 +369,104 @@ player rather than in place of it — crackled, and the write capture said why: 
 tune's real volume fifty times a second (`BUGS.md` #11). Decision 39,
 [`docs/layer-7-music.md`](docs/layer-7-music.md).
 
+### 9c — the outstanding features
+
+Seven jobs, found by a full read of the C64 original, the CPC port and our own `src/` on
+2026-09-04. The first three are things the originals have and we do not; the last four are
+additions of ours, and each needs a decision row before it is built.
+
+**1. The starfield — done 2026-09-04, and it has parallax.**
+[`docs/layer-9c-starfield.md`](docs/layer-9c-starfield.md), decisions 50 and 51. Ten stars on
+scanline 0 of alternating character rows, drifting left at **two speeds** — five at half the scroll
+and five at a quarter, so the play area reads as three planes with the scenery in front — and
+plotted only into blank background so they never cover it. **The ten are the CPC's, because the
+C64's starfield is dead code** (the finding is below, and it is why this needed a decision); **the
+drift is ours**, both originals' stars being still. A step is half a byte, which MODE 2 makes cheap:
+the two halves of a colour are one `ASL` apart and `AND #&55` tells them apart. There is no per-star
+screen address to keep — `corner_addr` is it, a star being a sprite that only moves when we move it
+— but the address each bank last plotted at IS kept, 52 bytes, because the drift breaks the static
+version's "minus one byte column" shortcut. Verified two ways: at a breakpoint over both scroll
+parities and a `corner_addr` advance the offset from the displayed window is 0 every time, and over
+exactly 100 game passes every star in a set moved the same number of columns, the sets 2:1, three of
+them wrapping the left edge and returning at the right. **It costs 676 µs, 1.7% of the frame** — of
+which the drift is 114 — and takes the missed flips over 2,684 frames of parked-ship play from 1 to
+19. Code and tables in bank 1, 18 bytes of main RAM for the two call sites.
+
+The finding, kept because this file and `PROPOSAL.md` have carried
+"starfield" since Layer 0 on the strength of the C64's `star_decode` and its `sta $47f8` in
+`rout2`. `$47f8` is **character `$FF` of `tiles.chr`**, and character `$FF` appears **nowhere in
+`tiles.til` or in the map** — checked, all 3,376 tile bytes and all 1,510 map bytes. The only
+place `$FF` reaches the screen is the panel's fifth row, whose `status_cols` entries are all
+`$00`: hires black on a black `$d021`. The character is all zeros in the file as well. **The
+C64's starfield animates something nothing ever displays.**
+
+So the one to port is the CPC's (`source_cpc/Source/EG_Stars3.asm`), and it is a real feature:
+**10 stars at fixed screen addresses**, five dark green and five light, plotted only where the
+background byte is blank and skipped where it is not, with each star's address incremented every
+frame *against* the scroll so it stands still on screen, and the two greens swapped every second
+frame to hide the CPC's half-character R3 step. Ten plots and ten clears a frame. Ours would
+plot into the column-ordered play buffer instead, in both banks. **A CPC feature, not a C64 one:
+it needs a decision row.**
+
+**2. "MEGA HERO" — it does not need a font.** `docs/layer-6c-state-machine.md` parked it as
+"character codes into a text screen we do not have… waits for Layer 8 and a font drawn for the
+job". That is not what the data is. `mega_hero_txt` is **two 240-byte on/off bitmaps**, 6 rows of
+40 cells each: a byte is `$20` or `$00`, and `comp_mess` writes character `$80` where it is set
+and blank where it is clear, the second block written backwards for the 180-degree rotated twin —
+the titles' two zoom bands exactly. One cell a field, a typewriter reveal, with a trailing clear
+one row down and one column right.
+
+We already have every piece: `tools/export_zoom.py` exports a 16-byte MODE 2 block cell for this
+same job, and `bank1.asm` already plots a rotated mirror band. So this is an exporter of about
+500 bytes and a per-field plot, with **no new artwork and no font**, and it closes the last hole
+in the completion sequence. (The CPC's `MEGAHERO.ASM` is the same message as a 14 x 8 mode-0
+grid if that shape suits better.)
+
+**3. The win tune.** `source_cpc/Music/` holds **two** songs: `EDGEA.SKS`, which is ours, and
+**`WON4.SKS`, 1,536 bytes** — a quarter the size. The CPC switches to it the moment the mega-hero
+build starts (`ld a,2 : ld (ChangeMusic),a` in `Compiled_Main3.asm`) and keeps it through the
+bonus and the explosion finale, switching back to the main theme on the way out. The C64 has one
+tune and never changes it, so this is the CPC's addition — but our music is the CPC's already.
+Under `MUSIC_AKL` it is another block of tracker data and a re-init; under VGI it is another set
+of eleven streams for `export_music.py` to place, and `verify_vgi.py` to prove.
+
+**4. Redefinable keys.** Z/X/K/M/L/P/Q/ESCAPE are hardcoded and measured (`CLAUDE.md`). The CPC
+reads three schemes at once — joystick, QAOP + space, or the cursor keys — and the standing note
+in `CLAUDE.md` is that every `DEBUG_` key will need CTRL once the game has redefinable controls.
+Needs a front end to define them in and somewhere to keep them.
+
+**5. The loading screen fades, and "in memory of T.M.R" before the titles.** Jason "T.M.R" Kelk
+wrote the C64 original; the credits page already carries his name because it is his own. A
+dedication card between the loading screen and the titles, with the loading picture fading out
+to it. MODE 2 has no palette ramp to fade through in the ordinary sense — a fade is a sequence
+of eight `&FE21` logical-to-physical writes — so the mechanism wants costing before the card is
+drawn.
+
+**6. A fade between the BBC and the original credits on the titles.** The titles currently show
+the C64's own five credit lines (`ttl_credits`, Layer 6c). This port has its own credits to
+show, so the block cross-fades between the two sets on a timer while the zoom bands keep
+running. Same palette-write mechanism as 5, and the credits' colour pulse (`ttl_pulse`,
+Layer 6e) has to keep working across it.
+
+**7. An additional BBC scroll text.** The zoom scroller runs the C64's own 468-character message
+verbatim (`tools/export_zoom.py`). A second message about this port — who did it, what it runs
+on — either appended or alternated with the original's.
+
+**What was checked and needs nothing.** Everything else in the C64 transcribes, and the
+non-obvious ones are all in: the high score defaulting to **123450** rather than zero and
+surviving a new game; grind scoring at 25 a touching edge, gated on `scroll_x AND 3 = 3`, both
+edges scoring separately; 40 for a chip and 400 for a kill; the 5,000-a-life bonus with its
+50-field gap; abort setting `lives = 1` so the ordinary game-over runs; the `$32` shield;
+explosions not being lethal; the multi-spawn loop; decommission at explosion frame `$0a` for the
+pool slots only. **All sixteen enemy types are used** by the wave table, shields 1 to 32, no
+unused art. **There are exactly seven input reads in the whole C64 game** — titles fire, pause,
+Q-abort, unpause fire, its debounce, finale fire and `player_manage` — so **there are no cheat
+codes and no hidden modes**; the only one in the source is the `; patch me out to disable
+collisions!` comment, which decision 30 already honours. The disc's `EDGE GRINDER DOC` is a
+Cosine Noter v2.2 image and `source_c64/assets/EMS and EG music.d64` is the Electric Music Studio
+editor and its help files: no second C64 tune, no hidden content. And the map never wraps in
+play — 201 waves total 8,784 ticks, about 275 tile columns of the 302 there are.
+
 ## Layer 8a — the CPC artwork, behind `GFX_CPC`
 
 `.\build.ps1 -Cpc` builds the same game drawn with Trevor "Smila" Storey's Amstrad CPC art:
@@ -370,7 +484,8 @@ per-sprite colour to single out. **The compiled bullet is dropped in this build*
 short of fitting in bank 3, so frame meters do not compare across the two. Decision 41,
 [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md).
 
-Still to do: starfield, real-hardware test, release build, publish.
+Still to do: real-hardware test, release build, publish. The starfield is 9c above, and is the
+CPC's rather than the C64's.
 
 ## Layer index
 
@@ -393,4 +508,6 @@ Still to do: starfield, real-hardware test, release build, publish.
 | 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **open 2026-09-04**, behind `GFX_CPC`. Works, and now assembles without `-Akl` too; the choice of art is KC's |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |
+| 9c — the parallax starfield | [`docs/layer-9c-starfield.md`](docs/layer-9c-starfield.md) | done 2026-09-04, decisions 50 and 51 |
+| 9c — the rest of the outstanding features | | **open 2026-09-04**: "mega hero", the win tune, redefinable keys, the fades and dedication, a BBC scroll text |
 | 9 — polish and release | | |

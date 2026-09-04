@@ -477,6 +477,104 @@ TTL_RASTER_PAD = 18
 .ttl_rt_done
     rts
 
+\ ******************************************************************
+\ *	expl_dirs_load - the player's six pieces get their vectors
+\ ******************************************************************
+\ *	The C64's second loop in life_lost_init, and the table it reads.
+\ *	Up here because main RAM has no room BELOW SPR_SAVE for a table
+\ *	read at runtime, and that is the only room that counts: the
+\ *	vectors had drifted to &2024, inside the blitter's save area for
+\ *	sprite slot 0, so the player's own saved background was landing
+\ *	on the numbers his pieces were about to fly on. The pieces then
+\ *	inherited zero for both movement commands and sat where he died.
+\ *
+\ *	The original's table is sixteen bytes and life_lost reads from
+\ *	+2*ENEMY_FIRST; the first four are the player's and the bullet's
+\ *	slots, which have no pieces to throw, so only the twelve that are
+\ *	read are here. Movement commands in emove's encoding, one pair a
+\ *	pool slot, values verbatim.
+\ ******************************************************************
+
+.explosion_dirs
+EQUB &19, &09, &44, &44, &22, &22
+EQUB &8a, &8a, &45, &45, &26, &26
+
+.expl_dirs_load
+{
+    ldx #0
+    .loop
+    lda explosion_dirs, x
+    sta enemy_spds+2*ENEMY_FIRST, x
+    inx
+    cpx #2*ENEMY_COUNT
+    bne loop
+    rts
+}
+
+\ ---- the starfield's tables (Layer 9c) --------------------------
+\ Down here, ahead of the tune's stream, because this is the only
+\ hole they fit in and the code they belong to is past it. The
+\ commentary is with the code.
+\ The CPC's ten, from the StarsLow table in Compiled_Main3.asm. Its
+\ offsets decode to scanline 0 of alternating character rows at these
+\ byte columns; its screen is 80 bytes across and 20 rows tall in the
+\ play area, which is ours exactly, so they transcribe unaltered. The
+\ order is the CPC's, and it matters: the first five take one colour
+\ and the last five the other, which is what puts alternating rows in
+\ alternating colours - and now in alternating speeds with them.
+STAR_ROW_0 =  1 : STAR_COL_0 = 62
+STAR_ROW_1 =  5 : STAR_COL_1 = 38
+STAR_ROW_2 =  9 : STAR_COL_2 = 58
+STAR_ROW_3 = 13 : STAR_COL_3 = 18
+STAR_ROW_4 = 17 : STAR_COL_4 = 10
+STAR_ROW_5 =  3 : STAR_COL_5 =  8
+STAR_ROW_6 =  7 : STAR_COL_6 = 28
+STAR_ROW_7 = 11 : STAR_COL_7 = 66
+STAR_ROW_8 = 15 : STAR_COL_8 = 44
+STAR_ROW_9 = 19 : STAR_COL_9 = 56
+
+\ Screen offset of a star's byte: the origin of the picture is
+\ corner_addr + 8, as sprite.asm has it, and the star sits on scanline
+\ 0 of its character row. Written out rather than through a macro -
+\ beebasm will not take a macro name beginning with a mnemonic, and
+\ every name for this one begins with STA.
+.star_ofs0_lo
+EQUB LO(8 + STAR_ROW_0*row_stride + STAR_COL_0*8), LO(8 + STAR_ROW_1*row_stride + STAR_COL_1*8)
+EQUB LO(8 + STAR_ROW_2*row_stride + STAR_COL_2*8), LO(8 + STAR_ROW_3*row_stride + STAR_COL_3*8)
+EQUB LO(8 + STAR_ROW_4*row_stride + STAR_COL_4*8), LO(8 + STAR_ROW_5*row_stride + STAR_COL_5*8)
+EQUB LO(8 + STAR_ROW_6*row_stride + STAR_COL_6*8), LO(8 + STAR_ROW_7*row_stride + STAR_COL_7*8)
+EQUB LO(8 + STAR_ROW_8*row_stride + STAR_COL_8*8), LO(8 + STAR_ROW_9*row_stride + STAR_COL_9*8)
+.star_ofs0_hi
+EQUB HI(8 + STAR_ROW_0*row_stride + STAR_COL_0*8), HI(8 + STAR_ROW_1*row_stride + STAR_COL_1*8)
+EQUB HI(8 + STAR_ROW_2*row_stride + STAR_COL_2*8), HI(8 + STAR_ROW_3*row_stride + STAR_COL_3*8)
+EQUB HI(8 + STAR_ROW_4*row_stride + STAR_COL_4*8), HI(8 + STAR_ROW_5*row_stride + STAR_COL_5*8)
+EQUB HI(8 + STAR_ROW_6*row_stride + STAR_COL_6*8), HI(8 + STAR_ROW_7*row_stride + STAR_COL_7*8)
+EQUB HI(8 + STAR_ROW_8*row_stride + STAR_COL_8*8), HI(8 + STAR_ROW_9*row_stride + STAR_COL_9*8)
+.star_col0
+EQUB STAR_COL_0, STAR_COL_1, STAR_COL_2, STAR_COL_3, STAR_COL_4
+EQUB STAR_COL_5, STAR_COL_6, STAR_COL_7, STAR_COL_8, STAR_COL_9
+
+\ The CPC's two pens, 10 and 4 of the in-game Mode0Pal read reversed
+\ (decision 41): cyan and green. One MODE 2 fat pixel each, and they
+\ start in the LEFT half of the byte - logical 6 is &28 and logical 2
+\ is &08. Both are non-zero, which the blank test relies on.
+STAR_CYAN  = &28
+STAR_GREEN = &08
+.star_pix0
+EQUB STAR_CYAN,  STAR_CYAN,  STAR_CYAN,  STAR_CYAN,  STAR_CYAN
+EQUB STAR_GREEN, STAR_GREEN, STAR_GREEN, STAR_GREEN, STAR_GREEN
+
+\ How often a star steps a pixel: `frame_count AND mask` = 0. The level
+\ moves a pixel every frame, so 1 is half its speed and 3 a quarter.
+\ Cyan is the nearer plane and green the further one, and because the
+\ two sets alternate rows the depth alternates with them.
+STAR_NEAR = 1
+STAR_FAR  = 3
+.star_mask
+EQUB STAR_NEAR, STAR_NEAR, STAR_NEAR, STAR_NEAR, STAR_NEAR
+EQUB STAR_FAR,  STAR_FAR,  STAR_FAR,  STAR_FAR,  STAR_FAR
+
+
 IF MUSIC_AKL = 0
 \ The tune's B1 streams (decision 48). Nothing in this bank reads them:
 \ they are here because the .vgi's eleven register streams do not have to be
@@ -490,6 +588,227 @@ INCBIN "src/data/music_b1.bin"
 .music_b1_end
 ASSERT music_b1_end <= &C000
 ENDIF
+
+\ ******************************************************************
+\ *	Layer 9c: the parallax starfield
+\ ******************************************************************
+\ *	Ten stars on scanline 0 of every other character row, drifting
+\ *	left more slowly than the level does, at two speeds. Five go at
+\ *	half the scroll and five at a quarter, and the two sets alternate
+\ *	rows, so the play area reads as three planes: the scenery in
+\ *	front, then the cyan stars, then the green.
+\ *
+\ *	THE TEN, AND THE RULES, ARE THE CPC PORT'S, NOT THE C64'S. The
+\ *	original animates a single pixel in row 0 of character $FF
+\ *	(`star_decode`, `sta $47f8` in rout2) - and character $FF is in
+\ *	neither `tiles.til` nor the map, so nothing ever displays it. The
+\ *	only $FF on its screen is the status bar's last row, whose colour
+\ *	RAM is $00: black on black. The C64's starfield is dead code.
+\ *	Axelay's CPC port wrote a real one
+\ *	(source_cpc/Source/EG_Stars3.asm) and this is that: its ten
+\ *	positions, its two colours, and its two rules.
+\ *
+\ *	THE TWO RULES ARE WHAT MAKE IT CHEAP. A star is plotted only into
+\ *	a byte that is blank, so it never covers the scenery and never has
+\ *	to remember what it covered; and it is wiped by writing that blank
+\ *	back. So the only thing worth remembering is WHERE, which is
+\ *	star_lo/star_hi - per bank, because a bank is redrawn every other
+\ *	frame and what has to be put back is wherever that bank last left
+\ *	it. A zero high byte means this bank did not plot this star at
+\ *	all, and no address in a play buffer has one.
+\ *
+\ *	THE DRIFT IS OURS (decision 51). The CPC's stars stand still on
+\ *	the screen; ours step one fat pixel left on their own beat, which
+\ *	is `frame_count AND star_mask`. The level moves one fat pixel a
+\ *	frame, so mask 1 is half its speed and mask 3 a quarter, and
+\ *	everything is slower than the scenery - which is the whole point:
+\ *	nearer things move faster, so a star that moves at all has to
+\ *	move less than the level in front of it.
+\ *
+\ *	A step is half a byte. Moving left out of the LEFT half of a byte
+\ *	lands in the RIGHT half of the byte before it, so the pixel goes
+\ *	down a shift and the column goes back one; moving left out of the
+\ *	right half lands in the left half of the same byte, so only the
+\ *	pixel moves. MODE 2 puts the left pixel's four bits at 7,5,3,1 and
+\ *	the right pixel's at 6,4,2,0, so the two forms are one ASL apart
+\ *	and `AND #&55` tells them apart.
+\ *
+\ *	WHY IT NEEDS NO ADDRESS OF ITS OWN. The CPC increments each star's
+\ *	screen address every frame to cancel the scroll. We do not have
+\ *	to: `corner_addr` already is that address. A star is a sprite that
+\ *	never moves except when we move it, and `sprite.asm` places one at
+\ *	`corner_addr + 8 + row * 640 + column * 8`; `scroll_advance`
+\ *	running AFTER the draw is what makes a stationary sprite
+\ *	stationary (BUGS.md #7). So star_ofs is a screen offset, the same
+\ *	in both banks, and the drift is the only thing that changes it.
+\ *
+\ *	The two banks hold the same picture one pixel apart, so a star at
+\ *	the same byte and the same half-byte in both is at the same screen
+\ *	pixel in both, and does not shimmer. Only the blank test can
+\ *	disagree between them, at the edge of a piece of scenery.
+\ *
+\ *	A star may stand in the incoming column, 79, and one will: they
+\ *	visit every column now. That is safe only because `scroll_frame`
+\ *	runs BEFORE this does, so the star goes on top of a column that
+\ *	has just been written, and by the time this bank comes round again
+\ *	the scroll has moved on and nothing has repainted it.
+\ *
+\ *	NOT PORTED: the CPC swaps its two colours over every second frame,
+\ *	to hide a half-character R3 shift on monitors that do not do it
+\ *	cleanly. We have no R3 and no shift, and at 25 Hz the swap would
+\ *	be a visible flicker rather than a disguise.
+\ *
+\ *	Here in bank 1 because main RAM has 185 bytes and this is more
+\ *	than half of them, and because the 247 bytes between the zoom
+\ *	scroller and the tune's B1 stream at &B900 were dead space.
+\ *	Reached through bank_call, like the zoom scroller above it. It
+\ *	reads `corner_addr` and `frame_count` in zero page and writes the
+\ *	play buffer, none of which is paged, so being up here costs it
+\ *	nothing but the call.
+\ ******************************************************************
+
+\ ******************************************************************
+\ *	star_init - back to the CPC's positions, nothing on screen
+\ ******************************************************************
+.star_init
+{
+    ldx #STAR_COUNT-1
+    .loop
+    lda star_ofs0_lo, x
+    sta star_ofs_lo, x
+    lda star_ofs0_hi, x
+    sta star_ofs_hi, x
+    lda star_col0, x
+    sta star_col, x
+    lda star_pix0, x
+    sta star_pix, x
+    dex
+    bpl loop
+
+    lda #0
+    ldx #STAR_BANK + STAR_COUNT - 1
+    .clear
+    sta star_hi, x              ; star_lo needs no clearing: this gates it
+    dex
+    bpl clear
+    rts
+}
+
+\ ******************************************************************
+\ *	star_frame - put last time's stars back, drift, plot this time's
+\ ******************************************************************
+\ *	X walks the star and Y the same star in the bank being drawn,
+\ *	which is why the screen byte is reached through self-modified
+\ *	absolute addresses rather than (zp),Y: it leaves both index
+\ *	registers to the loop.
+\ ******************************************************************
+
+.star_frame
+{
+    lda &fe34
+    and #4                      ; the X bit: the bank the CPU is drawing
+    asl a
+    asl a                       ; 0 for main, STAR_BANK for shadow
+    clc
+    adc #STAR_COUNT-1
+    tay
+    ldx #STAR_COUNT-1
+
+    .loop
+
+    \\ ---- put the blank back where this bank last drew this star ---
+    lda star_hi, y
+    beq not_drawn
+    sta wipe+2
+    lda star_lo, y
+    sta wipe+1
+    lda #0
+    sta star_hi, y
+    .wipe
+    sta &ffff
+    .not_drawn
+
+    \\ ---- drift one fat pixel left, on this star's own beat --------
+    lda frame_count
+    and star_mask, x
+    bne no_step
+
+    lda star_pix, x
+    and #&55                    ; bits in the right-hand pixel?
+    bne to_left
+
+    \\ Out of the left half of this byte, into the right half of the
+    \\ one before it: down a shift, and back a column.
+    lsr star_pix, x
+    dec star_col, x
+    bpl back_one
+    lda #PLAY_COLS-1            ; off the left edge and on again at the right
+    sta star_col, x
+    clc
+    lda star_ofs_lo, x
+    adc #LO(PLAY_COLS * 8 - 8)
+    sta star_ofs_lo, x
+    lda star_ofs_hi, x
+    adc #HI(PLAY_COLS * 8 - 8)
+    sta star_ofs_hi, x
+    jmp no_step
+
+    .back_one
+    sec
+    lda star_ofs_lo, x
+    sbc #8
+    sta star_ofs_lo, x
+    lda star_ofs_hi, x
+    sbc #0
+    sta star_ofs_hi, x
+    jmp no_step
+
+    \\ Out of the right half into the left half of the same byte: the
+    \\ pixel moves and the column does not.
+    .to_left
+    asl star_pix, x
+
+    .no_step
+
+    \\ ---- where it is now, in the bank being drawn -----------------
+    \\ The buffer is 16K and hardware-wrapped, and corner_addr plus an
+    \\ offset can only pass &8000 once, so one subtraction puts it back.
+    clc
+    lda corner_addr
+    adc star_ofs_lo, x
+    sta test+1
+    sta plot+1
+    lda corner_addr+1
+    adc star_ofs_hi, x
+    cmp #HI(screen_top)
+    bcc in_range
+    sbc #HI(screen_size)
+    .in_range
+    sta test+2
+    sta plot+2
+
+    \\ ---- plot, but only into scenery that is not there ------------
+    .test
+    lda &ffff
+    bne blocked
+    lda star_pix, x
+    .plot
+    sta &ffff
+    lda plot+1                  ; and remember it, for this bank's next wipe
+    sta star_lo, y
+    lda plot+2
+    sta star_hi, y
+    .blocked
+
+    dey
+    dex
+    bmi done                    \ the body is past a branch's reach from the top
+    jmp loop
+    .done
+    rts
+}
+
+
 
 .bank1_end
 

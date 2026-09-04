@@ -340,6 +340,16 @@ PLAY_R7     = 34 - PANEL_ROWS              ; VSync at absolute row 34, as MODE 2
 PANEL_ADDR  = &3000
 PANEL_BYTES = PANEL_ROWS * row_stride      ; 3200, to &3C7F
 ASSERT PANEL_ADDR + PANEL_BYTES <= screen_start
+
+\ The starfield (Layer 9c): ten stars standing still on the screen while
+\ the level scrolls under them. The code and the tables are in bank 1;
+\ what is here is the per-bank record of which of them are on screen, one
+\ byte a star, the banks STAR_BANK apart so that &FE34's X bit shifts
+\ twice into the index. The stars are the CPC port's, not the C64's -
+\ see src/bank1.asm.
+STAR_COUNT = 10
+STAR_BANK  = 16             ; stride between the two banks' flags
+ASSERT STAR_BANK >= STAR_COUNT
 \ The loading screen (Layer 9a): a full MODE 2 picture in main RAM, shown
 \ while the banks load. It is the MOS's own screen address, because the
 \ mode change now happens FIRST and the picture is simply what MODE 2 is
@@ -739,6 +749,15 @@ ENDIF
     jsr title_page              \\ static credits, returns when fire is hit
     jsr game_init
 
+    \\ No star is on screen: game_init has just wound a fresh screen in
+    \\ under them, and a flag left set from the last game would have the
+    \\ wipe punch a black byte into it that nothing repaints for six
+    \\ seconds. After game_init, because the wind is what clears them.
+    lda #SWRAM_SPRITES0
+    ldx #LO(star_init)
+    ldy #HI(star_init)
+    jsr bank_call
+
     .loop
 
 IF DEBUG_TIMING
@@ -763,6 +782,17 @@ ENDIF
     cmp #MODE_FINALE
     beq no_scroll
     jsr scroll_frame            \\ plots this frame's byte column
+
+    \\ The stars go on after the scroll and before the sprites: over the
+    \\ scenery, under everything that flies. In the finale, with the
+    \\ level standing still, they stand still with it - which is why they
+    \\ are inside this test and not below it. corner_addr does not move
+    \\ there, so the wipe's "one byte column back" would be the star's
+    \\ own byte and it would rub itself out.
+    lda #SWRAM_SPRITES0
+    ldx #LO(star_frame)
+    ldy #HI(star_frame)
+    jsr bank_call
     .no_scroll
     TIMMARK TIM_SCROLL
     jsr spr_draw_all
@@ -1429,6 +1459,26 @@ PRINT "CODE size =", ~code_end-code_start
 PRINT "DATA size =",~data_end-data_start
 PRINT "BSS size =",~bss_end-bss_start
 PRINT "------"
+\ ******************************************************************
+\ *	THE REAL CEILING IS SPR_SAVE, NOT LOAD_STREAM
+\ ******************************************************************
+\ *	&2000-&2FFF is the sprite save area, rewritten every frame from
+\ *	the moment the first sprite is drawn. Boot code and boot data may
+\ *	sit in it - src/zx0depack.asm and the OSFILE block do, and !BOOT
+\ *	is assembled there - because they are dead before anything reads
+\ *	there. ANYTHING READ OR EXECUTED IN PLAY MAY NOT.
+\ *
+\ *	This is the guard that was missing: explosion_dirs drifted above
+\ *	&2000 unnoticed and the player's pieces stopped flying, because
+\ *	the blitter was writing the player's saved background over their
+\ *	movement vectors. The FREE figure below is measured to
+\ *	LOAD_STREAM and OVERSTATES the room for anything permanent - the
+\ *	number that matters is this one.
+\ ******************************************************************
+
+ASSERT code_end <= SPR_SAVE
+PRINT "CODE CEILING: code_end", ~code_end, "-", ~SPR_SAVE-code_end, "under SPR_SAVE"
+
 PRINT "HIGH WATERMARK =", ~P%
 PRINT "FREE =", ~CODE_TOP-P%     \ to LOAD_STREAM: the depacker sits in SPR_SAVE
 PRINT "------"
@@ -1488,6 +1538,22 @@ ORG GAME_STATE
 .spr_sv_wrap    skip 2*SPR_SLOTS    ; 0 plain, 1 split, 2 compiled
 .spr_sv_clo     skip 2*SPR_SLOTS    ; and the compiled restore body, if 2
 .spr_sv_chi     skip 2*SPR_SLOTS
+
+\ The starfield (Layer 9c). The first four are the star itself, shared
+\ by both banks because a star is at one place on the screen whichever
+\ bank is being drawn; the last two are per bank, because a bank is
+\ only redrawn every other frame and what has to be put back is
+\ wherever THAT bank last left it.
+.star_ofs_lo    skip STAR_COUNT     ; screen offset from corner_addr, 16-bit:
+.star_ofs_hi    skip STAR_COUNT     ; 8 + row * 640 + column * 8
+.star_col       skip STAR_COUNT     ; column 0-79, kept for the wrap test alone
+.star_pix       skip STAR_COUNT     ; the byte to write: the colour in whichever
+                                    ; half of it the star is standing in
+\ Where this bank last plotted each star, or 0 in the high byte for "it
+\ did not". A star is only ever plotted into a blank byte, so what goes
+\ back is always zero and there is nothing else to remember.
+.star_lo        skip STAR_BANK + STAR_COUNT
+.star_hi        skip STAR_BANK + STAR_COUNT
 
 \ The frame meter (src/timing.asm). Microseconds, worst case since boot;
 \ double them for 2 MHz cycles. tim_over is the one that matters.

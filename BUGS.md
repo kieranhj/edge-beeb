@@ -5,6 +5,7 @@ ruled out. Index first, detail below.
 
 | # | Status | Summary |
 |---|---|---|
+| 13 | fixed (Layer 9c) | The player's six explosion pieces sat where he died instead of flying apart: `explosion_dirs` had drifted above `&2000` into the blitter's sprite save area, so the player's own saved background was being written over the movement vectors his pieces fly on. Main RAM's real ceiling is `SPR_SAVE`, not `LOAD_STREAM`, and nothing was checking it |
 | 1 | gone (Layer 3) | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`). The routine it was about no longer exists |
 | 2 | fixed (Layer 3) | No sprite clipping: `x_pos >= 80` indexed past `mult8_*`. The engine now clips the frame's box to 80 columns x 160 scanlines at all four edges (decision 2) |
 | 11 | fixed (Layer 9b) | Muting the tune left a 50 Hz crackle, on jsbeeb and on b2: the player was writing the real volumes and `sn_reset` was taking them off 246 cycles later, so every field put out 123 us of the tune |
@@ -363,3 +364,70 @@ twelve captured fields match simulated frame 427 and nothing else.
 **Still not right, and known**: `ym2sn` uses noise rate 3 - the noise clocked by tone generator 3 -
 on 1,701 of its frames, which is the tuned-noise trick, and `src/ay2sn.asm` never emits rate 3 at
 all. That is the crudeness that remains in the mapping; the spurious tones were not it.
+
+## 13. The player's explosion pieces did not fly apart
+
+**Fixed, Layer 9c.** KC: "the explosion sprites when the player gets hit now seem to be stuck to the
+players position, they don't fly outwards".
+
+`life_lost` gives each of the six pool slots the player's position and one of `explosion_dirs`'
+movement commands, and `enemy_manage` flies them on those commands exactly as it flies an enemy. The
+positions were being copied. The commands were coming back as **zero**, and a slot with no movement
+command does not move.
+
+`explosion_dirs` was at **`&2024`** — inside `SPR_SAVE`, `&2000-&2FFF`, which is the sprite engine's
+saved-background area: eight slots by 256 bytes by two banks, rewritten every frame from the moment
+the first sprite is drawn. `&2000-&20FF` is slot 0's page in one bank, and slot 0 is the player. So
+the player's own saved background was landing on the twelve bytes his pieces were about to fly on,
+and whether it did depended on where he was standing.
+
+Read out of a running game, one instruction after `life_lost`:
+
+```
+0800  28 A0 00 00 28 A0 28 A0 28 A0 28 A0 28 A0 28 A0   sprite_pos: all six at the player
+0831  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   enemy_spds: nothing to fly on
+```
+
+and after the fix, from the same breakpoint:
+
+```
+0831  00 00 00 00 19 09 44 44 22 22 8A 8A 45 45 26 26   the C64's own vectors
+```
+
+Six frames later the pieces are at (46,136), (28,160), (40,184), (52,172), (28,148) and (34,184)
+from a death at (40,160): up-right, left, down, down-right, up-left, down-left, which is what
+`$19/$09`, `$44`, `$22`, `$8a`, `$45` and `$26` decode to.
+
+### It was not the starfield, and the starfield is why it showed
+
+`explosion_dirs` was at `&2024` before Layer 9c and `&2036` after: the starfield's 18 bytes of main
+RAM pushed it 18 further into the same page. Both are inside `SPR_SAVE`. What the shift changed is
+**which** of the player's saved bytes lands on the table, and therefore how often the vectors survive
+- which is why it looked like a regression and was reported as one. It had been latent since main RAM
+first grew past `&2000`.
+
+### The real defect is that nothing was checking
+
+`CODE_TOP` is `LOAD_STREAM` = `&2200`, and the build's "FREE" figure is measured to it. That is the
+right ceiling for **boot** code and data: `src/zx0depack.asm` sits above `&2000` deliberately, the
+OSFILE block and the disc filenames are read only while loading, and `!BOOT` is assembled at `&2400`
+(decision 49). It is the wrong ceiling for anything read in play, and there was no guard saying so —
+so a runtime table drifted over the line in silence and the failure appeared two layers later in an
+unrelated feature.
+
+`explosion_dirs` and the loop that reads it are in **bank 1** now, reached through `bank_call` from
+`life_lost` with bank 0 resting; only the twelve bytes that are read are kept, the first four of the
+original's sixteen being the player's and bullet's slots, which have no pieces to throw. Main RAM
+gained four bytes on the exchange.
+
+And `main.asm` now carries the guard that was missing:
+
+```
+ASSERT code_end <= SPR_SAVE
+PRINT "CODE CEILING: code_end", ~code_end, "-", ~SPR_SAVE-code_end, "under SPR_SAVE"
+```
+
+**`code_end` is `&1FF9`: seven bytes under, in a DEV build.** A RELEASE build has 36. The "FREE =
+&BB" the listing prints is 187 bytes to `LOAD_STREAM` and is not the number that matters for
+anything permanent.
+

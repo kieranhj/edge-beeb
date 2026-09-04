@@ -217,13 +217,16 @@ ENDIF
     cpx #2*ENEMY_COUNT
     bne pos_loop
 
-    ldx #0
-    .dir_loop
-    lda explosion_dirs+2*ENEMY_FIRST, x
-    sta enemy_spds+2*ENEMY_FIRST, x
-    inx
-    cpx #2*ENEMY_COUNT
-    bne dir_loop
+    \ The vectors are in bank 1, and so is the loop that reads them:
+    \ main RAM's real ceiling is SPR_SAVE, not LOAD_STREAM, and this
+    \ table had drifted above it into the blitter's save area, where
+    \ the player's own saved background was overwriting the numbers
+    \ his pieces fly on. Bank 0 is resting here - game_tick runs after
+    \ spr_draw_all has put it back - so bank_call is safe.
+    lda #SWRAM_SPRITES0
+    ldx #LO(expl_dirs_load)
+    ldy #HI(expl_dirs_load)
+    jsr bank_call
 
     ldx #0
     .anim_loop

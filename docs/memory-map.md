@@ -27,10 +27,10 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 | `&0400-&049F` | 160 | column buffer | 0 |
 | `&04A0-&07BF` | 800 | collision character map, 40 × 20 | 0 |
 | `&07C0-&07FF` | 64 | the collision map's overrun slack | 64, spent on purpose |
-| `&0800-&091B` | 284 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **740** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends at `&090F` - the frame meter is the difference |
+| `&0800-&0977` | 376 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **740** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends at `&096B` - the frame meter is the difference. The starfield's 92 bytes (decisions 50 and 51) are the last thing in it: 40 for the stars and 52 for where each bank last plotted them |
 | `&0C00-&0C5F` | 96 | **`VGI_STATE`**: the VGI player's decode state, eleven streams' worth (decision 49). Not in the image - nothing in it needs initialising | 160 to `&0D00` |
 | `&0D00-&0DFF` | 256 | paged-ROM extended vectors. Not claimed, not tested | 256, unverified — see below |
-| `&0E00-&2146` | 5,447 | code, then the initialised tables, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **185**. A RELEASE build ends at `&2129`: **214**. `!BOOT` used to be assembled in here and is not any more (decision 49) |
+| `&0E00-&2158` | 5,465 | code to `&1FF9`, then the boot-only data, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **187** to `LOAD_STREAM` — but see the ceiling below: only **7** of them are usable by anything read in play. `!BOOT` used to be assembled in here and is not any more (decision 49) |
 | `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly. At assembly time `&2400` is where `!BOOT` is built, which costs the run nothing: it is a disc file, never loaded here | 0 by construction |
 | `&3000-&3C7F` × 2 | 3,200 each | the status panel, in BOTH shadow banks | 0 |
 | `&3C80-&3FFF` × 2 | 896 each | **nobody's**: above the panel, below the play buffer, fetched by neither rupture cycle | 896 main + 896 shadow, unclaimed — see below |
@@ -42,11 +42,21 @@ stream in 24,320 bytes of region - and bank 0's 25 the next: Layer 6e's `title_p
 bank 0, because bank 0 code may call into main RAM and be returned to and bank 1 code may not. A
 RELEASE build has 191 in bank 0, the frame meter being the difference. Main RAM is no longer the
 problem it was: moving `!BOOT` out of the code image's address space (decision 49) took it from 111
-free to 185.
+free to 185, and the starfield took it back to 167.
 
-**The code's own ceiling.** The depacker already sits above
-`SPR_SAVE`'s base (`&1F05-&2147`) to buy some of them, which is safe only because it is dead before
-anything reads there.
+**THE CEILING THAT MATTERS IS `SPR_SAVE` = `&2000`, NOT `LOAD_STREAM`.** `&2000-&2FFF` is the
+blitter's saved-background area, rewritten every frame from the first sprite onwards. Boot code and
+boot data may sit in it and do - `src/zx0depack.asm`, the OSFILE block, the disc filenames, and
+`!BOOT` assembled at `&2400` - because they are dead before anything reads there. **Anything read or
+executed in play may not**, and for two layers nothing was checking: `explosion_dirs` drifted to
+`&2024` and the player's explosion pieces stopped flying, because his own saved background was
+landing on their movement vectors (`BUGS.md` #13). `main.asm` now carries
+`ASSERT code_end <= SPR_SAVE` and the listing prints `CODE CEILING` beside it.
+
+**`code_end` is `&1FF9`: seven bytes under it in a DEV build, 36 in a RELEASE one.** That, and not
+the 187 the FREE line prints, is what main RAM has left for anything permanent. The next thing that
+needs main-RAM code will have to move something out - the boot loader is the obvious candidate,
+being dead by the time the game starts, exactly as `!BOOT` and the depacker already are.
 
 **At boot the map is a different shape.** `&2200` upwards is the loading screen's ZX0 stream
 (`LOAD_STREAM`), `&3000-&7FFF` in MAIN is the loading picture itself, and `&3000-&7FFF` in SHADOW is
@@ -59,7 +69,7 @@ that survives into the game.
 |---|---|---|---|---|---|---|
 | — | ANDY | the Master's own 4K, `&8000-&8FFF`, ROMSEL bit 7 — **measured 2026-09-04**, see below. One of the tune's eleven register streams lives here (decision 48) | `&8F9E` | **98** | 4,096 | 4,096 |
 | 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFE7` | **25** | 25 | 25 |
-| 5 | `BANK1` | sprite data, pixel shift 0, the titles' zoom scroller (Layer 6e), then a tune stream at `MUSIC_B1_BASE` = `&B900` | `&BDF9` | **519** | 2,038 | 2,032 |
+| 5 | `BANK1` | sprite data, pixel shift 0, the titles' zoom scroller (Layer 6e), then `explosion_dirs` and the starfield's tables (Layer 9c) in what used to be dead space, then a tune stream at `MUSIC_B1_BASE` = `&B900`, then the starfield's code | `&BEC6` | **314** | 2,038 | 2,032 |
 | 6 | `BANK2` | the same, shift 1, then a tune stream at `MUSIC_B2_BASE` = `&BA00` | `&BF47` | **185** | 1,909 | 1,727 |
 | 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the HUD glyphs and `status_decode`; then region A of the tune | `&8F8E`, then `music_lo` fills `&9100-&BFFF` | **370**, all below the tune, and **0** above it | **12,399** | **12,191** |
 
@@ -127,8 +137,8 @@ survived a run of the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared
 
 ## Where the room actually is
 
-The tune took the two big pieces. What is left, largest first: **740** in the `&0800` block, **519**
-in bank 1, **370** in bank 3 below the tune, **185** in main RAM code and **185** in bank 2, **160**
+The tune took the two big pieces. What is left, largest first: **648** in the `&0800` block, **314**
+in bank 1, **370** in bank 3 below the tune, **185** in bank 2, **167** in main RAM code, **160**
 at `&0C00`, **98** in ANDY, **38** above the music player in HAZEL, **32** in region A and **25** in
 bank 0. Everything is inside a few hundred bytes of its ceiling now.
 

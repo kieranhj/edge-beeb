@@ -21,13 +21,14 @@
 .andy_filename EQUS "Andy",13
 .music_filename EQUS "Music",13
 
-\ The C64's player explosion direction vectors, verbatim. Movement
-\ commands in emove's encoding, one pair per pool slot; life_lost reads
-\ from +2*ENEMY_FIRST, so the first four bytes are never used - they are
-\ the player's and bullet's slots, which have no pieces to throw.
-.explosion_dirs
-EQUB &00,&00,&02,&03,&19,&09,&44,&44
-EQUB &22,&22,&8a,&8a,&45,&45,&26,&26
+\ explosion_dirs USED TO BE HERE AND MUST NOT COME BACK. Everything in
+\ this section sits above SPR_SAVE's base and is therefore boot-only:
+\ the filenames and the OSFILE block are read while the disc is being
+\ loaded and never again, which is the same licence src/zx0depack.asm
+\ has. The explosion vectors are read every time the player dies, so
+\ they were being served out of the blitter's save area; they are in
+\ bank 1 now, with the loop that reads them. See the ASSERT on
+\ code_end in main.asm.
 
 .osfile_params
 .osfile_nameaddr
