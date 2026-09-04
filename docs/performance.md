@@ -169,19 +169,41 @@ changing the addressing scheme - putting the row offset in the index rather than
 unrolling, and the screen's 640-byte row stride does not fit an 8-bit index, so there is no easy
 version. Left alone.
 
-### 2. Address the sprite save area absolutely, not indirectly
+### 2. Address the sprite save area absolutely, not indirectly - REJECTED, 2026-09-04
 
-The save page is a FIXED 256-byte page per (bank, slot) - `HI(SPR_SAVE) + bank*8 + slot` - and its
-Y offsets already mirror the screen's, which is the whole reason one Y serves both. So the save
-side does not need an indirect pointer at all:
+**This was written up as "~2,000-2,800 cycles a frame for one patched byte per slot". It is a net
+LOSS and has been dropped** (KC asked whether the self-modification cost more than it saved; it
+does, by a factor of four).
 
-| | now | self-modified absolute,Y | |
-|---|--:|--:|---|
-| draw, per byte | `sta (svp), y` 6 | `sta SAVEPAGE, y` 5 | -1 of 36 |
-| restore, per byte | `lda (svp), y` 5 | `lda SAVEPAGE, y` 4 | -1 of 13 |
+The claim rested on the save page being a fixed 256-byte page per (bank, slot), with Y covering all
+of it. **Y covers no such thing.** Y carries only the COLUMN offset, `n*8`, 0 to 48. The scanline
+is in the pointer: `SCANSTEP` does `inc svp` and `inc bufp` on every scanline, and `spr_scan_row`
+gives `svp` an `adc #SPR_BLOCK-8` at each character row. `svp` therefore changes EVERY SCANLINE,
+and there are seven `sta (svp), y` sites in the draw ladder and seven `lda (svp), y` in the restore.
 
-**~2,000-2,800 cycles a frame (2.5-3.5%)** for one patched byte per slot, and `svp` gives back two
-bytes of zero page.
+| per scanline | cycles |
+|---|--:|
+| patch the ladder: `lda svp` + 7 x `sta site+1` | 31 |
+| saved: one cycle per column actually drawn, at most seven | <= 7 |
+| **net** | **-24 at best** |
+
+About -500 cycles per sprite per pass on a 21-scanline sprite. Counting the instruction replaced
+and not the addresses that have to be maintained is the same error as the unrolling above.
+
+**The restructure that would rescue it does not exist.** The near-miss is real and worth recording:
+a whole sprite's save DOES fit one page - `SPR_BLOCK` is 56 and `sprite.asm` asserts
+`3 * SPR_BLOCK + (SPR_W-1)*8 + 7 < 256` - so `svp`'s high byte never moves within a sprite, and a Y
+carrying `charrow*56 + col*8 + scan` (223 at most) would let the base be patched ONCE PER SPRITE,
+which is nearly free. But the screen side needs `Y = n*8` with `bufp` walking, because the screen's
+character-row stride is 640 and will not fit an 8-bit index. Two different indices for one
+instruction pair, and reloading Y between them costs two cycles to save one. Baking the column into
+the screen address instead means patching seven two-byte addresses per character row - 56 cycles to
+save 56, break-even before the extra bookkeeping - and it would break the split-row trick
+(`BUGS.md` #9), which works precisely because `svp` and `bufp` take the SAME bias.
+
+**The general lesson, now twice over: on this code an addressing change is only cheap when the
+thing that varies can live in the INDEX. If it has to live in the address, count the patches
+first, and multiply them by however many unrolled copies of the instruction exist.**
 
 ### 3. Blocked on space, but worth more
 
@@ -203,10 +225,16 @@ of the C64's. The cost is in the right place.
 **The sprite engine is the frame**, and the only large win there is compiled bodies, which is a
 memory decision rather than a code one.
 
-Item 1 is done and worth **1,690 cycles a frame, 2.1%**, for eleven bytes less code. Item 2 is
-worth another 2,000-2,800 and is still open. Together that is about 4-5% - enough to take the
-worst frame from 107% of budget to roughly 102%, and the typical one from 78% to 74%. Closing the
-rest means the sprite engine, and the sprite engine means bank space.
+Item 1 is done and worth **1,690 cycles a frame, 2.1%**, for eleven bytes less code. **Item 2 is
+rejected and there is no cheap second helping.** Of the four things this page first proposed, three
+turned out to be net losses on inspection, all for the same reason: they moved something that
+varies out of an index and into an address, where it has to be patched, and then multiplied that
+patching by the number of unrolled copies.
+
+What is left is not cheap. The worst frame stands at about 105% of budget and the typical one at
+76%, and closing that gap means the sprite engine - which means compiled bodies, which means bank
+space, which means the music decision. **The performance question and the `MUSIC_AKL` question are
+the same question.**
 
 ## The frame-meter fix that came out of this
 
