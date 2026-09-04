@@ -248,6 +248,12 @@ source image in jsbeeb. 91,904 bytes of files becomes 37,632 — which, measured
 picture and no more: 11.1 s of loading becomes 10.9 s, with something to look at. Decision 38,
 [`docs/layer-9-loader.md`](docs/layer-9-loader.md).
 
+**9b — Q mutes the tune, done 2026-09-04.** Read in the VSync handler rather than the main
+loop, so it works wherever the foreground is: playing, paused, on the titles, or watching the
+finale. Muting silences the chip and lets the tune play on underneath — `vgm_update` still
+runs and `sn_reset` follows it — so unmuting is correct on the very next field. Decision 39,
+[`docs/layer-7-music.md`](docs/layer-7-music.md).
+
 Still to do: starfield, real-hardware test, release build, publish.
 
 ## Layer index
@@ -268,4 +274,5 @@ Still to do: starfield, real-hardware test, release build, publish.
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
 | 8 — graphics pipeline B | | |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
+| 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |
 | 9 — polish and release | | |

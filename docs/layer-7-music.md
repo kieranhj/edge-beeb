@@ -213,6 +213,33 @@ for KC.
 The cheap alternative is to **cut the tune**, musically rather than by frame count — 349 seconds is
 longer than anybody will play — which is a decision only its author can take well.
 
+## Q mutes it (decision 39)
+
+Q toggles the tune on and off. `IKN_q = 16`, **measured** with OSBYTE 121 in a BASIC session
+holding the key, never recalled — the same rule every other key number in this port follows. Q was
+free: the C64 aborts a paused game on Q and we abort on ESCAPE (decision 32).
+
+**The key is read in the VSync handler**, not in the main loop, because it has to work wherever the
+foreground happens to be — playing, held inside `pause_check`'s blocking loop, sitting on the
+titles, or watching the finale. The handler runs in all of them; nothing else does. Calling
+`keydown` from an interrupt is safe the one way round that matters: the foreground's `keydown`
+wraps its latch sequence in `php`/`sei`/`plp`, so the IRQ can never land inside one, and between
+the five calls `read_joystick` makes the latch is already handed back.
+
+Edge-triggered on the **press**, so holding Q does not toggle every field. `music_mute` and
+`mute_was` are two bytes in the code image next to the handler rather than in the `&0800` state
+block, so a new game does not silently unmute.
+
+**Muting silences the chip and lets the tune play on underneath**, rather than stopping the player:
+`vgm_update` still runs, and `sn_reset` — the player's own four volume-off writes, in HAZEL, which
+is still paged in at that point — follows it. `vgm_decode_frame` writes all eleven registers every
+frame, so unmuting is correct on the very next field and the tune has not lost its place.
+
+Verified in jsbeeb by reading the SN76489 state: all four channels at attenuation 15 within a few
+fields of the press, tone registers still advancing underneath, and volumes back on the field after
+the second press. Checked on the titles, in play, and while paused with `frame_count` frozen and
+`field_count` still climbing.
+
 ## Left over
 
 - **No sound effects**, and that is faithful: the C64 has none. `irq_init` calls the music init and

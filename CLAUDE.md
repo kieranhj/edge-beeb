@@ -56,7 +56,7 @@ month and this is a Master.
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
 | Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw, **a figure now known to be optimistic** (`BUGS.md` #9). `src/sprite.asm`, `docs/layer-3-sprites.md` |
 | Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
-| Controls | Z/X left/right, K/M up/down, L fire, P pause, ESCAPE abort (only while paused). Internal key numbers are **measured** (OSBYTE 121 in a BASIC session holding the key), never recalled - Z 97, X 66, K 70, M 101, L 86, P 55, ESCAPE 112. `*FX229,1` first, or BASIC eats ESCAPE |
+| Controls | Z/X left/right, K/M up/down, L fire, P pause, ESCAPE abort (only while paused), Q mute. Internal key numbers are **measured** (OSBYTE 121 in a BASIC session holding the key), never recalled - Z 97, X 66, K 70, M 101, L 86, P 55, Q 16, ESCAPE 112. `*FX229,1` first, or BASIC eats ESCAPE. **Q is read in the VSync handler**, so it works while paused and on the titles too (decision 39) |
 
 ## Build
 

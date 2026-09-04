@@ -73,6 +73,7 @@ IKN_k = 70
 IKN_m = 101
 IKN_l = 86
 IKN_p = 55
+IKN_q = 16
 IKN_escape = 112            ; the MOS interrupt is gone, so it is just a key
 
 \ ******************************************************************
@@ -103,6 +104,8 @@ KEY_DOWN = IKN_m
 KEY_FIRE = IKN_l
 KEY_PAUSE = IKN_p           ; decision 32
 KEY_ABORT = IKN_escape      ; and only while paused, as the C64 has it
+KEY_MUTE = IKN_q            ; decision 39. Read in the VSync handler, so it
+                            ; works wherever the foreground happens to be
 
 \ ******************************************************************
 \ *	MACROS

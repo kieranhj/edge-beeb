@@ -70,6 +70,30 @@
     lda #0
     sta rupt_state
 
+    \ Q mutes and unmutes the tune. HERE, in the VSync handler, and not in
+    \ the main loop, because it has to work wherever the foreground happens
+    \ to be: playing, held in pause_check's blocking loop, sitting on the
+    \ titles, or watching the finale. The handler runs in all of them.
+    \
+    \ Calling keydown from an interrupt is safe the one way round that
+    \ matters: the foreground's keydown wraps its latch sequence in
+    \ php/sei/plp, so this can never land inside one, and between the five
+    \ calls read_joystick makes the latch is already handed back.
+    \
+    \ Edge-triggered on the PRESS, so holding Q does not toggle every field.
+    ldx #KEY_MUTE
+    jsr keydown                 ; A = &80 down, 0 up
+    tax
+    eor mute_was
+    beq mute_done               ; unchanged
+    stx mute_was
+    txa
+    beq mute_done               ; the release edge, not the press
+    lda music_mute
+    eor #&ff
+    sta music_mute
+    .mute_done
+
     \ The music, LAST: after T1 has been restarted, so the decode runs
     \ inside the 3,326 us the counter is going to spend getting to fire 1
     \ and cannot push the rupture about. The VGI player is bounded at
@@ -87,12 +111,29 @@
     lda #SWRAM_COMPILED         ; the tune's low half is in bank 3
     sta &fe30
     jsr vgm_update
+
+    \ Muting silences the chip and lets the tune play on underneath, rather
+    \ than stopping the player: vgm_decode_frame writes all eleven registers
+    \ every frame, so unmuting is correct on the very next field and the
+    \ tune has not lost its place. sn_reset is the player's own, four
+    \ volume-off writes, and it is in HAZEL - which is still paged in here.
+    lda music_mute
+    beq not_muted
+    jsr sn_reset
+    .not_muted
+
     lda &f4                     ; and back to whatever was interrupted: the
     sta &fe30                   ; sprite engine keeps &F4 in step with &FE30
     pla
     sta &fe34
     rts
 }
+
+\ Outside rupt_vsync's braces so they are not local labels shadowing
+\ something: both are IRQ-owned and nothing else writes them. In the code
+\ image rather than the &0800 state block, so a new game does not unmute.
+.music_mute EQUB 0              ; &FF while Q has the tune silenced
+.mute_was   EQUB 0              ; Q's state last field, for the press edge
 
 .rupt_timer
 {
