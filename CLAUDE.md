@@ -181,6 +181,10 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
 
 ## Memory (Layer 6b build; take live figures from the listing)
 
+**[`docs/memory-map.md`](docs/memory-map.md) is the full map and the current free-space figures**,
+per bank and per build, measured from the listings. The table below says what each region is FOR;
+that one says how much of it is gone, and where the room that is left actually is.
+
 | Region | Contents |
 |---|---|
 | ZP `&00-&9F` | variables, guarded; wiped at boot |

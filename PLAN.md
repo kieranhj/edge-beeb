@@ -65,7 +65,8 @@ at `&D500`, with `&DF` free;
 alongside the frame meter, `coll_row_lo/hi` and the boot-time display setup; the multiply tables are
 gone entirely, and the titles' font and text, the panel image and the HUD are in bank 3. **All four
 sideways RAM banks are now in use**: 4 data, 5 and 6 sprites, 7 compiled bodies plus the titles and
-the panel (9.1K free). Game state `&0800-&08E9`; collision character map
+the panel (9.1K free; the per-bank figures are in
+[`docs/memory-map.md`](docs/memory-map.md)). Game state `&0800-&08E9`; collision character map
 `&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
 tiles, map, col_decode, waves) high water `&BEEE`; **banks 1 and 2** (sprites, one per pixel shift)
 `&B253` and `&B88B`. Take live figures from the build listing, not from here.
