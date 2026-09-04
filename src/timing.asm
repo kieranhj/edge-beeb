@@ -21,6 +21,22 @@
 \ *	1 MHz, so elapsed = &FFFF - T2 and the unit is microseconds.
 \ *	A 25 Hz frame is 39,936 us = 79,872 2 MHz cycles: to compare a
 \ *	figure here against the cycle counts in docs/, DOUBLE IT.
+\ *
+\ *	TWO THINGS THE READER HAS TO KNOW, both learned the hard way
+\ *	(docs/performance.md):
+\ *
+\ *	  * T2's two bytes are read separately and the counter can roll
+\ *	    between them. tim_mark throws away any sample that comes out
+\ *	    going backwards; without that one bad read poisons a slot.
+\ *	  * A frame longer than 65.5 ms wraps the counter outright and
+\ *	    every phase in it is nonsense. Deaths and mode changes do it -
+\ *	    one measured frame took 138 fields. tim_fields is the tell, and
+\ *	    the cure is to zero the slots and sample uninterrupted play.
+\ *
+\ *	A phase maximum also includes any INTERRUPT that happened to land
+\ *	inside it, and there are six a frame. On the short phases that is
+\ *	most of the figure, so read their maxima as an upper bound and take
+\ *	the typical cost from a single-frame sample instead.
 \ ******************************************************************
 
 \ The phases, in the order the maximum slots are declared in main.asm.
@@ -98,10 +114,20 @@ USR_VIA_ACR  = &FE6B
     lda tim_val   : sbc tim_prev   : sta tim_phase
     lda tim_val+1 : sbc tim_prev+1 : sta tim_phase+1
 
-    lda tim_val   : sta tim_prev
+    php                          ; carry: clear = borrow = the clock ran
+    lda tim_val   : sta tim_prev ; backwards between the two T2 byte reads
     lda tim_val+1 : sta tim_prev+1
+    plp
+    bcs tim_keep
 
-    \ falls into tim_keep
+    \ THROW THE SAMPLE AWAY. T2CL and T2CH are read one after the other
+    \ and the counter can roll between them, so elapsed can come out 256us
+    \ SMALLER than the mark before it. tim_keep compares unsigned, so a
+    \ single bad read is stored as a ~65,000us maximum and poisons that
+    \ slot for the rest of the run - which it did, on three readings out
+    \ of three, before this was here. A dropped sample costs nothing: the
+    \ phase is measured again next frame.
+    rts
 }
 
 \ Store tim_phase in the 2-byte slot at tim_ptr if it is bigger.
@@ -130,12 +156,8 @@ USR_VIA_ACR  = &FE6B
 \ the last mark; field_count - flip_field is what the flip made of it.
 .tim_handover
 {
-    lda tim_val   : sta tim_phase
-    lda tim_val+1 : sta tim_phase+1
-    lda #TIM_TOTAL
-    jsr tim_setptr
-    jsr tim_keep
-
+    \ The two clock-free readings first. Neither can lie: they count
+    \ fields, and A still holds the count all the way down.
     lda field_count
     sec
     sbc flip_field
@@ -144,10 +166,24 @@ USR_VIA_ACR  = &FE6B
     sta tim_fields
     .not_worst
     cmp #FRAME_LOCK
-    bcc out
+    bcc timed
     inc tim_over
-    bne out
+    bne timed
     dec tim_over                ; saturate rather than wrap to nothing
+    .timed
+
+    \ Four fields is 80 ms and T2 wraps at 65.5, so tim_val is a random
+    \ number and keeping it would pin tim_max_total near 65,535 for the
+    \ rest of the run. A death or a mode change does this - one frame was
+    \ measured at 234 fields. Two and three fields are honest overruns
+    \ and still fit the counter, so they are kept.
+    cmp #4
+    bcs out
+    lda tim_val   : sta tim_phase
+    lda tim_val+1 : sta tim_phase+1
+    lda #TIM_TOTAL
+    jsr tim_setptr
+    jmp tim_keep
     .out
     rts
 }
