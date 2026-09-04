@@ -177,16 +177,6 @@ INCLUDE "src/timing.asm"
     rts
 }
 
-\\ The status panel into whichever bank the X bit selects. The image is a
-\\ ready-made 3200 bytes in bank 3 (tools/export_panel.py), so this is a
-\\ straight copy and there is nothing to clear first. Anything that draws
-\\ on the panel must do it for both banks.
-.panel_init
-{
-    ldx #LO(panel_draw)
-    ldy #HI(panel_draw)
-    jmp bank3_call
-}
 
 \\ The score, the high score and the lives count are initialised data on the
 \\ C64 - score and lives zero, high score 012345, all sitting in the file -

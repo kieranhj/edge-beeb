@@ -54,6 +54,7 @@ month and this is a Master.
 | Game loop | 25 Hz: the VSync IRQ flips the banks every `FRAME_LOCK` = 2 fields once the loop has parked a frame; a slow frame costs whole fields, never a tear |
 | Display split | In play, two CRTC cycles: 5-row panel at `&3000` **in both shadow banks** (every panel write goes to both), then 34 rows with the 20-row play area and VSync at absolute row 34. **On the titles, four** - panel, top zoom band, credits, bottom zoom band - with the bands hardware-scrolled round an 8K ring, one in each bank, and **the display bank switched inside the frame**. Six T1 fires instead of two, and the handler is in bank 1. `src/rupture.asm`, `src/bank1.asm`, decision 44 |
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
+| Music | The CPC port's Arkos song through `SongToYm`, `ym2sn` and `vgipacker` to a `.vgi`; `lib/vgiplayer.asm` in HAZEL decodes one byte per register stream per field from `rupt_vsync`. **The whole 349 seconds ships, spread over FOUR regions of memory** - a `.vgi` is eleven independent streams and only each stream has to be contiguous (decision 48). `tools/export_music.py` places them and `tools/verify_vgi.py` proves the placement byte for byte against a jsbeeb capture |
 | Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw, **a figure now known to be optimistic** (`BUGS.md` #9). `src/sprite.asm`, `docs/layer-3-sprites.md` |
 | Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
 | Controls | Z/X left/right, K/M up/down, L fire, P pause (P or fire unpauses), ESCAPE abort (only while paused), Q mute. Internal key numbers are **measured** (OSBYTE 121 in a BASIC session holding the key), never recalled - Z 97, X 66, K 70, M 101, L 86, P 55, Q 16, ESCAPE 112. `*FX229,1` first, or BASIC eats ESCAPE. **Q is read in the VSync handler**, so it works on the titles and in the finale as well as in play (decision 39). **The tune stops while the game is paused** and Q is not read there at all, there being nothing to mute (decision 43) |
@@ -86,12 +87,13 @@ map, `col_decode`, the waves, `dp_dcd`, the panel and the titles are shared and 
 data and `tools/render_bbc.py --cpc` renders it back. It writes `build/EDGE-CPC*.SSD` with disc
 title `EDGEC`, and composes with `-Akl`. **The compiled bullet is dropped in this build** - it
 needs 13 bytes bank 3 has not got - so do not compare frame meters across the two.
-`docs/layer-8a-gfx-cpc.md`.
+`docs/layer-8a-gfx-cpc.md`. It used not to assemble at all without `-Akl`; decisions 47-49 gave
+bank 3 and main RAM the room, and **all six flag combinations build now**.
 
 `MUSIC_AKL=1` (`.\build.ps1 -Akl`) swaps the whole music subsystem: `src/aklplayer.asm` replays
 the Arkos tracker data and `src/ay2sn.asm` converts to the SN76489 every frame, in place of
 `lib/vgiplayer.asm` and a pre-converted register log. The whole 349-second tune then fits in HAZEL
-alone and bank 3's `music_lo` disappears. **It does not sound the same** - the offline chain does
+alone and bank 3's copy of the tune disappears. **It does not sound the same** - the offline chain does
 whole-song analysis a per-frame converter cannot - so it is a comparison build pending KC's ear,
 not a decision. It writes `build/EDGE-AKL*.SSD` with disc title `EDGEAKL`, so it cannot overwrite
 or be mistaken for the normal build. **Parked, with the next steps pinned at the top of**
@@ -116,7 +118,15 @@ bootable), `EDGE.SSD`, `EDGE-200K.SSD` (padded; hand this one to jsbeeb and publ
 progress to stderr; in PowerShell do not redirect that stream or `$ErrorActionPreference = 'Stop'`
 throws on a successful build. Check the exit code.
 
-`!BOOT` is assembled by `main.asm`, stamps the assembly time with beebasm's `TIME$` so any disc
+`tools/build.sh` is the same invocation from bash - same names, same disc titles, flags from the
+environment (`RELEASE=1 GFX_CPC=1 sh tools/build.sh`). It exists because that stderr behaviour makes
+`build.ps1` unusable from a shell that treats a PowerShell error record as a failure. **`build.ps1`
+is still the build**; keep the two in step if either changes.
+
+`!BOOT` is assembled by `main.asm` at `BOOT_STAGE` = `&2400` - inside the sprite saves, which do not
+exist at assembly time - rather than in the code image's address space, where it was costing 200
+bytes of the tightest region in the build for text nothing executes (decision 49). It stamps the
+assembly time with beebasm's `TIME$` so any disc
 image can be dated, and says `DEV build` unless `RELEASE`. **Every compile flag that changes
 what the disc contains is stamped there** (KC), so a build cannot lie about itself: add any
 new `DEBUG_` flag to `DEBUG_ANY` and to the stamp, and stamp anything that is legal under
@@ -141,13 +151,15 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `tables.asm` | initialised main-RAM tables only; the mutable state lives at `&0800` (see `main.asm`) |
 | `zx0depack.asm` | the ZX0 depacker, lifted from Paradroid. Boot code, called only by the loader; the last thing in the image and the one part allowed above `SPR_SAVE`'s base |
 | `loading.asm` | the loading screen's two disc files, `LOADSC1` and `LOADSC2` |
+| `panel.asm` | the status panel image as the disc file `PANEL` (decision 47). It used to live in bank 3; it is 3,200 bytes read exactly twice, and bank 3's tail is where the tune has to be |
+| `andy.asm` | ANDY's share of the tune as the disc file `ANDY`: 4K at `&8000-&8FFF`, ROMSEL bit 7 (decision 48). Loaded before `MUSIC` and unpacked after it, because the loader cannot write into ANDY while the filing system is running |
 | `bank0.asm` | the SWRAM data bank, plus the run-once and out-of-room code: `setup_display`, `clear_play`, `panel_init`, `score_boot`, `status_call`, `title_page`, `pause_check`, `comp_mess`, `finale_tick`, the frame meter |
 | `bank1.asm` | the SWRAM sprite bank for pixel shift 0, and after it **the titles' zoom scroller** (Layer 6e): its font, its message, its four-cycle rupture and the code that drives them. There because nothing on the titles reads a sprite, and reached through `bank_call` in main RAM |
 | `bank2.asm` | the SWRAM sprite bank for pixel shift 1 |
-| `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3). Default: the tune's high half at `&C000`, `lib/vgiplayer.asm` at `&D200`, its 11-page ring workspace at `&D500`. Under `MUSIC_AKL`: `aklplayer.asm` + `ay2sn.asm` at `&C000` and the whole tune as tracker data at `&CC00`. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
+| `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3). Default: region A of the tune from `&C000`, the generated stream map and `lib/vgiplayer.asm` at `&D300`, its 11-page ring workspace at `&D500`. Under `MUSIC_AKL`: `aklplayer.asm` + `ay2sn.asm` at `&C000` and the whole tune as tracker data at `&CC00`. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
 | `aklplayer.asm` | `MUSIC_AKL` only: a 6502 port of Arkos Tracker 2's "lightweight" (AKL) replay, producing the fourteen AY registers a frame. X is the channel throughout, Y the byte offset being read. Byte-exact against Arkos's own player over all 17,446 frames |
 | `ay2sn.asm` | `MUSIC_AKL` only: the runtime AY-3-8912 -> SN76489 conversion and `akl_silence`. SN period = 2 x AY period exactly (1 MHz AY, 4 MHz SN), octave-clamped to ten bits; a 32-entry volume LUT; the envelope **sampled**, not averaged |
-| `bank3.asm` | compiled sprite bodies; the titles' font, credits and text plotter; the status panel image, the HUD glyphs and `status_decode`. Reached from main RAM through `bank3_call` |
+| `bank3.asm` | compiled sprite bodies; the titles' font, credits and text plotter; the HUD glyphs and `status_decode`; then region A of the tune from `&9100` to the join at `&C000`. Reached from main RAM through `bank3_call` |
 
 `src/data/` (from Layer 1) is generated by the exporters in `tools/` and **is committed**;
 regenerate with the tool rather than editing it. `build.ps1` does not run the exporters.
@@ -159,6 +171,11 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
 - VSync handler → fire 1 = 53 scanlines with `T1_I1 = 56*SL - 4*SL - 2`; fire 1 → fire 2 =
   40.0 scanlines with `T1_I2 = 40*SL - 2`. T1 ticks at 1 MHz, SL = 64. Measured 2026-09-02.
 - OSFILE writes a file's catalogue addresses back into its parameter block after a load.
+- **ANDY is 4K at `&8000-&8FFF`, selected by ROMSEL bit 7, and it overlays ONLY that 4K** - measured
+  in jsbeeb 2026-09-04, from 6502 in main RAM. Writing `&AA` to `&8000` with bank 4 selected and
+  `&55` to `&8000` with `&84` selected gives back `&55` under `&84` and `&AA` under `4`; `&9000` is
+  the selected bank either way. The test has to be machine code: BASIC is itself the ROM at `&8000`,
+  so paging ANDY in from a BASIC session removes the interpreter mid-statement and hangs.
 - **We take HAZEL, so BREAK must clear memory.** HAZEL (`&C000-&DFFF`, ACCCON bit 3) is the filing
   system's workspace; `MUSIC` overwrites it, so `MUSIC` is loaded LAST and nothing touches the disc
   after it. A SOFT break would leave the wreckage in place - measured: no DFS banner and `*CAT`
@@ -206,7 +223,8 @@ that one says how much of it is gone, and where the room that is left actually i
 | `&0400-&049F` | column buffer, 160 B |
 | `&04A0-&07BF` | collision character map, 40 × 20; `&07C0-&07FF` is its overrun slack. The language workspace - ours once `*RUN` has handed over, verified by sentinel |
 | `&0800-&08E9` | game state: the C64's `$0340` block - `sprite_pos`, `sprite_dp`, the `enemy_*` arrays, the score, and what each bank's last sprite draw did. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
-| `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `LOAD_STREAM` = `&2200`) |
+| `&0C00-&0C5F` | `VGI_STATE`: the VGI player's 96 bytes of decode state, in the MOS user-font page (decision 49) |
+| `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `LOAD_STREAM` = `&2200`). `!BOOT` is assembled at `&2400`, not here: it is a disc file nothing loads or runs from RAM |
 | to `&1F04` | initialised tables: the sprite row-body dispatch tables, `explosion_dirs`, the OSFILE block |
 | to `&2147` | `src/zx0depack.asm`, boot code. **Deliberately above `SPR_SAVE`'s base**: it is dead before anything reads there. `&B9` free in a DEV build |
 | `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly. At boot it holds the depacker and, from `LOAD_STREAM` = `&2200`, the loading screen's streams |
@@ -215,10 +233,11 @@ that one says how much of it is gone, and where the room that is left actually i
 | `&3000-&3C7F` × 2 | status panel, 5 rows × 640, in BOTH banks, displayed by rupture cycle A |
 | `&4000-&7FFF` × 2 | play buffers, main and shadow |
 | on the titles only | the display wrap goes to **8K**, so `&6000-&7FFF` is a ring in each bank: the top zoom band's is in MAIN, the bottom's in SHADOW, and the credits are 6 rows at `&4000` in SHADOW. `title_page` puts the 16K wrap back on the way out |
-| SWRAM slot 4 (`SWRAM_DATA`, resting state) | `BANK0`: `char_data &8000` (8K, four MODE 2 column planes), `tile_data` (211 × 16), `map_data` (302 × 5), `col_decode`, `wave_data` (201 × 9) and `anim_decode`. High water `&BC38` |
-| SWRAM slot 5 (`SWRAM_SPRITES0`) | `BANK1`: sprite data, pixel shift 0, then the titles' zoom scroller and its own rupture handler. High water `&B80A` |
-| SWRAM slot 6 (`SWRAM_SPRITES1`) | `BANK2`: the same, shift 1. High water `&B78B`. The two are identical in layout and **must stay adjacent**: the engine adds the shift to `SWRAM_SPRITES0` |
-| HAZEL `&C000-&DFFF` | `MUSIC`: the tune's high half at `&C000`, the VGI player at `&D200`, its 11 x 256 ring workspace at `&D500`. ACCCON bit 3 (Y). Loaded LAST - it is the filing system's workspace - and nothing may touch the disc after it. **The tune's low half is at `&9D00-&BFFF` in bank 3 and the two are one block**: the bank and HAZEL are visible at the same time, so a pointer walking off `&BFFF` lands in `&C000` |
+| ANDY `&8000-&8FFF` | the Master's own 4K, selected by **bit 7 of ROMSEL** and overlaying only the low 4K of whichever bank is paged - measured, see below. One of the tune's eleven streams (decision 48) |
+| SWRAM slot 4 (`SWRAM_DATA`, resting state) | `BANK0`: `char_data &8000` (8K, four MODE 2 column planes), `tile_data` (211 × 16), `map_data` (302 × 5), `col_decode`, `wave_data` (201 × 9) and `anim_decode` |
+| SWRAM slot 5 (`SWRAM_SPRITES0`) | `BANK1`: sprite data, pixel shift 0, then the titles' zoom scroller and its own rupture handler, then a tune stream at `&B900` |
+| SWRAM slot 6 (`SWRAM_SPRITES1`) | `BANK2`: the same, shift 1, then a tune stream at `&BA00` - a page higher than bank 1's, because the CPC artwork's sprite bank 2 is bigger. The two banks are identical in sprite layout and **must stay adjacent**: the engine adds the shift to `SWRAM_SPRITES0` |
+| HAZEL `&C000-&DFFF` | `MUSIC`: region A of the tune from `&C000`, the stream map and the VGI player at `&D300`, its 11 x 256 ring workspace at `&D500`. ACCCON bit 3 (Y). Loaded LAST - it is the filing system's workspace - and nothing may touch the disc after it. **Region A begins at `&9100` in bank 3 and the two are one block**: the bank and HAZEL are visible at the same time, so a pointer walking off `&BFFF` lands in `&C000`, and two streams do |
 
 Banks are loaded by `load_bank` (OSFILE the ZX0 stream to `DEPK_STREAM` in the shadow screen,
 unpack straight into the paged-in slot) at boot, **after** the mode change, with the loading screen
@@ -233,11 +252,21 @@ screens and palettes, the background bank's indexing) and `tools/rip_cpc_sprites
 
 `src/data/` is generated by `tools/export_tiles.py`, `tools/export_sprites.py`,
 `tools/export_waves.py`, `tools/export_title.py`, `tools/export_panel.py`,
-`tools/export_loading.py`, `tools/export_zoom.py`, `tools/export_music_akl.py` and
+`tools/export_loading.py`, `tools/export_zoom.py`, `tools/export_music.py`,
+`tools/export_music_akl.py` and
 `tools/compile_sprites.py` from `assets/`, `data/`, `source_c64/data/`
 and the C64 source itself, and is committed. `tools/render_bbc.py` renders it back to PNG for checking -
 `render_bbc.py sprites 0|1` unpacks a whole sprite bank from its own box tables, which is the check
 that the tables and the data agree.
+
+**`tools/export_music.py` also decides where the tune goes** and writes `src/data/music_map.asm`
+with it: it cuts the `.vgi` into its eleven register streams and best-fit packs them into the four
+regions of decision 48, then generates the eleven addresses and eleven ROMSEL bytes the player
+mounts from. The regions are hardcoded in both it and `main.asm`, and `music_map.asm` ASSERTs the
+two agree. **`tools/verify_vgi.py` is the check that it worked**: it rebuilds the reference write
+stream from the region binaries the build INCBINs and the map it assembles, and searches for a
+jsbeeb `stop_sound_capture` log inside it. Nothing else catches a mis-placement - a wrong address
+plays happily for thousands of frames before the stream runs off the end of what it was given.
 
 ## Facts about the current code that the old docs got wrong
 

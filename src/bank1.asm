@@ -477,6 +477,20 @@ TTL_RASTER_PAD = 18
 .ttl_rt_done
     rts
 
+IF MUSIC_AKL = 0
+\ The tune's B1 streams (decision 48). Nothing in this bank reads them:
+\ they are here because the .vgi's eleven register streams do not have to be
+\ in one place, and the tail of a sprite bank is a place. lib/vgiplayer.asm
+\ pages this bank in for the byte and out again.
+ASSERT P% <= MUSIC_B1_BASE
+CLEAR MUSIC_B1_BASE, &C000
+ORG MUSIC_B1_BASE
+.music_b1
+INCBIN "src/data/music_b1.bin"
+.music_b1_end
+ASSERT music_b1_end <= &C000
+ENDIF
+
 .bank1_end
 
 SAVE "BANK1", bank1_start, bank1_end

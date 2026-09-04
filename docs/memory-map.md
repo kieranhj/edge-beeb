@@ -2,12 +2,12 @@
 
 Every figure here is **measured from the build**, not from the source by eye: beebasm's `PRINT`
 statements write the high-water marks into the assembly listing, and these tables are what the
-listings said after Layer 6e (2026-09-04, decisions 44-46). They go stale the moment
+listings said after the whole tune went in (2026-09-04, decisions 47-49). They go stale the moment
 anything grows, so **take live numbers from the listing rather than trusting this page**:
 
 ```powershell
 .\build.ps1                                     # and -Release, -Akl, -Akl -Cpc
-Select-String -Path build\EDGE.lst -Pattern "HIGH WATERMARK|^FREE|BANK 3 code"
+Select-String -Path build\EDGE.lst -Pattern "HIGH WATERMARK|^FREE|BANK 3|REGION A"
 ```
 
 Unless a column says otherwise the numbers are the **default DEV build**: `RELEASE=0`,
@@ -27,17 +27,22 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 | `&0400-&049F` | 160 | column buffer | 0 |
 | `&04A0-&07BF` | 800 | collision character map, 40 × 20 | 0 |
 | `&07C0-&07FF` | 64 | the collision map's overrun slack | 64, spent on purpose |
-| `&0800-&091B` | 284 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **740** to `GAME_STATE_TOP` = `&0C00` |
-| `&0C00-&0CFF` | 256 | MOS user-font page. **Free** (KC, 2026-09-04) | 256 |
+| `&0800-&091B` | 284 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **740** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends at `&090F` - the frame meter is the difference |
+| `&0C00-&0C5F` | 96 | **`VGI_STATE`**: the VGI player's decode state, eleven streams' worth (decision 49). Not in the image - nothing in it needs initialising | 160 to `&0D00` |
 | `&0D00-&0DFF` | 256 | paged-ROM extended vectors. Not claimed, not tested | 256, unverified — see below |
-| `&0E00-&2191` | 5,522 | code, then the initialised tables, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **111**. A RELEASE build ends at `&213D`: **195** |
-| `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly | 0 by construction |
+| `&0E00-&2146` | 5,447 | code, then the initialised tables, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **185**. A RELEASE build ends at `&2129`: **214**. `!BOOT` used to be assembled in here and is not any more (decision 49) |
+| `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly. At assembly time `&2400` is where `!BOOT` is built, which costs the run nothing: it is a disc file, never loaded here | 0 by construction |
 | `&3000-&3C7F` × 2 | 3,200 each | the status panel, in BOTH shadow banks | 0 |
 | `&3C80-&3FFF` × 2 | 896 each | **nobody's**: above the panel, below the play buffer, fetched by neither rupture cycle | 896 main + 896 shadow, unclaimed — see below |
 | `&4000-&7FFF` × 2 | 16,384 each | the play buffers, main and shadow, hardware-wrapped at 16K | 0 |
 | `&E000-&FFFF` | 8,192 | MOS ROM. `&FFFE` on this Master reads `&E59E` — measured — so paging HAZEL in cannot break IRQ dispatch | — |
 
-**Bank 0's 18 bytes are now the tightest thing in the build**, and main RAM's 111 the next: Layer 6e's `title_page` has to be in bank 0, because bank 0 code may call into main RAM and be returned to and bank 1 code may not. A RELEASE build has 184 and 195, the frame meter being the difference.
+**Region A's 32 bytes are the tightest thing in the build now** - the whole tune is 23,486 bytes of
+stream in 24,320 bytes of region - and bank 0's 25 the next: Layer 6e's `title_page` has to be in
+bank 0, because bank 0 code may call into main RAM and be returned to and bank 1 code may not. A
+RELEASE build has 191 in bank 0, the frame meter being the difference. Main RAM is no longer the
+problem it was: moving `!BOOT` out of the code image's address space (decision 49) took it from 111
+free to 185.
 
 **The code's own ceiling.** The depacker already sits above
 `SPR_SAVE`'s base (`&1F05-&2147`) to buy some of them, which is safe only because it is dead before
@@ -52,21 +57,25 @@ that survives into the game.
 
 | Slot | Bank | Contents | High water | Free | `-Akl` | `-Akl -Cpc` |
 |---|---|---|---|---|---|---|
-| — | ANDY | the Master's own 4K, `&8000-&8FFF`, ROMSEL bit 7. **Unused by this port** — see below, the window overlays the low 4K of the selected bank | — | **4,096** | 4,096 | 4,096 |
-| 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFEE` | **18** | 18 | 18 |
-| 5 | `BANK1` | sprite data, pixel shift 0, then the titles' zoom scroller (Layer 6e) | `&B80A` | **2,038** | 2,038 | 2,032 |
-| 6 | `BANK2` | the same, shift 1 | `&B88B` | **1,909** | 1,909 | 1,727 |
-| 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the panel image, the HUD glyphs and `status_decode`; then `music_lo` | `&9C3D`, then `music_lo` fills `&9D00-&BFFF` | **195**, all below `music_lo`, and **0** above it | **9,156** | **8,948** |
+| — | ANDY | the Master's own 4K, `&8000-&8FFF`, ROMSEL bit 7 — **measured 2026-09-04**, see below. One of the tune's eleven register streams lives here (decision 48) | `&8F9E` | **98** | 4,096 | 4,096 |
+| 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFE7` | **25** | 25 | 25 |
+| 5 | `BANK1` | sprite data, pixel shift 0, the titles' zoom scroller (Layer 6e), then a tune stream at `MUSIC_B1_BASE` = `&B900` | `&BDF9` | **519** | 2,038 | 2,032 |
+| 6 | `BANK2` | the same, shift 1, then a tune stream at `MUSIC_B2_BASE` = `&BA00` | `&BF47` | **185** | 1,909 | 1,727 |
+| 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the HUD glyphs and `status_decode`; then region A of the tune | `&8F8E`, then `music_lo` fills `&9100-&BFFF` | **370**, all below the tune, and **0** above it | **12,399** | **12,191** |
 
-A RELEASE build takes bank 0 to `&BF48`: **184** free, the frame meter (`src/timing.asm`) being the
+A RELEASE build takes bank 0 to `&BF41`: **191** free, the frame meter (`src/timing.asm`) being the
 difference.
 
-**Bank 3 is where the music decision is really argued.** With the VGI player `music_lo` takes
-`&9D00-&BFFF` — 8,960 bytes, and the tune is still cut to 203 of its 349 seconds (decision 37) —
-leaving a 195-byte hole below it. Under `MUSIC_AKL` that block is gone entirely and 9,156 bytes come
-free, with the whole tune in HAZEL. It is also why **plain `-Cpc` does not assemble**: the CPC art
-pushes bank 3 to `&9D0C`, twelve bytes past `music_lo`'s base. Parked, 2026-09-04, pending the
-artwork decision; `-Akl -Cpc` builds because it has no `music_lo` to collide with.
+**Bank 3 stopped being where the music argument happens.** The panel image left it for a disc file
+(decision 47), which is 3,200 bytes, and what took their place is region A of the tune - `&9100`
+right through the join at `&C000` and on to `&D2FF` in HAZEL. That, plus ANDY and the two bank
+tails, is the whole 349-second tune (decision 48), so the `MUSIC_AKL` comparison is now purely
+about how it sounds and not at all about how much of it there is.
+
+It also un-parked `-Cpc`: with the panel out of bank 3 and `!BOOT` out of main RAM, **all six flag
+combinations assemble**, `-Cpc` and `-Release -Cpc` for the first time. Bank 3 with the CPC artwork
+ends at `&9061`, which is why region A starts at `&9100` and not `&9000`, and bank 2 reaches `&B941`,
+which is why `MUSIC_B2_BASE` is a page above `MUSIC_B1_BASE`.
 
 ## HAZEL `&C000-&DFFF`
 
@@ -77,8 +86,9 @@ touches the disc after it.
 
 | Range | Bytes | Contents | Free |
 |---|---|---|---|
-| `&C000-&D1F9` | 4,602 | the tune's high half — one block with `music_lo` below `&C000`, because bank 3 and HAZEL are visible at the same time | **6** to `&D200` |
-| `&D200-&D420` | 545 | `lib/vgiplayer.asm` | **223** to `&D500` |
+| `&C000-&D2DF` | 4,736 | region A of the tune above the join — one block with `music_lo` below `&C000`, because bank 3 and HAZEL are visible at the same time, and two streams lie across it | **32** to `&D300` |
+| `&D300-&D320` | 35 | `src/data/music_map.asm`: eleven stream addresses and eleven ROMSEL bytes | — |
+| `&D321-&D4D9` | 441 | `lib/vgiplayer.asm`, code only — its 96 bytes of state are at `VGI_STATE` = `&0C00` | **38** to `&D500` |
 | `&D500-&DFFF` | 2,816 | the player's 11 × 256 ring workspace | 0, exact |
 
 **`-Akl`, the Arkos replay:**
@@ -90,22 +100,22 @@ touches the disc after it.
 
 ## Room that is going spare
 
-Four regions are real RAM that nothing in the game uses. The first two are KC's (2026-09-04); the
-rest are candidates, and a candidate is not a promise until a jsbeeb sentinel has survived a run of
-the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared.
+Four regions were real RAM that nothing in the game used. **The first two are spent now** - the
+whole tune went into them (decisions 48 and 49) - and are left here for what the measurements say.
+The other two are still candidates, and a candidate is not a promise until a jsbeeb sentinel has
+survived a run of the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared.
 
-- **ANDY, `&8000-&8FFF`, 4K** (KC). The Master's own 4K of private RAM, paged in by **bit 7 of
-  ROMSEL** (`&FE30`, and the `&F4` copy with it) rather than by ACCCON. Untouched by this port so
-  far. **The catch is where its window is**: ANDY overlays the LOW 4K of whichever sideways bank is
-  selected, and that is the busiest ground we have — bank 0's `char_data` starts at `&8000` and the
-  scroll reads it every frame, and banks 1 and 2 start their sprite data there too. So ANDY is not
-  4K beside the banks, it is 4K *instead of* the first 4K of one of them, and every routine that
-  touches it must put the bank back exactly as `sprite.asm` already does for slots 5, 6 and 7.
-  Best suited to something read in one place under its own paging, not to anything the inner loops
-  walk. **Not yet measured here**, and the obvious test does not work: BASIC is itself the ROM at
-  `&8000`, so paging ANDY in from a BASIC session removes the interpreter mid-statement and the
-  machine hangs — which it did. The test has to be 6502 running from main RAM.
-- **Page `&0C00`, 256 bytes** (KC): usable without trouble. The MOS user-font page.
+- **ANDY, `&8000-&8FFF`, 4K** (KC) — **spent, 2026-09-04.** Measured first, from 6502 in main RAM,
+  because the obvious test does not work: BASIC is itself the ROM at `&8000`, so paging ANDY in from
+  a BASIC session removes the interpreter mid-statement and the machine hangs, which it did. What
+  the measurement says: **bit 7 of ROMSEL selects it, it is 4K at `&8000-&8FFF` only, the selected
+  bank keeps its own `&8000` underneath, and `&9000` upwards is untouched.** The catch was always
+  where the window is - it overlays the LOW 4K of whichever sideways bank is selected, and that is
+  the busiest ground we have - so what went in is the one thing that suits it: a single register
+  stream of the tune, read a few times a frame from the music interrupt under its own paging
+  (decision 48). 3,998 of the 4,096 bytes are gone; **98 free**.
+- **Page `&0C00`, 256 bytes** (KC): usable without trouble. The MOS user-font page. **96 of them are
+  spent**: `VGI_STATE`, the music player's decode state (decision 49). 160 left.
 - **`&0D00-&0DFF`, 256 bytes.** The paged-ROM extended-vector space, and NOT covered by KC's note
   above. Boot still uses OSFILE, and extended vectors are how a sideways ROM's service calls are
   dispatched, so this one needs proving after the load rather than assuming.
@@ -117,21 +127,25 @@ the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared.
 
 ## Where the room actually is
 
-ANDY's 4K is the largest single piece, with the paging caveat above; then 9,156 bytes in bank 3, but
-only if the Arkos build wins the comparison; 2,038 in bank 1 and 1,909 in bank 2; 740 in the `&0800`
-block; 256 at `&0C00`; 111 in main RAM code and **18 in bank 0**. Everything else is inside 250 bytes
-of its ceiling, and `&0D00` and the 1,792 bytes at `&3C80` are worth another 2K if they survive a
-sentinel.
+The tune took the two big pieces. What is left, largest first: **740** in the `&0800` block, **519**
+in bank 1, **370** in bank 3 below the tune, **185** in main RAM code and **185** in bank 2, **160**
+at `&0C00`, **98** in ANDY, **38** above the music player in HAZEL, **32** in region A and **25** in
+bank 0. Everything is inside a few hundred bytes of its ceiling now.
 
-The disc is not short of anything by comparison: the packed image is 37,632 bytes of a 200K disc.
+`&0D00` and the 1,792 bytes at `&3C80` are worth another 2K if they survive a sentinel, and they are
+the obvious next place to look; the 896 in the MAIN bank at `&3C80` is directly addressable and
+would take another music stream without any paging at all, if the exporter's regions ever need a
+fifth.
+
+The disc is not short of anything by comparison: the packed image is 45,824 bytes of a 200K disc.
 
 ## See also
 
 - `CLAUDE.md` — the standing memory table, which says what each region is *for*; this page says how
   much of it is gone
 - [`docs/layer-2-display.md`](layer-2-display.md) — why the panel is at `&3000` and in both banks
-- [`docs/layer-7-music.md`](layer-7-music.md) — the bank 3 / HAZEL budget and the ways out of the
-  truncated tune, costed
+- [`docs/layer-7-music.md`](layer-7-music.md) — the bank 3 / HAZEL budget and the
+  four regions the tune is spread over, and what each of them cost
 - [`docs/layer-9-loader.md`](layer-9-loader.md) — the boot-time shape of the map, and the ZX0 rule
   that a stream may not be overtaken by its own output
 - [`docs/layer-6e-titles.md`](layer-6e-titles.md) — the titles page's own shape: the 8K display wrap,

@@ -18,6 +18,20 @@ ELSE
 INCBIN "src/data/sprites1.bin"
 ENDIF
 
+IF MUSIC_AKL = 0
+\ The tune's B2 streams (decision 48). Nothing in this bank reads them:
+\ they are here because the .vgi's eleven register streams do not have to be
+\ in one place, and the tail of a sprite bank is a place. lib/vgiplayer.asm
+\ pages this bank in for the byte and out again.
+ASSERT P% <= MUSIC_B2_BASE
+CLEAR MUSIC_B2_BASE, &C000
+ORG MUSIC_B2_BASE
+.music_b2
+INCBIN "src/data/music_b2.bin"
+.music_b2_end
+ASSERT music_b2_end <= &C000
+ENDIF
+
 .bank2_end
 
 SAVE "BANK2", bank2_start, bank2_end

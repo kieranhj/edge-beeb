@@ -174,16 +174,14 @@ TITLE_COL0 = 2
 \ *	character is four double-width pixels, which is one of our
 \ *	4-fat-pixel cells (decision 34 for the colour mapping).
 \ *
-\ *	Here in bank 3 because that is where the room is: main RAM has 36
-\ *	bytes below &2000 and bank 0 has 151. Both routines are reached
-\ *	through bank3_call in main RAM.
+\ *	The image itself is no longer here - it is a disc file, unpacked
+\ *	straight into each bank's screen at boot (decision 47). What is
+\ *	left is the HUD: its glyphs, its cell addresses, and the cache of
+\ *	what each bank is showing. Reached through bank3_call in main RAM.
 \ ******************************************************************
 
 HUD_GLYPH_BYTES = 16
 HUD_CELLS = 18                  ; 6 score + 6 high score + 6 lives
-
-.panel_image
-INCBIN "src/data/panel.bin"
 
 .hud_glyphs
 INCBIN "src/data/hud.bin"
@@ -237,38 +235,17 @@ NEXT
 .hud_have SKIP 2 * HUD_CELLS
 
 \ ******************************************************************
-\ *	panel_draw - the panel image into the bank the CPU owns
+\ *	panel_dirty - forget what both banks' panels are showing
 \ ******************************************************************
-\ *	Called once per bank at boot, from panel_init in bank 0 through
-\ *	bank3_call. 3200 bytes is 12 whole pages and 128.
+\ *	panel_init in bank 0 has just unpacked the panel image over one
+\ *	bank's &3000, so nothing of the HUD survives in it. The image
+\ *	itself used to be here too, 3,200 bytes of boot-time data holding
+\ *	ground the tune needs (decision 47); it is a disc file now and all
+\ *	that is left in bank 3 is this, beside the cache it invalidates.
 \ ******************************************************************
 
-.panel_draw
+.panel_dirty
 {
-    lda #LO(panel_image)  : sta read_ptr
-    lda #HI(panel_image)  : sta read_ptr+1
-    lda #LO(PANEL_ADDR)   : sta write_ptr
-    lda #HI(PANEL_ADDR)   : sta write_ptr+1
-
-    ldx #HI(PANEL_BYTES)
-    ldy #0
-    .page
-    lda (read_ptr), y
-    sta (write_ptr), y
-    iny
-    bne page
-    inc read_ptr+1
-    inc write_ptr+1
-    dex
-    bne page
-    .tail
-    lda (read_ptr), y
-    sta (write_ptr), y
-    iny
-    cpy #LO(PANEL_BYTES)
-    bne tail
-
-    \\ Nothing of the HUD survives a repaint, in either bank.
     ldx #2*HUD_CELLS-1
     lda #&ff
     .dirty
@@ -277,16 +254,6 @@ NEXT
     bpl dirty
     rts
 }
-
-\ ******************************************************************
-\ *	status_decode - the C64's, once a game frame
-\ ******************************************************************
-\ *	The original runs this from its raster interrupt every field and
-\ *	writes all eighteen characters every time, because a character is
-\ *	one byte there. Ours is sixteen, in two banks, so it writes only
-\ *	the cells that have changed since this bank was last painted -
-\ *	typically one or two digits, and nothing at all on a still frame.
-\ ******************************************************************
 
 .status_decode
 {
@@ -363,10 +330,12 @@ NEXT
 
 \ ******************************************************************
 \ *	music_init - start the tune (Layer 7)
-\ ******************************************************************
-\ *	Here rather than in bank 0 because vgm_init reads the .vgi header
-\ *	out of music_lo below, which is in THIS bank: a starter in bank 0
-\ *	could not page bank 3 in without paging itself out. Reached from
+\ *
+\ *	Here rather than in bank 0 because it began as the one thing that
+\ *	had to read the .vgi header out of music_lo, in THIS bank. Under
+\ *	VGI_SPLIT there is no header - vgm_stream_mount takes eleven
+\ *	addresses from the map instead - so it could go anywhere now; it
+\ *	stays because bank 3 has the room and bank 0 has not. Reached from
 \ *	boot through bank3_call, which has already done the paging; all
 \ *	this adds is HAZEL, where the player's code is, and that does not
 \ *	page bank 3 out because it is a different window.
@@ -386,10 +355,8 @@ IF MUSIC_AKL
     ldy #0
     jsr akl_init
 ELSE
-    lda #HI(HAZEL_WORK)
-    ldx #LO(MUSIC_LO_BASE)
-    ldy #HI(MUSIC_LO_BASE)
-    sec
+    lda #HI(HAZEL_WORK)         ; VGI_SPLIT: X/Y unused, the map says where
+    sec                         ; C=1: loop for ever, as the C64 does
     jsr vgm_init
 ENDIF
     lda &fe34
@@ -399,33 +366,36 @@ ENDIF
 }
 
 \ ******************************************************************
-\ *	The low half of the tune, ending exactly at &C000
+\ *	Region A of the tune, below the join at &C000
 \ ******************************************************************
-\ *	The high half is the first thing in HAZEL, at &C000, so the two
-\ *	are one contiguous block in the address map and the player reads
-\ *	across the join without knowing it is there. That only works
-\ *	because this bank and HAZEL are visible at the same time.
+\ *	The rest of region A is the first thing in HAZEL, at &C000, so the
+\ *	two are one contiguous run in the address map and a stream may sit
+\ *	across the join without the player knowing it is there. That only
+\ *	works because this bank and HAZEL are visible at the same time.
 \ *
 \ *	tools/export_music.py pads this half to exactly MUSIC_LO_SIZE, so
-\ *	the join is at &C000 whatever the tune's length.
+\ *	the join is at &C000 whatever the streams add up to. Region A is
+\ *	the biggest of the four the tune is spread over - see decision 48
+\ *	and the region table in main.asm.
 \ ******************************************************************
 
 IF MUSIC_AKL
 
 \ Nothing here in the Arkos build: the whole tune is tracker data and it
-\ lives in HAZEL with the player, so all 8,960 bytes of this are free.
+\ lives in HAZEL with the player, so all 12,288 bytes of this are free.
 PRINT "BANK 3 code/data ends at", ~P%, "- no music_lo (MUSIC_AKL)"
 PRINT "BANK 3 FREE ABOVE CODE =", ~&C000 - P%
 
 ELSE
 
-ASSERT P% <= MUSIC_LO_BASE
-PRINT "BANK 3 code/data ends at", ~P%, "- music_lo starts at", ~MUSIC_LO_BASE
+ASSERT P% <= MUSIC_A_BASE
+PRINT "BANK 3 code/data ends at", ~P%, "- region A starts at", ~MUSIC_A_BASE
+PRINT "BANK 3 SLACK BELOW THE TUNE =", ~MUSIC_A_BASE - P%
 
-ORG MUSIC_LO_BASE
+ORG MUSIC_A_BASE
 .music_lo
 INCBIN "src/data/music_lo.bin"
-ASSERT P% = HAZEL_BASE
+ASSERT P% = MUSIC_A_JOIN
 
 ENDIF
 

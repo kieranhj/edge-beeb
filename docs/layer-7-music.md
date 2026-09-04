@@ -1,9 +1,13 @@
 # Layer 7 — music
 
-Done 2026-09-04, **with the tune truncated to 203 seconds of its 349**. Everything works: the
-toolchain, the player, the placement, the IRQ hookup, and it is verified byte-exact against the
-source VGM. What is not done is fitting the last 2m26s, and that is a memory problem, not a music
-one. The options are costed at the end and want KC's decision.
+Done 2026-09-04. The toolchain, the player, the placement, the IRQ hookup, and all of it verified
+byte-exact against the source VGM.
+
+**It shipped truncated to 203 seconds of its 349 at first, and it does not any more.** The whole
+tune is in, in four separate regions of memory - see [The whole tune, in four
+places](#the-whole-tune-in-four-places-decision-48) at the end, which replaces what used to be a
+list of costed options. The rest of this page is the layer as it was built; where it says the tune
+is cut, that is the history.
 
 ## The chain
 
@@ -79,27 +83,34 @@ Four things make HAZEL the right home rather than a desperate one:
   reloads and runs the game.
 - **`&BFFF` and `&C000` are adjacent, and both are visible at once.** Sideways bank 3 and HAZEL are
   paged by different registers over different windows, so a pointer walking off the end of the bank
-  lands in HAZEL and the player does not have to know the join is there. That is what lets the tune
-  be nearly three times the size HAZEL alone could hold.
+  lands in HAZEL and the player does not have to know the join is there. That is what lets region A
+  be four times the size HAZEL alone could hold, and two of the eleven streams do lie across it.
 
-So the tune is **one contiguous block spanning the two**:
+So the two make one contiguous block - **region A** - and the shape of it now is:
 
 ```
 bank 3
-  &9D00   music_lo.bin, the low half of the tune              8,960 bytes
+  &8F8E   bank 3's own code and data end here; 370 bytes of slack, ASSERTed
+  &9100   music_lo.bin, region A below the join            12,288 bytes
           ends EXACTLY at &C000 - the exporter pads it to MUSIC_LO_SIZE, so
-          the join holds whatever the tune's length
+          the join holds whatever the streams add up to
 HAZEL
-  &C000   music_hi.bin, the rest                              4,602 bytes
-  &D1FA   6 free before the player
-  &D200   lib/vgiplayer.asm: code and its resident decode state  545 bytes
-  &D421   223 free
+  &C000   music_hi.bin, the rest of region A                4,736 bytes
+  &D2E0   32 free - what is left of the whole tune's budget
+  &D300   src/data/music_map.asm: 11 addresses, 11 ROMSEL bytes   35 bytes
+          then lib/vgiplayer.asm, code only                      441 bytes
+  &D4DA   38 free
   &D500   the 11 x 256 ring workspace, page aligned, reaching exactly to &DFFF
+main RAM
+  &0C00   VGI_STATE: the player's 96 bytes of decode state (decision 49)
 ```
 
-The workspace is not in the file - it is scratch, and `vgm_init` sets up what it needs. Bank 3's own
-code and data end at `&9C3D`, so there are 195 bytes of slack below `music_lo`; `bank3.asm` ASSERTs
-it, and if a later layer wants that room `MUSIC_LO_SIZE` comes down and the tune with it.
+The workspace is not in the file - it is scratch, and `vgm_init` sets up what it needs. Neither is
+the state: nothing in it needs initialising, because `vgm_init` sets the first three bytes and
+`vgm_stream_mount` the rest.
+
+Three of the eleven streams are elsewhere entirely; see [The whole tune, in four
+places](#the-whole-tune-in-four-places-decision-48).
 
 OSFILE cannot write into HAZEL (the MOS would be overwriting the filing system's own workspace from
 underneath itself), so `MUSIC` stages in RAM exactly as a bank does and is copied up with the Y bit
@@ -157,7 +168,9 @@ Nothing else moved. The rupture is unchanged, the picture is unchanged, and the 
 
 ## Verified in jsbeeb
 
-The whole chain is verified **byte-exact against the source VGM**, not by ear:
+The whole chain is verified **byte-exact against the source VGM**, not by ear. (This was the
+truncated build; `tools/verify_vgi.py` re-does it in one command against the split placement - see
+[the bug this shape makes easy](#the-bug-this-shape-makes-easy-and-what-caught-it).)
 
 - Twenty consecutive fields of SN76489 writes were captured from the running game and the chip state
   reconstructed from them.
@@ -173,51 +186,128 @@ Also measured:
 - **The loop works.** Run past 10,173 fields and the chip state matches VGM frame 470 - the player
   re-mounted the streams at frame 0 and carried on.
 
-## What is left: the tune does not fit
+## The whole tune, in four places (decision 48)
 
-**EDGEA is 349 seconds and packs to 23,514 bytes of `.vgi`. There are 13,562 between the top of bank
-3 and the player in HAZEL.** So what ships is the first 203 seconds, looped by the player
-(`vgm_init` with C=1) - 58% of it.
+**EDGEA is 349 seconds and packs to 23,514 bytes of `.vgi`. The largest contiguous hole this machine
+has is the 17K that bank 3's tail and the bottom of HAZEL make between them.** So for a day it
+shipped the first 203 seconds, looped.
 
-The alternatives, costed:
+The way out is in the format, and it was written down above without being taken seriously enough:
+**a `.vgi` is not one blob. It is eleven independent streams**, one per SN76489 register, and
+`vgm_decode_frame` reads exactly one byte from each per frame through its own pointer. Each STREAM
+has to be contiguous. The TUNE does not. A machine whose free RAM is 17K here, 4K there and 1.75K
+twice over can hold a tune that fits in none of them.
 
-| | size | cost |
-|---|--:|---|
-| VGI, whole tune | 23,514 | needs ~19K more RAM than exists in one place |
-| VGI, no envelope simulation (`ym2sn -n`) | 22,058 | 1.5K, and 32% of frames lose their envelope |
-| VGC | 15,942 | the spiky player: worst frame 5,321 cycles a field, ~13,000 a game frame |
-| VGC + huffman | 13,500 | slower again, and 13,500 still does not fit anywhere contiguous |
+### The four regions
 
-And the space, if it were all collected:
+| | | ROMSEL | bytes | free |
+|---|---|---|--:|--:|
+| A | `&9100-&D2FF`, bank 3's tail running on into HAZEL | 7 | 16,896 | 32 |
+| ANDY | `&8000-&8FFF`, the Master's own 4K | `&87` | 4,096 | 98 |
+| B1 | `&B900-&BFFF`, the tail of sideways bank 1 | 5 | 1,792 | 519 |
+| B2 | `&BA00-&BFFF`, the tail of sideways bank 2 | 6 | 1,536 | 185 |
 
-| | bytes |
-|---|--:|
-| bank 3 and HAZEL, as used now | 13,562 |
-| the panel image, if it moved to a boot-time load instead of living in bank 3 | 3,200 |
-| ANDY (`&8000-&8FFF`, ROMSEL bit 7) | 4,096 |
-| sideways banks 0, 1 and 2 scraps | 5,684 |
+Region A is the same trick Layer 7 already used and is why the bank-3 half exists at all: bank 3 and
+HAZEL are paged by different registers over different windows, are visible at the same time, and are
+adjacent in the address map, so a stream may lie across `&C000` and the player never learns the join
+is there. Two of them do.
 
-**The shape of the answer.** `.vgi` is not one blob: it is **eleven independent streams**, one per
-SN76489 register, and the packer reports their sizes separately (2,283 2,998 2,218 2,776 3,195 3,402
-596 1,173 1,351 1,273 2,221 for the whole tune). The player reads one byte from each per frame
-through its own pointer. So whole streams can be **placed in different regions** and the total does
-not have to be contiguous — which is exactly what a machine with 4,831 here and 9,182 there is good
-for. Two observations make it cheap:
+**ANDY had to be measured, not recalled.** It is the Master's 4K of private RAM, and the obvious
+test does not work - BASIC is itself the ROM at `&8000`, so paging ANDY in from a BASIC session
+removes the interpreter mid-statement and the machine hangs. From 6502 in main RAM, in jsbeeb:
 
-- **Moving the panel image out of bank 3** - it is read once, at boot, into `&3000` in each shadow
-  bank, and never again - would push `MUSIC_LO_BASE` down 3,200 bytes and needs no format work at
-  all. That is 16,762 of 23,514: **71%, up from 58%**, for an afternoon.
-- Streams in a *second* sideways bank, or in ANDY, would need a bank select before the byte fetch:
-  four of the eleven streams are under 1,400 bytes and would fit the scraps in banks 1 and 2. About
-  ten cycles a stream, five switches a frame. With those and ANDY the whole tune fits.
+```
+&FE30 = 4     write &AA to &8000, &BB to &9000
+&FE30 = &84   write &55 to &8000, &CC to &9000
+&FE30 = &84   &8000 reads &55    &9000 reads &CC
+&FE30 = 4     &8000 reads &AA    &9000 reads &CC
+```
 
-The work is a table of eleven base addresses (and, if the scraps are used, eleven region bytes) in
-place of `vgm_stream_mount`'s "offset + one base" arithmetic, plus a packer-side or build-side
-relocation. It is a change to a library taken unaltered, and it is a numbered decision, so it waits
-for KC.
+So: **bit 7 of ROMSEL selects it, it is 4K at `&8000-&8FFF` only, the selected bank keeps its own
+`&8000` underneath it, and `&9000` upwards is unaffected.** That window is the busiest ground in the
+game - bank 0's `char_data` starts at `&8000` and the scroll reads it every frame - so ANDY can only
+hold something read in one place under its own paging. A music stream fetched a few times a frame
+from an interrupt is exactly that.
 
-The cheap alternative is to **cut the tune**, musically rather than by frame count — 349 seconds is
-longer than anybody will play — which is a decision only its author can take well.
+B1 and B2 are not the same page as each other because the CPC artwork's sprite bank 2 reaches
+`&B941`; keeping B2 a page higher is what lets `-Cpc` assemble.
+
+### Where the room came from
+
+Three things, none of them the music:
+
+- **The panel image left bank 3** (decision 47): 3,200 bytes of boot-time data that was sitting on
+  the one range the tune needs. It is a disc file now, unpacked straight into each bank's `&3000`.
+- **`!BOOT` left the code image's address space** (decision 49): 200 bytes of text nothing executes,
+  assembled at `&2400` instead. Main RAM went from 111 bytes free to 185.
+- **The player's state left HAZEL** for `&0C00`, the MOS user-font page: 96 bytes back for the tune.
+
+### What changed in the player
+
+`lib/vgiplayer.asm` was taken unaltered from `Repos/vgm-player-bbc` and is not any more. The changes
+are behind `-D VGI_SPLIT`, and `VGI_SPLIT=0` is byte-identical to what was there:
+
+- `fetchbyte` writes the stream's ROMSEL byte to `&FE30` before the read. **Eight cycles, and only
+  on the path that touches the compressed data at all** - a new token plus its literal bytes, which
+  is a handful of reads a frame across all eleven streams, not eleven. `rupt_vsync` already put
+  `&FE30` back from `&F4` afterwards, so nothing else had to change.
+- `vgm_stream_mount` copies eleven addresses and eleven ROMSEL bytes out of `vgi_map_*` instead of
+  biasing eleven file-relative offsets by one base. There is no `.vgi` header in the build any more;
+  `VGI_FRAMES` carries the frame count.
+- The per-stream state moves to `VGI_STATE`, 96 bytes the caller provides.
+
+`tools/export_music.py` does the placement: it packs the whole tune, cuts the `.vgi` into its eleven
+streams, best-fit-decreasing them into the regions, writes one binary per region and generates
+`src/data/music_map.asm` - which ASSERTs `main.asm`'s region constants against the ones it placed
+with. **Best-fit rather than first-fit for a reason**: seven of the eleven streams are bigger than
+either sideways-bank tail and no two of those seven fit in ANDY together, so the biggest stream must
+go to ANDY and region A must take the other six. Anything else does not fit at all. If it ever stops
+fitting the exporter says so, with the free space per region.
+
+### The bug this shape makes easy, and what caught it
+
+The first build of it played, and sounded like music, and was wrong. `place()` hands addresses out
+biggest-stream-first; `emit()` concatenated each region's streams **in stream-index order**. Every
+stream but the first in each region was therefore at the wrong address - a permutation, not a
+corruption, so it decoded happily for eight thousand frames before a stream ran off the end of what
+it had been given.
+
+Nothing about "it plays" would ever have caught that, and neither would listening to it. What caught
+it was `tools/verify_vgi.py`: it rebuilds the reference write stream **from the region binaries the
+build actually INCBINs and the map it actually assembles**, so the placement itself is under test,
+and then searches for a jsbeeb SN76489 capture inside it. Verified, on the shipping build:
+
+| capture | matches |
+|---|---|
+| the first fields after boot | reference write 2,981, **and nowhere else** |
+| deep inside the tune, past where the truncated version ended | write 91,051 |
+| across the loop point, 8 fields of the tune's end and 2 of its restart | write 177,190 |
+
+And the eleven decode pointers read out of `&0C00` after 412 frames of the second pass match the
+reference decoder's exactly, all eleven, including the two that had crossed `&C000`.
+
+### What it cost
+
+The frame meter, `DEBUG_TIMING`, the same test as the table above - boot to the titles, fire held
+for 5,000 fields, the ship never moved:
+
+| worst frame | Layer 7, tune cut | whole tune, four regions |
+|---|--:|--:|
+| `spr_restore_all` | 9,616 | 9,753 |
+| `scroll_frame` | 6,861 | 5,447 |
+| `spr_draw_all` | 23,293 | 23,916 |
+| logic, `scroll_advance`, HUD | 4,475 | 4,506 |
+| whole frame | 42,136 (105%) | **42,083 (105%)** |
+| frames that missed their flip | 7 | **7** |
+
+Microseconds; double for 2 MHz cycles. The paging is not readable in the noise, which is what eight
+cycles on a path taken a handful of times a field ought to look like.
+
+### And it fixed `-Cpc`
+
+Plain `-Cpc` had never assembled: the CPC artwork pushed bank 3 twelve bytes past `music_lo`'s base.
+With the panel gone from bank 3 and `!BOOT` out of main RAM, **all six flag combinations build** -
+`-Cpc` and `-Release -Cpc` for the first time, and with the whole tune rather than none of it.
 
 ## Q mutes it (decision 39)
 

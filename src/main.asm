@@ -208,17 +208,60 @@ HAZEL_BASE  = &C000
 HAZEL_WORK  = &D500         ; the VGI player's 11 x 256 ring, exactly to &DFFF
 ASSERT HAZEL_WORK + 11 * 256 = &E000
 
-\ The tune is ONE address range that happens to span two kinds of RAM. Bank 3
-\ ends at &C000 and HAZEL begins there, and BOTH ARE VISIBLE AT THE SAME TIME -
-\ they are paged by different registers over different windows - so a pointer
-\ walking off the end of one lands in the other and the player needs to know
-\ nothing about it. tools/export_music.py cuts the .vgi at MUSIC_LO_SIZE and
-\ pads the low half to exactly that, so the halves meet whatever the tune's
-\ length; the two constants must agree, and the ASSERTs below are the check.
-MUSIC_LO_SIZE = &2300       ; of the tune, in bank 3
-MUSIC_LO_BASE = HAZEL_BASE - MUSIC_LO_SIZE      ; &9D00
-MUSIC_PLAYER  = &D200       ; the player's code, above the tune's high half
-ASSERT MUSIC_LO_BASE >= &8000
+\ THE TUNE, IN FOUR PLACES (decision 48)
+\
+\ EDGEA packs to 23,514 bytes of .vgi and there is no hole that size on this
+\ machine. But a .vgi is not one blob: it is ELEVEN INDEPENDENT STREAMS, one
+\ per SN76489 register, and the player reads exactly one byte from each per
+\ frame through its own pointer. So each stream has to be contiguous and the
+\ tune does not, and the whole 349 seconds goes in four regions:
+\
+\   A     &9100-&D2FF   the tail of bank 3 running on into HAZEL. Both are
+\                       VISIBLE AT THE SAME TIME - they are paged by
+\                       different registers over different windows - so a
+\                       stream may cross &C000 and the player never learns
+\                       the join is there. It ships as two files: below
+\                       &C000 in BANK3 (music_lo, padded to meet the join
+\                       exactly) and above it in MUSIC (music_hi).
+\   ANDY  &8000-&8FFF   the Master's own 4K, ROMSEL bit 7 - measured in
+\                       jsbeeb, 2026-09-04: it overlays the LOW 4K of
+\                       whichever sideways bank is selected and leaves the
+\                       rest of the window alone. That is the busiest ground
+\                       we have, so nothing an inner loop walks could live
+\                       here; a music stream read a few times a frame from
+\                       an interrupt is exactly the right tenant.
+\   B1    &B900-&BFFF   the tail of sideways bank 1, above the sprite
+\   B2    &BA00-&BFFF   data, and the same for bank 2 a page higher - the
+\                       CPC artwork's sprite bank 2 reaches &B941.
+\
+\ tools/export_music.py does the placement and writes src/data/music_map.asm
+\ - eleven addresses and eleven ROMSEL bytes - which ASSERTs these constants
+\ against its own. lib/vgiplayer.asm reads that map under VGI_SPLIT and pages
+\ each stream's region in before every raw byte it fetches.
+MUSIC_A_BASE    = &9100     ; region A: bank 3's tail, ...
+MUSIC_A_JOIN    = HAZEL_BASE                    ; ... across this join, ...
+MUSIC_A_TOP     = &D300     ; ... to here, where the player's code starts
+MUSIC_ANDY_BASE = &8000
+MUSIC_ANDY_TOP  = &9000
+MUSIC_B1_BASE   = &B900
+MUSIC_B2_BASE   = &BA00     ; higher than B1's: the CPC artwork's
+                            ; sprite bank 2 reaches &B941
+MUSIC_LO_SIZE   = MUSIC_A_JOIN - MUSIC_A_BASE   ; what BANK3 carries
+MUSIC_PLAYER    = MUSIC_A_TOP
+ASSERT MUSIC_A_BASE >= &8000
+ASSERT MUSIC_ANDY_TOP - MUSIC_ANDY_BASE = &1000
+
+\ ANDY's ROMSEL byte. Bit 7 is what selects it; the bank number underneath is
+\ irrelevant while it is set, and bank 3 is what the music update has paged
+\ anyway.
+ANDY_ROM = &80 OR SWRAM_COMPILED
+
+\ The VGI player's own state - 96 bytes - in the MOS user-font page, which
+\ this game never writes. It is there rather than in HAZEL beside the code
+\ because HAZEL is the scarce thing and main RAM at &0C00 is not, and because
+\ fetchbyte reads it with the sideways window pointed at a music stream.
+VGI_STATE = &0C00
+VGI_SPLIT = 1
 
 \ MUSIC_AKL picks the OTHER music subsystem, for the comparison Layer 7 left
 \ open: src/aklplayer.asm replays the Arkos tracker data directly and
@@ -316,6 +359,18 @@ ASSERT LOADSCR_ADDR2 - LOADSCR_ADDR = 16 * row_stride
 \ main, and roomy: the four bank streams and the music's go there.
 LOAD_STREAM = &2200
 DEPK_STREAM = &3000
+\ ANDY's stream needs a staging address of its own, because it is the one
+\ file that cannot be unpacked when it is loaded: the depacker would be
+\ writing into ANDY while the filing system was still running, and nothing
+\ says the filing system does not use ANDY itself. So it is loaded before
+\ MUSIC, sits here through MUSIC's load, and is unpacked afterwards, when
+\ the disc is finished with for good. It shares the shadow screen with
+\ DEPK_STREAM, above everything that stages there.
+ANDY_STREAM = &6800
+\ And where !BOOT is ASSEMBLED - it is never loaded anywhere, it is a disc
+\ file the MOS *EXECs. Inside the sprite saves, which do not exist at
+\ assembly time and are not written until the first sprite is drawn.
+BOOT_STAGE  = &2400
 CODE_TOP    = LOAD_STREAM   ; and &2000-&2FFF is the Layer 3 sprite saves,
                             ; which boot code may sit in and boot streams fill
 
@@ -619,12 +674,34 @@ GUARD CODE_TOP
     ldx #SWRAM_COMPILED
     jsr load_bank
 
-    \ MUSIC goes into HAZEL, and HAZEL is the filing system's own
-    \ workspace, so it must be the LAST file loaded. Nothing may touch
-    \ the disc after this.
+    \\ The panel image: loaded, not unpacked. Its stream sits at
+    \\ LOAD_STREAM until setup_display asks for it, and panel_init then
+    \\ unpacks it straight into &3000 in each bank - the only two places
+    \\ it is ever wanted. Nothing else touches LOAD_STREAM from here on.
+    lda #LO(panel_filename)
+    ldy #HI(panel_filename)
+    ldx #HI(LOAD_STREAM)
+    jsr load_stream
+
+IF MUSIC_AKL = 0
+    \\ ANDY's share of the tune: loaded here, unpacked below. See
+    \\ ANDY_STREAM for why the two are not together.
+    lda #LO(andy_filename)
+    ldy #HI(andy_filename)
+    ldx #HI(ANDY_STREAM)
+    jsr load_stream
+ENDIF
+
+    \\ MUSIC goes into HAZEL, and HAZEL is the filing system's own
+    \\ workspace, so it must be the LAST file loaded. Nothing may touch
+    \\ the disc after this.
     lda #LO(music_filename)
     ldy #HI(music_filename)
     jsr load_hazel
+
+IF MUSIC_AKL = 0
+    jsr unpack_andy             \\ and now the disc is finished with
+ENDIF
 
     lda #SWRAM_DATA
     sta &f4
@@ -1166,6 +1243,32 @@ INCLUDE "src/scroll.asm"
     jmp zx0_unpack
 }
 
+\\ The status panel into whichever bank the X bit selects. The image is
+\\ not resident anywhere: it is a disc file whose ZX0 stream is still
+\\ sitting at LOAD_STREAM from boot, and this unpacks it straight into
+\\ the screen. Called once per bank, so the stream is read twice and
+\\ zxsrc has to be pointed at it again each time - zx0_unpack walks it.
+\\ Anything that draws on the panel must do it for both banks.
+\\
+\\ The depacker is boot code living in SPR_SAVE, which nothing reads
+\\ until the first sprite is drawn; this is the last call it gets.
+.panel_init
+{
+    lda #0
+    sta zxsrc
+    lda #HI(LOAD_STREAM)
+    sta zxsrc+1
+    lda #LO(PANEL_ADDR)
+    ldx #HI(PANEL_ADDR)
+    jsr unpack_to
+
+    \\ Nothing of the HUD survives a repaint, in either bank, and the
+    \\ cache that says so is in bank 3 with status_decode.
+    ldx #LO(panel_dirty)
+    ldy #HI(panel_dirty)
+    jmp bank3_call
+}
+
 \\ A 16K bank: A/Y = filename ptr, X = SWRAM slot. The stream stages in the
 \\ shadow screen, which the loading screen is not using, and unpacks
 \\ straight into the paged-in bank.
@@ -1179,6 +1282,36 @@ INCLUDE "src/scroll.asm"
     ldx #HI(&8000)
     jmp unpack_to
 }
+
+IF MUSIC_AKL = 0
+\\ ANDY's share of the tune, from the stream left at ANDY_STREAM. Called
+\\ after MUSIC, so no disc access can follow it.
+\\
+\\ With interrupts off and &F4 set as well as &FE30: the MOS's own IRQ
+\\ handler is still installed here, and anything that pages a ROM restores
+\\ &FE30 from &F4 - which would drop ANDY out from under the depacker half
+\\ way through and put the rest of the stream into bank 3. The SEI alone
+\\ would do; both is cheaper than reasoning about it again.
+\\
+\\ It does NOT put the bank back: the caller's next three instructions
+\\ select SWRAM_DATA, and main RAM has tens of bytes left.
+.unpack_andy
+{
+    sei
+    lda #ANDY_ROM
+    sta &f4
+    sta &fe30
+    lda #0
+    sta zxsrc
+    lda #HI(ANDY_STREAM)
+    sta zxsrc+1
+    lda #LO(MUSIC_ANDY_BASE)
+    ldx #HI(MUSIC_ANDY_BASE)
+    jsr unpack_to
+    cli
+    rts                         \\ ANDY still selected: boot's next three
+}                               \\ instructions put SWRAM_DATA back anyway
+ENDIF
 
 \\ MUSIC into HAZEL, the same way, with the Y bit set over the unpack.
 \\ Nothing may use the disc afterwards.
@@ -1230,6 +1363,18 @@ SAVE "Edge", start, end
 \ ******************************************************************
 \ *	!BOOT - assembled here so the build stamps what it is
 \ ******************************************************************
+\ *	It is a disc file, not code, and it was costing the code image
+\ *	its own length in address space - two hundred bytes of the
+\ *	tightest region in the build, for text nothing ever executes.
+\ *	So it is assembled in the sprite saves instead, the way
+\ *	src/panel.asm and src/loading.asm assemble theirs: somewhere
+\ *	that exists, that nothing has claimed at assembly time, and that
+\ *	it is never loaded to. P% goes back afterwards.
+\ ******************************************************************
+
+code_p% = P%
+CLEAR BOOT_STAGE, BOOT_STAGE + 256
+ORG BOOT_STAGE
 
 .bootfile
 IF RELEASE
@@ -1249,7 +1394,7 @@ ENDIF
 IF MUSIC_AKL
     EQUS "REM MUSIC_AKL: Arkos replay, whole 349s tune", 13
 ELSE
-    EQUS "REM MUSIC: VGI player, tune cut to 203s", 13
+    EQUS "REM MUSIC: VGI player, whole 349s tune, 4 regions", 13
 ENDIF
 \ GFX_CPC is not a DEBUG_ flag either, and it changes every pixel on the
 \ disc, so it is stamped outside the RELEASE test too.
@@ -1261,6 +1406,9 @@ EQUS "*RUN Edge", 13
 .bootfile_end
 
 SAVE "!BOOT", bootfile, bootfile_end
+ASSERT bootfile_end < BOOT_STAGE + 256
+
+ORG code_p%
 
 
 \ ******************************************************************
@@ -1369,6 +1517,8 @@ PRINT "GAME STATE =", ~game_state_start, "to", ~game_state_end
 \ The loading screen is FIRST: it is the first thing off the disc, and
 \ tools/make_disc.py lays the image out in the order the boot reads it.
 INCLUDE "src/loading.asm"
+INCLUDE "src/panel.asm"
+INCLUDE "src/andy.asm"
 INCLUDE "src/bank0.asm"
 INCLUDE "src/bank1.asm"
 INCLUDE "src/bank2.asm"

@@ -29,8 +29,9 @@ credits, pause on P, abort on ESCAPE, and the completion sequence the wave table
 and **the HUD** - the original's own status bar, rendered whole from its charset and its colour
 map, with the score, the high score and the lives bars decoded onto it every frame; and **the
 music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL, muted and unmuted on Q; and **a loading screen**, a whole MODE 2 picture up while the banks load behind it, with every data file on the disc ZX0-compressed. The
-completion's "mega hero" message waits for a font to draw it with, and **the tune is truncated to 203 of its 349 seconds because it does
-not fit** - `docs/layer-7-music.md` costs the ways out and wants a decision.
+completion's "mega hero" message waits for a font to draw it with. **The whole 349-second tune
+ships**, spread over four separate regions of memory, because a `.vgi` is eleven independent
+register streams and only each stream has to be contiguous (decision 48).
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
 `DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
@@ -249,11 +250,12 @@ which is the proof the two are in step and not merely each self-consistent.
 The zoom font was hiding in `status.chr`: `$4d00` is character `$a0`, and `$a0`-`$bf` are a 32-glyph
 hires alphabet with rows 0 and 7 blank, which is why the band is six rows high.
 
-**Bank 0 is now the tightest thing in the build** — 18 bytes in a DEV build, 184 in a RELEASE one —
-because `title_page` has to be there: bank 0 code may call into main RAM and be returned to. The rest
-of the layer is in bank 1, whose sprite data nothing on the titles reads.
+**Bank 0 is one of the two tightest things in the build** — 25 bytes in a DEV build, 191 in a
+RELEASE one — because `title_page` has to be there: bank 0 code may call into main RAM and be
+returned to. The rest of the layer is in bank 1, whose sprite data nothing on the titles reads.
+(The other is region A of the tune, with 32.)
 
-### Layer 7 — music — done, with the tune truncated
+### Layer 7 — music — done, the whole tune in
 
 [`docs/layer-7-music.md`](docs/layer-7-music.md). `tools/export_music.py` runs EDGEA.SKS through
 SongToYm, ym2sn and vgipacker; the **VGI** player (decision 35, KC) plays it from the end of
@@ -266,11 +268,22 @@ frames 201-212 and nowhere else, and the loop restarts cleanly at 10,173.
 
 **No sound effects, and that is faithful** - the C64 has none at all.
 
-**Open: the tune is 349 seconds and 23,514 bytes of `.vgi`, and there are 13,562.** It ships as the
-first 203 seconds, looped (decision 37). The layer doc costs the ways out - move the panel image out
-of bank 3 to a boot-time load (71% of the tune, no format work), scatter the format's eleven
-independent register streams into ANDY and the bank scraps as well (all of it), or cut the tune
-musically - and all of them are KC's call.
+**Closed, 2026-09-04: the whole tune is in** (decisions 47-49, KC). It is 349 seconds and 23,514
+bytes of `.vgi` and there was no hole that size, so it went in **four**: region A (`&9100-&D2FF`,
+bank 3's tail running on into HAZEL), **ANDY** (`&8000-&8FFF`, ROMSEL bit 7, measured not recalled),
+and the tails of sideways banks 1 and 2. A `.vgi` is eleven independent streams with one byte read
+from each per frame, so only each STREAM has to be contiguous; `tools/export_music.py` best-fit
+packs them into the regions and generates the address/ROMSEL map, and `lib/vgiplayer.asm` gains a
+`VGI_SPLIT` flag whose `fetchbyte` pages the stream's region in before every raw byte - 8 cycles, on
+a path taken a handful of times a field. **Worst frame 42,083 us against 42,136 before, and the same
+seven missed flips**: it costs nothing readable.
+
+The room came from the panel image leaving bank 3 for a disc file (3,200 bytes), `!BOOT` leaving the
+code image's address space for `&2400` (200 bytes of main RAM), and the player's state leaving HAZEL
+for `&0C00` (96). Two side effects: **plain `-Cpc` assembles for the first time**, and
+`tools/verify_vgi.py` now re-proves the placement byte for byte from a jsbeeb capture in one
+command - which is what caught the one real bug this shape makes easy, a region's streams
+concatenated in stream order while their addresses were handed out in size order.
 
 ### Layer 7, second pass - the Arkos replay - built, and the choice is open
 
@@ -278,9 +291,10 @@ musically - and all of them are KC's call.
 builds a second disc in which `src/aklplayer.asm` replays the **Arkos tracker data itself** and
 `src/ay2sn.asm` converts to the SN76489 every frame, instead of the VGI player decoding a
 pre-converted register log. The whole 349-second tune is 4,741 bytes that way, so player, converter
-and tune together are 7,640 and **fit in HAZEL alone** - `music_lo` leaves bank 3 and takes 8,960
-bytes of it with it, and nothing is truncated. It costs +854 us on the worst frame and nine missed
-flips against seven, on the same brutal test.
+and tune together are 7,640 and **fit in HAZEL alone** - the tune leaves bank 3 and takes 12,288
+bytes of it with it. It costs +854 us on the worst frame and nine missed flips against seven, on the
+same brutal test. **Its size advantage is gone**: decision 48 got the whole tune into the VGI build
+too, so what is left to choose between them is purely how they sound.
 
 The replay is not in doubt: byte-exact against Arkos's own player over all 17,446 frames, and twelve
 fields captured out of the running game match the simulation uniquely. **What is open is how it
@@ -373,10 +387,10 @@ Still to do: starfield, real-hardware test, release build, publish.
 | 6c — state machine | [`docs/layer-6c-state-machine.md`](docs/layer-6c-state-machine.md) | done 2026-09-03 |
 | 6d — HUD | [`docs/layer-6d-hud.md`](docs/layer-6d-hud.md) | done 2026-09-03 |
 | 6e — title screen | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04 |
-| 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
+| 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, the whole 349 s tune in four regions |
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
-| 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **open 2026-09-04**, behind `GFX_CPC`. Works; the choice of art is KC's |
+| 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **open 2026-09-04**, behind `GFX_CPC`. Works, and now assembles without `-Akl` too; the choice of art is KC's |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |
 | 9 — polish and release | | |

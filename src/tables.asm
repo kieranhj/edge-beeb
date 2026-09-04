@@ -17,6 +17,8 @@
 .bank1_filename EQUS "Bank1",13
 .bank2_filename EQUS "Bank2",13
 .bank3_filename EQUS "Bank3",13
+.panel_filename EQUS "Panel",13
+.andy_filename EQUS "Andy",13
 .music_filename EQUS "Music",13
 
 \ The C64's player explosion direction vectors, verbatim. Movement

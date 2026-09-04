@@ -33,6 +33,7 @@ import zx0
 # Both must match src/main.asm.
 LOAD_STREAM = 0x2200            # the loading screen's halves, in main RAM
 DEPK_STREAM = 0x3000            # the banks and the music, in the SHADOW screen
+ANDY_STREAM = 0x6800            # ANDY, above them: it is unpacked after MUSIC
 
 # Where each compressed file's stream is loaded, and where it unpacks to.
 # The unpack destination is only needed for the check below.
@@ -43,19 +44,24 @@ COMPRESSED = {
     "BANK1":   (DEPK_STREAM, 0x8000),
     "BANK2":   (DEPK_STREAM, 0x8000),
     "BANK3":   (DEPK_STREAM, 0x8000),
+    "PANEL":   (LOAD_STREAM, 0x3000),
+    "ANDY":    (ANDY_STREAM, 0x8000),
     "MUSIC":   (DEPK_STREAM, 0xC000),
 }
 
 # The ceiling each stream may not reach. The loading screen's two stage below
 # their own output, so the ceiling is the screen; the banks stage in the
 # shadow screen, whose top is &8000.
-STREAM_TOP = {LOAD_STREAM: 0x3000, DEPK_STREAM: 0x8000}
+STREAM_TOP = {LOAD_STREAM: 0x3000, DEPK_STREAM: ANDY_STREAM,
+              ANDY_STREAM: 0x8000}
 
 # Boot access order: !BOOT and the code, then the loading screen, then the
-# four banks, then the music - which is last because it lands in HAZEL, the
-# filing system's own workspace, and nothing may touch the disc after it.
+# four banks, then the panel image - whose stream stays at LOAD_STREAM until
+# setup_display unpacks it into each bank - then the music, which is last
+# because it lands in HAZEL, the filing system's own workspace, and nothing may
+# touch the disc after it.
 LAYOUT = ["!BOOT", "Edge", "LOADSC1", "LOADSC2",
-          "BANK0", "BANK1", "BANK2", "BANK3", "MUSIC"]
+          "BANK0", "BANK1", "BANK2", "BANK3", "PANEL", "ANDY", "MUSIC"]
 
 SECTOR = 256
 
@@ -160,13 +166,17 @@ def main():
 
     img = raw_path.read_bytes()
     files = read_catalogue(img)
-    missing = [n for n in LAYOUT if n not in files]
+    # ANDY only exists in a VGI build: MUSIC_AKL keeps the whole tune in
+    # HAZEL and has nothing to put there.
+    missing = [n for n in LAYOUT if n not in files and n != "ANDY"]
     if missing:
         raise SystemExit(f"{raw_path} lacks {missing} - the loader and the "
                          "disc would disagree")
 
     report = []
     for name, (stream, dest) in COMPRESSED.items():
+        if name not in files:
+            continue
         raw = files[name]["data"]
         packed = compress(zx0_exe, raw, name)
         top = STREAM_TOP[stream]

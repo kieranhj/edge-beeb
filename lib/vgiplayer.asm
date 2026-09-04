@@ -28,6 +28,30 @@
 ;   -D VGI_UNROLL=0  compact looped decoder  (default, smallest code)
 ;   -D VGI_UNROLL=1  per-stream unrolled decoder (a little faster, +code)
 ; Both are byte-exact and both honour the buffer page passed to vgm_init.
+;
+; VGI_SPLIT - THE STREAMS NEED NOT BE IN ONE PLACE (Edge Grinder, decision 48)
+; ---------------------------------------------------------------------------
+;   -D VGI_SPLIT=0   one contiguous .vgi at vgm_source, mounted from its own
+;                    header. The original, and byte-identical to it.
+;   -D VGI_SPLIT=1   the eleven streams live wherever the caller put them,
+;                    each with its own absolute address and its own ROMSEL
+;                    byte, in three tables the caller supplies:
+;
+;                       vgi_map_lo/hi   11 x the stream's start address
+;                       vgi_map_rom     11 x the byte to write to &FE30
+;                                       before reading that stream
+;                       VGI_FRAMES      the frame count from the .vgi header
+;
+;                    plus VGI_STATE, the base of a 96-byte block of RAM the
+;                    player keeps its per-stream state in. vgm_init's X/Y and
+;                    the .vgi header are then unused; nothing else changes.
+;
+;                    This exists because a .vgi is eleven INDEPENDENT streams
+;                    with one byte read from each per frame, so the format
+;                    never needed the data to be contiguous - only the player
+;                    did. A machine whose free RAM is 17K here, 4K there and
+;                    1.75K twice over can then hold a tune that fits none of
+;                    them. The cost is 8 cycles per raw byte fetched.
 ;******************************************************************
 
 .vgm_start
@@ -59,9 +83,11 @@ VGI_NUM_STREAMS = 11        ; one per SN76489 register column
     ror a  ; move carry into A bit7
     sta vgm_loop
 
+IF VGI_SPLIT=0
     ; stash the data source addr for looping
     stx vgm_source+0
     sty vgm_source+1
+ENDIF
     ; Prepare the data for streaming (passed in X/Y)
     jmp vgm_stream_mount
 }
@@ -156,18 +182,42 @@ VGI_NUM_STREAMS = 11        ; one per SN76489 register column
 ; Not user callable.
 ;-------------------------------------------
 
-; Initialise the player for the in-memory VGI data stream at vgm_source.
-; .vgi header layout (little-endian):
+; Initialise the player for the VGI data. (Reused for looping.)
+;
+; VGI_SPLIT=0: the .vgi is one blob at vgm_source and its header says where
+; each stream starts, relative to the file:
 ;   +0  'V','G','I',ver
 ;   +4  nframes (16-bit)
 ;   +6  11 x stream offset (16-bit, relative to file start)
-; Each stream offset is biased by vgm_source to give an absolute read pointer,
-; and each stream's decode state is zeroed. (Reused for looping.)
+; Each offset is biased by vgm_source to give an absolute read pointer.
+;
+; VGI_SPLIT=1: there is no file and no header. The caller's vgi_map_* tables
+; already hold each stream's absolute address and the ROMSEL byte that makes
+; it readable, and VGI_FRAMES is the frame count. Either way every stream's
+; decode state is zeroed.
 .vgm_stream_mount
 {
     lda #0
     sta vgm_finished
     sta vgi_ring+0          ; ring window LO byte is always 0 (page aligned)
+
+IF VGI_SPLIT
+
+    lda #LO(VGI_FRAMES)
+    sta vgm_framelo
+    lda #HI(VGI_FRAMES)
+    sta vgm_framehi
+
+    ldx #0
+.mount_loop
+    lda vgi_map_lo,x
+    sta st_srcL,x
+    lda vgi_map_hi,x
+    sta st_srcH,x
+    lda vgi_map_rom,x
+    sta st_rom,x
+
+ELSE
 
     ; point the zero-page vgi_src at the .vgi header for indirect reads
     ; (fetchbyte reloads vgi_src per byte, so reusing it here is safe)
@@ -202,6 +252,8 @@ VGI_NUM_STREAMS = 11        ; one per SN76489 register column
     adc vgm_source+1
     sta st_srcH,x
 
+ENDIF
+
     ; clear decode state for this stream
     lda #0
     sta st_rem,x
@@ -215,6 +267,7 @@ VGI_NUM_STREAMS = 11        ; one per SN76489 register column
     rts
 }
 
+
 ; Fetch one raw byte from stream X's compressed data, advancing its pointer.
 ; X = stream index (preserved), returns A = byte. Clobbers Y.
 .fetchbyte
@@ -223,6 +276,15 @@ VGI_NUM_STREAMS = 11        ; one per SN76489 register column
     sta vgi_src+0
     lda st_srcH,x
     sta vgi_src+1
+IF VGI_SPLIT
+    ; This stream's region into the sideways window. Eight cycles, and only
+    ; on the path that touches the compressed data at all - a new token plus
+    ; its literal bytes, which is a handful of reads a frame across all
+    ; eleven streams, not eleven. The caller owns &FE30 for the duration of
+    ; vgm_update and puts it back afterwards.
+    lda st_rom,x
+    sta &fe30
+ENDIF
     ldy #0
     lda (vgi_src),y
     inc st_srcL,x
@@ -462,6 +524,31 @@ ENDIF ; VGI_UNROLL
 ;-------------------------------------------
 ; local vgm workspace
 ;-------------------------------------------
+IF VGI_SPLIT
+
+; Not in the code image at all: a VGI_SPLIT build hands the player a block of
+; RAM to keep its state in, because the code has to live somewhere paged and
+; the state does not. 96 bytes, none of it needing initialisation - vgm_init
+; sets the first three and vgm_stream_mount the rest.
+vgm_buffers  = VGI_STATE + 0    ; HI byte of the 11x256 ring workspace
+vgm_finished = VGI_STATE + 1    ; non-zero once the tune has ended (no looping)
+vgm_loop     = VGI_STATE + 2    ; non-zero if the tune is to be looped
+vgm_framelo  = VGI_STATE + 3    ; 16-bit count of frames left to play
+vgm_framehi  = VGI_STATE + 4
+vgi_tmp      = VGI_STATE + 5    ; scratch (match offset)
+
+; per-stream decode state (11 streams)
+st_srcL = VGI_STATE + 8                     ; stream read ptr LO
+st_srcH = st_srcL + VGI_NUM_STREAMS         ; stream read ptr HI
+st_rem  = st_srcH + VGI_NUM_STREAMS         ; bytes left in run (0 => new token)
+st_flag = st_rem  + VGI_NUM_STREAMS         ; bit7 set => match/run, else literal
+st_copy = st_flag + VGI_NUM_STREAMS         ; ring read index while copying
+st_head = st_copy + VGI_NUM_STREAMS         ; ring write index
+st_rom  = st_head + VGI_NUM_STREAMS         ; ROMSEL byte this stream is read with
+regbuf  = st_rom  + VGI_NUM_STREAMS         ; this frame's 11 register values
+VGI_STATE_SIZE = regbuf + VGI_NUM_STREAMS - VGI_STATE
+
+ELSE
 
 .vgm_buffers  equb 0    ; HI byte of the 11x256 ring workspace
 .vgm_finished equb 0    ; non-zero once the tune has ended (no looping)
@@ -482,5 +569,7 @@ ENDIF ; VGI_UNROLL
 IF VGI_UNROLL=0
 .regbuf   skip VGI_NUM_STREAMS   ; this frame's 11 decoded register values (looped)
 ENDIF
+
+ENDIF ; VGI_SPLIT
 
 .vgm_end
