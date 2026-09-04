@@ -72,6 +72,17 @@ C64_TO_MODE2 = {
 HUD_CHARS = [0x00] + list(range(0x21, 0x2b)) + [0x8f, 0x90]
 HUD_COLOUR = 0x0b       # every cell status_decode writes into carries this
 
+# ...but the HUD's glyphs get a brighter body than the ornament does (KC:
+# "a bit dark and hard to read"). A digit is bit pair 3 for the body, with one
+# pair-2 highlight pixel and one pair-1 shadow pixel, so on the C64 it is dark
+# grey lit by white and shaded by blue. Our mapping collapses dark grey AND
+# blue to the same blue, which leaves a four-pixel-wide digit almost entirely
+# blue on black - legible on a 16-colour screen, not on this one. So for these
+# thirteen glyphs only, the colour-RAM body is white: the shadow pixel stays
+# blue, so the shape the artist drew survives, and the digit reads at a glance.
+# The panel's own artwork is untouched.
+HUD_PAIR_3 = 7          # white, where the ornament's $0b would give blue
+
 
 def mode2_pixel(colour, left):
     """MODE 2 encodes a pixel's four bits at 7,5,3,1 (left) or 6,4,2,0 (right)."""
@@ -108,13 +119,14 @@ def block_after(source, marker, count):
     return got[:count]
 
 
-def render(chars, code, colour_ram):
-    """One character as 16 MODE 2 bytes: column 0's scanlines then column 1's."""
+def render(chars, code, colour_ram, body=None):
+    """One character as 16 MODE 2 bytes: column 0's scanlines then column 1's.
+    `body` overrides the colour bit pair 3 takes, for the HUD glyphs."""
     pair_colour = [
         C64_TO_MODE2[D021],
         C64_TO_MODE2[D022],
         C64_TO_MODE2[D023],
-        C64_TO_MODE2[colour_ram & 0x0f],
+        C64_TO_MODE2[colour_ram & 0x0f] if body is None else body,
     ]
     cols = [bytearray(8), bytearray(8)]
     for y in range(8):
@@ -143,7 +155,7 @@ def main():
 
     hud = bytearray()
     for code in HUD_CHARS:
-        hud += render(chars, code, HUD_COLOUR)
+        hud += render(chars, code, HUD_COLOUR, body=HUD_PAIR_3)
 
     with open(OUT, 'wb') as f:
         f.write(out)

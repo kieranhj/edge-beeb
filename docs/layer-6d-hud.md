@@ -49,8 +49,15 @@ between dark grey and blue, which is most of the ornament.
 
 **The moving cells are eighteen glyphs.** `src/data/hud.bin` holds thirteen 16-byte glyphs, all at
 colour `$0b` because that is what every cell `status_decode` writes into carries: blank, '0' to '9',
-and the two halves of the lives icon. `status_decode` builds `hud_want`, eighteen glyph indices, from
-`score`, `hi_score` and `lives`, then paints.
+and the two halves of the lives icon. `status_decode` builds `hud_want`, eighteen glyph indices,
+from `score`, `hi_score` and `lives`, then paints.
+
+**Their body is white, not the blue `$0b` gives the ornament.** A digit is bit pair 3 for the body
+with a single pair-2 highlight pixel and a single pair-1 shadow pixel — on the C64, dark grey lit by
+white and shaded by blue. The mapping above collapses dark grey and blue onto the same blue, so a
+digit four pixels wide came out almost entirely blue on black: fine in sixteen colours, not here.
+`HUD_PAIR_3` overrides pair 3 to white for these thirteen glyphs only; the shadow pixel stays blue,
+so the shape the artist drew survives, and the panel's own artwork is untouched.
 
 **It paints only what changed, per bank.** The C64 writes all eighteen characters every field
 because a character there is one byte. Ours is sixteen, in two banks, so `hud_have` tracks what each
@@ -113,7 +120,7 @@ number.
 - The panel appears in both banks and under both the titles and the game.
 - Score poked to 987654 and high score to 678901 renders all ten digits correctly at the right
   cells; the panel read back out of screen RAM and rendered to PNG matches the exporter's own render
-  of the same data.
+  of the same data. Re-checked after the glyphs were brightened, reading 138694 off a running game.
 - Lives 3, 2, 1 and 0 give three, two, one and no icons, from `lives` alone, through real deaths.
 - The high score reads 012345 from boot and survives `game_init`.
 
