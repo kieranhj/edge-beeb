@@ -286,3 +286,13 @@ ESCAPE, the game-over count, and back to the titles with the message restarted.
   would not show. Worth a proper look before release.
 - **The raster's own colours**, if KC wants the flat spots in section 5 nudged apart.
 - **b-em**, which has not seen any of this. Decision 17 is why that still matters.
+
+## The switch between the two shapes is not clean — 2026-09-04
+
+`BUGS.md` #14. Changing between the game's two-cycle rupture and this four-cycle one costs **one
+malformed field** — 272 lines against 312, measured in jsbeeb by stepping fields one at a time —
+because R7 and the display wrap are written from main-loop code while `rupt_vsync` schedules the
+T1 fire sequence from `ttl_active`, and the three cannot be made to agree from out there. Two
+placements were tried and both were worse; the fix is to move the switch into the VSync handler,
+which is the one place that owns all three at the same instant. The full measurement, both failed
+attempts and the numbers are in the bug.

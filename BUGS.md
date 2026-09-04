@@ -5,6 +5,7 @@ ruled out. Index first, detail below.
 
 | # | Status | Summary |
 |---|---|---|
+| 14 | open | The titles-to-game switch costs **one malformed field** — 272 lines against 312, measured — and the game-to-titles one is unmeasured. It is a sync event, not content: both transitions are blanked with R8. The switch has to happen AT VSync, not near it, because the VSync handler schedules the T1 fire sequence from `ttl_active` and the registers and the schedule must change together. Two placements tried and both worse |
 | 13 | fixed (Layer 9c) | The player's six explosion pieces sat where he died instead of flying apart: `explosion_dirs` had drifted above `&2000` into the blitter's sprite save area, so the player's own saved background was being written over the movement vectors his pieces fly on. Main RAM's real ceiling is `SPR_SAVE`, not `LOAD_STREAM`, and nothing was checking it |
 | 1 | gone (Layer 3) | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`). The routine it was about no longer exists |
 | 2 | fixed (Layer 3) | No sprite clipping: `x_pos >= 80` indexed past `mult8_*`. The engine now clips the frame's box to 80 columns x 160 scanlines at all four edges (decision 2) |
@@ -17,6 +18,74 @@ ruled out. Index first, detail below.
 | 6 | fixed (Layer 5) | The game opened on an empty playfield and the waves did not line up with the level: the C64's start-of-game fast winder was missing |
 | 5 | fixed (Layer 4) | `coll_advance` counted in X and broke the scroll outright: the scroll's tail keeps `char_col + 1` there |
 | 4 | fixed (Layer 2) | The map looped after 256 tiles; `map_read` now wraps at the 302-column end (decision 14) |
+
+## 14. One malformed field at every titles switch — measured, diagnosed, NOT fixed
+
+**Open 2026-09-04.** KC: "see if you can time the vertical rupture setup to avoid flicker", after
+Paradroid's [`raster-timing.md`](../../Projects/Paradroid/docs/raster-timing.md), which found the
+same class of thing and fixed it by landing the CRTC writes at the top of a fresh frame.
+
+### What was measured
+
+Field lengths stepped one at a time in jsbeeb (`run_frames(1)`, `cycles_run`); a clean field is
+**39,936** cycles = 312 lines.
+
+| | |
+|---|---|
+| titles, steady | 39,936 · 39,937 |
+| **titles -> game** (SPACE) | 39,936 · 39,937 · **34,817** · 39,935 · 39,936 |
+| game -> titles | not isolated: the breakpoint used was mid-instruction |
+
+**34,817 cycles is 272 lines, 40 short — five character rows.** One field, every time a game
+starts, and once more on every return to the titles. On a TV that is the roll.
+
+### The diagnosis
+
+**R7 is the only shape register the rupture handlers do not write.** The game's `rupt_timer` sets
+R4, R6 and R12/13 at fires 1 and 2 every field and leaves R7 alone, so R7 — the VSync row — changes
+only in `title_page`, from main-loop code, wherever the raster happens to be. VSync is at absolute
+row 34 of 39 in both shapes, which is good design and is why the numbers are as close as they are.
+
+The other half is that **`rupt_vsync` schedules the whole T1 fire sequence from `ttl_active`** — six
+fires for the titles, two for the game, at different intervals. So a switch has three parts that
+must agree: R7, the display wrap, and which handler owns the fires. They are set from the main
+loop, one after another, and any VSync that lands between them leaves the CRTC being driven by one
+machine's schedule against the other's registers.
+
+### What was tried, and why both were worse
+
+There are five rows — 5,120 cycles — between VSync at row 34 and the top of the next frame, and
+that looked like the window: this field's VSync has already happened and cannot be re-triggered.
+`field_wait` returns just inside it.
+
+| | worst field |
+|---|---|
+| as committed | 34,817 (272 lines) |
+| `field_wait` between `ttl_active` and the registers | 25,599 **and** 14,337 — two bad fields |
+| `field_wait` before all three, `ttl_init` hoisted above it | 14,340 (112 lines) |
+
+Both regressed, and both were reverted; the committed code is byte for byte what it was and the
+34,817 field was re-measured after the revert to prove it. The second attempt is the informative
+one: putting every write inside the window still failed, because the VSync that *scheduled* the
+coming frame's fires had already happened under the old `ttl_active`.
+
+### Where it goes next
+
+**The switch belongs in `rupt_vsync`, not in `title_page`.** A pending-shape byte, set by
+`title_page` whenever it likes, and applied by the VSync handler in the one place that already owns
+both the registers and the T1 schedule — which is the only instant at which all three can change
+together. Paradroid reached the same conclusion from the other end: its `RuptAlign` works because
+its rupture has ONE shape and only needs the writes to land early, and ours has two and needs them
+to land atomically.
+
+Bank 0, where `title_page` is, has **9 bytes** left, so the pending byte and its test want to be in
+main RAM or in the handler's own bank.
+
+### Not this bug
+
+Paradroid's other finding — **R6 = 0 leaks row 0, so it is not a blank** — does not apply: this port
+blanks with R8's display-skew bits everywhere already (`CRTC 8, &30`), and R10 = `&20` goes with it
+because R8 does not hide the cursor. Both transitions are properly black; what is left is sync.
 
 ## 1. The `eor #1` that TODO.md wanted re-enabled — gone with the plotter
 

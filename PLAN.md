@@ -531,5 +531,6 @@ CPC's rather than the C64's.
 | 9d — the memorial | [`docs/layer-9d-memorial.md`](docs/layer-9d-memorial.md) | done 2026-09-04, decision 52 |
 | 9e — the credits crossfade | [`docs/layer-9e-credits.md`](docs/layer-9e-credits.md) | done 2026-09-04, decision 53 |
 | 9f — SPACE starts, and an editable scrolltext | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04, decision 54 |
+| 9g — the titles switch flicker | [`BUGS.md`](BUGS.md) #14 | **open 2026-09-04**: measured and diagnosed, not fixed. One malformed field, 272 lines against 312, every time the rupture shape changes. The switch has to be made inside `rupt_vsync`, which is the only place that owns the registers and the T1 schedule at once; two placements in `title_page` were tried and both were worse |
 | 9c — the rest of the outstanding features | | **open 2026-09-04**: the win tune, redefinable keys |
 | 9 — polish and release | | |
