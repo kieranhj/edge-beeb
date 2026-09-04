@@ -52,9 +52,15 @@ INCBIN "src/data/title.bin"
 title_lines_data = title_font + 32 * TITLE_GLYPH_BYTES
 
 \ The C64 puts its five lines on screen rows 12, 14, 15, 16 and 17 of 25.
-\ Ours is a 20-row play area under the panel, so they sit at 8, 10, 11, 12
-\ and 13: the original's gaps kept, the block centred in the shorter area.
-.title_rows EQUB 8, 10, 11, 12, 13
+\ Its status bar is five rows and so is ours, so its rows 5-24 are our play
+\ rows 0-19 and the page transcribes 1:1 - the lines land on play rows 7, 9,
+\ 10, 11 and 12. Layer 6c had them a row lower, re-centred, because there
+\ was nothing else on the page; with the zoom bands in, the original's own
+\ spacing is what fits.
+\
+\ These are rows of the CREDITS BLOCK, not of the play area: cycle C starts
+\ at TTL_CRED and play row 7 is its row 0.
+.title_rows EQUB 0, 2, 3, 4, 5
 
 \ 38 characters is 152 of the 160 pixels, so one byte column of margin.
 TITLE_COL0 = 2

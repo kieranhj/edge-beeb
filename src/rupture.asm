@@ -54,10 +54,20 @@
     sta frame_ready
     .no_flip
 
-    \\ For cycle A, which starts 5 rows from now
+    \\ For cycle A, which starts 5 rows from now. The titles want the
+    \\ same two: cycle A is the panel there too.
     CRTC 6, PANEL_ROWS
     CRTC 12, HI(PANEL_ADDR/8)
     CRTC 13, LO(PANEL_ADDR/8)
+
+    \ The titles page wants the display bank back on MAIN here, for cycles
+    \ A and B; fire 3 puts it on SHADOW for C and D (Layer 6e).
+    lda ttl_active
+    beq not_titles
+    lda &fe34
+    and #&fe                    ; D = 0: display MAIN
+    sta &fe34
+    .not_titles
 
     \\ Restart T1 (writing T1C-H loads the counter from the latch and
     \\ starts it), then re-latch the fire 1 -> fire 2 interval, which the
@@ -164,8 +174,29 @@ ENDIF
 .mute_was   EQUB 0              ; Q's state last field, for the press edge
 .music_pause EQUB 0             ; &FF while pause_check is holding the game
 
+\ Set while the titles page is up, so the IRQ takes the four-cycle
+\ rupture in bank 1 instead of the game's two-cycle one. In the code
+\ image with the others: title_page writes it, the handler reads it, and
+\ a new game must not find it set.
+.ttl_active EQUB 0
+
 .rupt_timer
 {
+    \ The titles run a four-cycle rupture with five fires, and it does
+    \ not fit in main RAM - 145 bytes free against about 200 of handler.
+    \ It is in bank 1 with the rest of the zoom scroller, and paged in
+    \ here; &F4 tracks whatever the foreground had, as it does for the
+    \ music.
+    lda ttl_active
+    beq game_rupture
+    lda #SWRAM_SPRITES0
+    sta &fe30
+    jsr ttl_rupt_timer
+    lda &f4
+    sta &fe30
+    rts
+
+    .game_rupture
     lda rupt_state
     bne not_fire1
 

@@ -513,63 +513,97 @@ INCLUDE "src/timing.asm"
 }
 
 \ ******************************************************************
-\ *	title_page - the C64's titles page, minus the zoom scroller
+\ *	title_page - the C64's titles page
 \ ******************************************************************
-\ *	A still picture, so it is drawn once into BOTH banks and then
-\ *	nothing is handed over: field_wait leaves frame_ready alone, the
-\ *	VSync handler never flips, and whichever bank is on screen stays
-\ *	on screen. Returns when fire is pressed, which is where the C64's
-\ *	ttl_loop goes to main_init.
+\ *	Four CRTC cycles: the panel, the top zoom band, the credits and
+\ *	the bottom zoom band, the last two displayed out of the SHADOW
+\ *	bank and the first two out of MAIN, with the display bit switched
+\ *	inside the frame. src/bank1.asm has the scroller and the rupture;
+\ *	all this does is set the page up, run a field at a time, and put
+\ *	the game's shape back on the way out.
 \ *
-\ *	Blanked while it draws, as the original blanks $d011 across the
-\ *	same transition: the second of the two draws is into the bank the
-\ *	display is showing.
+\ *	Nothing is handed over here - field_wait leaves frame_ready alone
+\ *	and the VSync handler never flips, because both banks are on
+\ *	screen inside the same frame and there is no hidden one to draw.
+\ *
+\ *	Returns when fire is pressed, which is where the C64's ttl_loop
+\ *	goes to main_init.
 \ *
 \ *	Up here in bank 0 because it is a run-once routine, like
-\ *	setup_display, and because what it draws lives in this bank.
+\ *	setup_display, and because the credits it draws live one call away.
 \ ******************************************************************
 
 .title_page
 {
-    CRTC 8, &30
+    CRTC 8, &30                 ; blanked while the shape changes under it
+    CRTC 10, &20                ; R8 does not hide the cursor; R10 does
 
-    \\ The scroll stopped wherever it stopped; a still picture wants a
-    \\ known origin. The IRQ programs crtc_live at fire 1 each frame.
-    lda #LO(screen_start/8) : sta crtc_live
-    lda #HI(screen_start/8) : sta crtc_live+1
+    lda &fe34
+    sta ttl_acccon
 
-    \\ EOR, not a store: D and X are opposite and must stay so. This
-    \\ draws the hidden bank, swaps to the displayed one, draws that,
-    \\ and puts the CPU back on the hidden one.
-    jsr title_face
-    jsr status_call             \ the panel is up here too, and the C64
-    lda &fe34 : eor #4 : sta &fe34
-    jsr title_face
-    jsr status_call             \ keeps decoding it through its titles
-    lda &fe34 : eor #4 : sta &fe34
+    \\ ---- the still parts ------------------------------------------
+    \\
+    \\ clear_play covers &4000-&7FFF, which is the credits block and both
+    \\ zoom rings; the panel is below it and stays. The credits go into
+    \\ SHADOW only, because that is the bank cycle C displays.
+    lda &fe34 : and #&ff - 4 : sta &fe34        ; CPU sees MAIN
+    jsr clear_play
+    jsr status_call
+    lda &fe34 : ora #4 : sta &fe34              ; CPU sees SHADOW
+    jsr clear_play
+    jsr status_call
+    ldx #LO(title_text)
+    ldy #HI(title_text)
+    jsr bank3_call
 
+    \\ ---- the display ----------------------------------------------
+    \\
+    \\ 8K wrap: latch line 4 high, line 5 low, so &6000-&7FFF is a ring
+    \\ of 1,024 byte columns in each bank - one per bank, and only one,
+    \\ which is why the two bands are split across them. Measured in
+    \\ jsbeeb 2026-09-04; the four sizes are 20K, 16K, 10K and 8K.
+    lda #12 : sta &fe40
+    lda #5  : sta &fe40
+    CRTC 7, TTL_R7
+
+    lda #SWRAM_SPRITES0
+    ldx #LO(ttl_init)
+    ldy #HI(ttl_init)
+    jsr bank_call
+
+    lda #&ff
+    sta ttl_active
+    jsr field_wait              ; two fields for the new shape to settle
+    jsr field_wait
     CRTC 8, 0
 
-    \\ Fire starts a game. No debounce: the C64 does not have one either,
-    \\ and sprite_reset clears fire_latch, so a held key just shoots.
+    \\ Fire starts a game, as it does on the C64. No debounce: the
+    \\ original has none either, and sprite_reset clears fire_latch.
     .wait
     jsr field_wait
+    lda #SWRAM_SPRITES0
+    ldx #LO(ttl_frame)
+    ldy #HI(ttl_frame)
+    jsr bank_call
     ldx #KEY_FIRE
     jsr keydown
     bpl wait
+
+    \\ ---- and back to the game's own shape --------------------------
+    CRTC 8, &30
+    lda #0
+    sta ttl_active
+    lda #4  : sta &fe40         ; 16K wrap again: the play buffers' own
+    lda #5  : sta &fe40
+    CRTC 7, PLAY_R7
+    CRTC 4, PLAY_R4
+    CRTC 6, PLAY_ROWS
+    lda ttl_acccon
+    sta &fe34
     rts
 }
 
-\\ One bank's worth of title page: black, then the credits. The text is in
-\\ bank 3, so it goes through the trampoline in main RAM - this routine
-\\ cannot page bank 3 in without paging itself out.
-.title_face
-{
-    jsr clear_play
-    ldx #LO(title_text)
-    ldy #HI(title_text)
-    jmp bank3_call
-}
+.ttl_acccon EQUB 0              ; &FE34 as the titles found it
 
 .bank0_end
 

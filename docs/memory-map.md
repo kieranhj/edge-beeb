@@ -2,7 +2,7 @@
 
 Every figure here is **measured from the build**, not from the source by eye: beebasm's `PRINT`
 statements write the high-water marks into the assembly listing, and these tables are what the
-listings said at commit `2c6db1d` (2026-09-04, Layer 8a plus decision 42). They go stale the moment
+listings said after Layer 6e (2026-09-04, decisions 44-46). They go stale the moment
 anything grows, so **take live numbers from the listing rather than trusting this page**:
 
 ```powershell
@@ -30,14 +30,16 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 | `&0800-&091B` | 284 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **740** to `GAME_STATE_TOP` = `&0C00` |
 | `&0C00-&0CFF` | 256 | MOS user-font page. **Free** (KC, 2026-09-04) | 256 |
 | `&0D00-&0DFF` | 256 | paged-ROM extended vectors. Not claimed, not tested | 256, unverified — see below |
-| `&0E00-&216F` | 5,488 | code, then the initialised tables, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **145**. A RELEASE build ends at `&211B`: **229** |
+| `&0E00-&2191` | 5,522 | code, then the initialised tables, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **111**. A RELEASE build ends at `&213D`: **195** |
 | `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly | 0 by construction |
 | `&3000-&3C7F` × 2 | 3,200 each | the status panel, in BOTH shadow banks | 0 |
 | `&3C80-&3FFF` × 2 | 896 each | **nobody's**: above the panel, below the play buffer, fetched by neither rupture cycle | 896 main + 896 shadow, unclaimed — see below |
 | `&4000-&7FFF` × 2 | 16,384 each | the play buffers, main and shadow, hardware-wrapped at 16K | 0 |
 | `&E000-&FFFF` | 8,192 | MOS ROM. `&FFFE` on this Master reads `&E59E` — measured — so paging HAZEL in cannot break IRQ dispatch | — |
 
-**The code's 145 bytes are the tightest thing in the build.** The depacker already sits above
+**Bank 0's 18 bytes are now the tightest thing in the build**, and main RAM's 111 the next: Layer 6e's `title_page` has to be in bank 0, because bank 0 code may call into main RAM and be returned to and bank 1 code may not. A RELEASE build has 184 and 195, the frame meter being the difference.
+
+**The code's own ceiling.** The depacker already sits above
 `SPR_SAVE`'s base (`&1F05-&2147`) to buy some of them, which is safe only because it is dead before
 anything reads there.
 
@@ -51,12 +53,12 @@ that survives into the game.
 | Slot | Bank | Contents | High water | Free | `-Akl` | `-Akl -Cpc` |
 |---|---|---|---|---|---|---|
 | — | ANDY | the Master's own 4K, `&8000-&8FFF`, ROMSEL bit 7. **Unused by this port** — see below, the window overlays the low 4K of the selected bank | — | **4,096** | 4,096 | 4,096 |
-| 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BF4E` | **178** | 178 | 178 |
-| 5 | `BANK1` | sprite data, pixel shift 0 | `&B253` | **3,501** | 3,501 | 3,495 |
+| 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFEE` | **18** | 18 | 18 |
+| 5 | `BANK1` | sprite data, pixel shift 0, then the titles' zoom scroller (Layer 6e) | `&B80A` | **2,038** | 2,038 | 2,032 |
 | 6 | `BANK2` | the same, shift 1 | `&B88B` | **1,909** | 1,909 | 1,727 |
 | 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the panel image, the HUD glyphs and `status_decode`; then `music_lo` | `&9C3D`, then `music_lo` fills `&9D00-&BFFF` | **195**, all below `music_lo`, and **0** above it | **9,156** | **8,948** |
 
-A RELEASE build takes bank 0 to `&BEB1`: **335** free, the frame meter (`src/timing.asm`) being the
+A RELEASE build takes bank 0 to `&BF48`: **184** free, the frame meter (`src/timing.asm`) being the
 difference.
 
 **Bank 3 is where the music decision is really argued.** With the VGI player `music_lo` takes
@@ -116,8 +118,8 @@ the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared.
 ## Where the room actually is
 
 ANDY's 4K is the largest single piece, with the paging caveat above; then 9,156 bytes in bank 3, but
-only if the Arkos build wins the comparison; 3,501 in bank 1 and 1,909 in bank 2; 740 in the `&0800`
-block; 256 at `&0C00`; 145 in main RAM code and 178 in bank 0. Everything else is inside 250 bytes
+only if the Arkos build wins the comparison; 2,038 in bank 1 and 1,909 in bank 2; 740 in the `&0800`
+block; 256 at `&0C00`; 111 in main RAM code and **18 in bank 0**. Everything else is inside 250 bytes
 of its ceiling, and `&0D00` and the 1,792 bytes at `&3C80` are worth another 2K if they survive a
 sentinel.
 
@@ -132,3 +134,5 @@ The disc is not short of anything by comparison: the packed image is 37,632 byte
   truncated tune, costed
 - [`docs/layer-9-loader.md`](layer-9-loader.md) — the boot-time shape of the map, and the ZX0 rule
   that a stream may not be overtaken by its own output
+- [`docs/layer-6e-titles.md`](layer-6e-titles.md) — the titles page's own shape: the 8K display wrap,
+  a ring in each bank, and why bank 0 got so tight

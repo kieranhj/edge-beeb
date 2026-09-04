@@ -7,8 +7,9 @@ one-pixel-per-frame horizontal scroller at 25 Hz in MODE 2, a five-row status pa
 rupture, eight software sprites clipped and redrawn every frame in both shadow banks, a player ship
 you can fly, shoot with and be killed in, the original's 201 attack waves, three lives with the
 six-piece explosion and the drop-in shield, game over, the completion sequence, score and high
-score on the panel, and the CPC port's tune on the SN76489 out of HAZEL. What is left is the
-scroller on the titles page (6e), hand-drawn BBC artwork (Layer 8), and the rest of the polish.
+score on the panel, the CPC port's tune on the SN76489 out of HAZEL, and a titles page with the
+original's zoom scroller running across it twice over. What is left is hand-drawn BBC artwork
+(Layer 8) and the rest of the polish.
 
 Try the current build in a browser:
 
@@ -20,9 +21,8 @@ Boot takes about eleven seconds with the loading screen up, while four sideways 
 come off the disc and the scroll is wound forward a screen.
 
 The published build is a development one: the frame meter is running, though it writes to memory
-and shows nothing, so it looks like a release build. **Two things are known to be unfinished** —
-the titles page is static where the original has a zoom scroller, and the tune is truncated to 203
-of its 349 seconds because it does not fit.
+and shows nothing, so it looks like a release build. **One thing is known to be unfinished** — the
+tune is truncated to 203 of its 349 seconds, because it does not fit.
 
 ## What works
 
@@ -32,9 +32,9 @@ a 160-byte column buffer — rotated left a pixel, the next map column ORed in �
 edge of the hidden bank. The character set is stored as four MODE 2 column planes so that OR is a
 single indexed load. 11,153 cycles a frame.
 
-**The display.** A two-cycle CRTC rupture: five rows of status panel at a fixed address, then
-thirty-four rows holding the twenty-row play area at the scrolling address, with VSync where MODE 2
-puts it. IRQ1V is ours outright — no MOS tick, no OS sound, the keyboard read straight off the
+**The display.** In play, a two-cycle CRTC rupture: five rows of status panel at a fixed address,
+then thirty-four rows holding the twenty-row play area at the scrolling address, with VSync where
+MODE 2 puts it. IRQ1V is ours outright — no MOS tick, no OS sound, the keyboard read straight off the
 System VIA — and the VSync handler owns the bank flip, taking a parked scroll address only when two
 fields have passed. A slow frame costs whole fields and never tears.
 
@@ -55,9 +55,19 @@ screen it displays, which a bitmap port cannot do — and puts them through the 
 
 **The game around it.** Three lives, the six-piece player explosion thrown on the original's own
 direction vectors, the drop-in shield, game over, and the completion sequence the end of the wave
-table triggers. A titles page carrying the original's credits in its own charset, pause on P and
-abort on ESCAPE. The status panel is the C64's, rendered whole at boot from its multicolour charset
+table triggers. Pause on P and abort on ESCAPE. The status panel is the C64's, rendered whole at boot from its multicolour charset
 and colour map, with the score, the high score and the lives bars decoded onto it as they change.
+
+**The titles.** The original's credits in its own charset, and its zoom scroller — a six-row-high
+message in fat cells, and the same thing again above it rotated a hundred and eighty degrees. Four
+CRTC cycles rather than two, with **both bands hardware-scrolled**: the display wrap goes to 8K, so
+`&6000-&7FFF` is a ring in each shadow bank, one band lives in each, and the display bank is
+switched inside the frame to show both. That leaves nothing to shift in software — a band whose
+start address moves shears one column per row per step, which is exactly what the play area's column
+copy has been paying since Layer 2, so the whole per-frame cost is the original's own new-column
+write. The C64's colour pulse on the first and last credit lines is a horizontal colour-RAM cycle
+that MODE 2 cannot do, so it is the CPC port's answer instead: a raster down the eight scanlines of
+each line, through the CPC's own colour list, the two indexed from opposite ends.
 
 **The music.** The Amstrad CPC port's Arkos tune, converted SKS → YM → VGM → VGI and played by the
 VGI player at 50 Hz from the VSync handler. The player, its workspace and half the tune live in

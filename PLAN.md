@@ -17,7 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5, 6a-6d, 7 and 9a-9b are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
+**Layers 0 to 5, 6a-6e, 7 and 9a-9b are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
 over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K/M/L with the C64's
@@ -29,8 +29,7 @@ credits, pause on P, abort on ESCAPE, and the completion sequence the wave table
 and **the HUD** - the original's own status bar, rendered whole from its charset and its colour
 map, with the score, the high score and the lives bars decoded onto it every frame; and **the
 music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL, muted and unmuted on Q; and **a loading screen**, a whole MODE 2 picture up while the banks load behind it, with every data file on the disc ZX0-compressed. The
-titles are static until 6e gives them the zoom scroller, the completion's "mega hero" message waits
-for a font to draw it with, and **the tune is truncated to 203 of its 349 seconds because it does
+completion's "mega hero" message waits for a font to draw it with, and **the tune is truncated to 203 of its 349 seconds because it does
 not fit** - `docs/layer-7-music.md` costs the ways out and wants a decision.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
@@ -186,7 +185,7 @@ a field WITHOUT handing a frame over, so a paused picture is genuinely still.
 **The titles are the original's credits page**, in the original's font: `status.chr` is a multicolour
 set, so a character is four double-width pixels, which is one of our 4-fat-pixel cells exactly — the
 C64's 38-column layout lands at 1:1 with no rescaling. `tools/export_title.py`; the data and its
-plotter are in bank 3, reached through a trampoline in main RAM. The zoom scroller is still 6e.
+plotter are in bank 3, reached through a trampoline in main RAM. The zoom scroller is 6e.
 
 **Completion** is the fly-off, the 5,000-a-life bonus and the explosion finale, all of it but the
 "mega hero" message, which needs a font drawn for the job (Layer 8). Two decisions. **32**: P pauses,
@@ -209,10 +208,50 @@ Everything is in bank 3, because main RAM had 36 bytes free and bank 0 had 151. 
 `title_text_call` became **`bank3_call`**, taking the target in X and Y - the only main-RAM cost of
 the layer.
 
-#### 6e — the title screen
+#### 6e — the title screen — done
 
-The zoom scroller. Shares almost nothing with the rest, and is the first thing that will want the
-`&FC` now free below `&2000`.
+[`docs/layer-6e-titles.md`](docs/layer-6e-titles.md). The titles move: a six-row zoom scroller across
+the bottom, the same message rotated 180 degrees across the top, and the C64's colour pulse on the
+first and last credit lines. Four CRTC cycles — panel, top band, credits, bottom band — the CPC's own
+shape, with the display bank switched inside the frame. Decisions 44, 45 and 46.
+
+**The bands are hardware-scrolled**, R12/R13 moving in opposite directions. The CPC gets that free
+because its address counter is masked to ten bits and every scanline wraps in its own 2K block; ours
+does not, so a BBC band is one linear stream sheared across six rows. **We already pay that shear
+every frame in the play area** — `col_copy` writes the incoming column into all twenty rows, and an
+address written for row `r` is written again for row `r-1` exactly 80 steps later, which is when the
+display migrates it — so a zoom band is `scroll_advance` at six rows and costs about 1,700 cycles a
+band, against ~31,000 for the software shift that was the alternative. The ring is the **8K display
+wrap**, `&6000-&7FFF`, one per bank and only one, which is why the two bands live one in MAIN and one
+in SHADOW. Cycles B and C are seven rows with six shown, and B's blank seventh — the C64's own blank
+row above the credits — is where the bank switch goes.
+
+**Six T1 fires**, and the sixth is not optional: R4 has to be written inside its own cycle, and with
+R4 still 6 from cycle C, cycle D never reaches R7 and VSync never happens. Built that way first, it
+hung in `field_wait`.
+
+**The colour pulse is the CPC's `TitleRaster`, with the CPC's own colours.** The C64's is a
+*horizontal* colour-RAM cycle and MODE 2 has no colour RAM; `RasterPal` decodes to a sixteen-step
+heat pulse, collapsed to MODE 2's eight by hue as decision 41 collapses the artwork. Eight scanlines
+a line, the two lines indexing the list from opposite ends. The collapse doubles three of the nine
+steps, which is the one thing left for KC's eye.
+
+**The titles run at 50 Hz, one cell a field, and are not double buffered** — both banks are on screen
+inside the same frame — which is the C64's own rate and granularity with decision 23 having nothing
+to do. The layout transcribes 1:1: the C64's rows 5-24 are our play rows 0-19, which moves 6c's
+credits up a row, and that is forced rather than chosen — 6 + 1 + 6 + 1 + 6 is exactly 20.
+
+**Verified against a model, not a screenshot**: the whole 8K ring read out of jsbeeb, every cell
+exactly the block or the blank (512 of 512, both bands), and the six cells that make a column decoded
+back to six bits — **40 of 40 columns on each band, no mismatches, at the same message column**,
+which is the proof the two are in step and not merely each self-consistent.
+
+The zoom font was hiding in `status.chr`: `$4d00` is character `$a0`, and `$a0`-`$bf` are a 32-glyph
+hires alphabet with rows 0 and 7 blank, which is why the band is six rows high.
+
+**Bank 0 is now the tightest thing in the build** — 18 bytes in a DEV build, 184 in a RELEASE one —
+because `title_page` has to be there: bank 0 code may call into main RAM and be returned to. The rest
+of the layer is in bank 1, whose sprite data nothing on the titles reads.
 
 ### Layer 7 — music — done, with the tune truncated
 
@@ -333,7 +372,7 @@ Still to do: starfield, real-hardware test, release build, publish.
 | 6b — life cycle | [`docs/layer-6b-life-cycle.md`](docs/layer-6b-life-cycle.md) | done 2026-09-03 |
 | 6c — state machine | [`docs/layer-6c-state-machine.md`](docs/layer-6c-state-machine.md) | done 2026-09-03 |
 | 6d — HUD | [`docs/layer-6d-hud.md`](docs/layer-6d-hud.md) | done 2026-09-03 |
-| 6e — title screen | | |
+| 6e — title screen | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04 |
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |

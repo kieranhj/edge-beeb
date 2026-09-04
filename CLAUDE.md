@@ -52,7 +52,7 @@ month and this is a Master.
 | Play area | 20 rows × 160 px, in **two** 16K buffers at `&4000-&7FFF` (main and shadow), both hardware-wrapped at 16K, under the 5-row status panel |
 | Scroll | 1 px per 25 Hz frame. A CRTC unit is 2 px; the odd pixel is the other bank, whose picture is half a byte out of phase |
 | Game loop | 25 Hz: the VSync IRQ flips the banks every `FRAME_LOCK` = 2 fields once the loop has parked a frame; a slow frame costs whole fields, never a tear |
-| Display split | Two CRTC cycles: 5-row panel at `&3000` **in both shadow banks** (every panel write goes to both), then 34 rows with the 20-row play area and VSync at absolute row 34. `src/rupture.asm` |
+| Display split | In play, two CRTC cycles: 5-row panel at `&3000` **in both shadow banks** (every panel write goes to both), then 34 rows with the 20-row play area and VSync at absolute row 34. **On the titles, four** - panel, top zoom band, credits, bottom zoom band - with the bands hardware-scrolled round an 8K ring, one in each bank, and **the display bank switched inside the frame**. Six T1 fires instead of two, and the handler is in bank 1. `src/rupture.asm`, `src/bank1.asm`, decision 44 |
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
 | Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw, **a figure now known to be optimistic** (`BUGS.md` #9). `src/sprite.asm`, `docs/layer-3-sprites.md` |
 | Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
@@ -142,7 +142,8 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `zx0depack.asm` | the ZX0 depacker, lifted from Paradroid. Boot code, called only by the loader; the last thing in the image and the one part allowed above `SPR_SAVE`'s base |
 | `loading.asm` | the loading screen's two disc files, `LOADSC1` and `LOADSC2` |
 | `bank0.asm` | the SWRAM data bank, plus the run-once and out-of-room code: `setup_display`, `clear_play`, `panel_init`, `score_boot`, `status_call`, `title_page`, `pause_check`, `comp_mess`, `finale_tick`, the frame meter |
-| `bank1.asm`, `bank2.asm` | the two SWRAM sprite banks, one per pixel shift |
+| `bank1.asm` | the SWRAM sprite bank for pixel shift 0, and after it **the titles' zoom scroller** (Layer 6e): its font, its message, its four-cycle rupture and the code that drives them. There because nothing on the titles reads a sprite, and reached through `bank_call` in main RAM |
+| `bank2.asm` | the SWRAM sprite bank for pixel shift 1 |
 | `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3). Default: the tune's high half at `&C000`, `lib/vgiplayer.asm` at `&D200`, its 11-page ring workspace at `&D500`. Under `MUSIC_AKL`: `aklplayer.asm` + `ay2sn.asm` at `&C000` and the whole tune as tracker data at `&CC00`. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
 | `aklplayer.asm` | `MUSIC_AKL` only: a 6502 port of Arkos Tracker 2's "lightweight" (AKL) replay, producing the fourteen AY registers a frame. X is the channel throughout, Y the byte offset being read. Byte-exact against Arkos's own player over all 17,446 frames |
 | `ay2sn.asm` | `MUSIC_AKL` only: the runtime AY-3-8912 -> SN76489 conversion and `akl_silence`. SN period = 2 x AY period exactly (1 MHz AY, 4 MHz SN), octave-clamped to ten bits; a 32-entry volume LUT; the envelope **sampled**, not averaged |
@@ -163,6 +164,20 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
   after it. A SOFT break would leave the wreckage in place - measured: no DFS banner and `*CAT`
   returns nothing. `OSBYTE 200, 3` at the top of `main` makes BREAK a power-on reset (bit 1) and
   disables ESCAPE with it (bit 0). Do not remove it, and do not add a disc access after the load.
+- **The display wrap is the System VIA addressable latch, lines 4 and 5, and the four sizes are
+  20K, 16K, 10K and 8K** - measured in jsbeeb 2026-09-04, not recalled. They are NOT powers of two,
+  and the size is what is added back when the address passes `&8000`: line4/line5 = 0/0 wraps to
+  `&4000` (16K, what `setup_display` sets), **1/0 to `&6000` (8K)**, 0/1 to `&3000` (20K, the MOS's
+  own setting for MODE 2), 1/1 to `&5800` (10K). Written as `lda #4` / `lda #12` to `&FE40` for
+  line 4, `#5` / `#13` for line 5.
+- **The display bank can be switched INSIDE a frame**, and the change takes effect at the next
+  character fetch - measured 2026-09-04, jsbeeb: ACCCON bit 0 (D) flipped by a VSync-synced delay
+  loop puts main RAM above the switch and shadow below it, with a step part way along the scanline
+  the write landed in. So a mid-frame flip is legal, and it must be placed in horizontal blanking.
+  **jsbeeb only so far - b-em has NOT been checked**, and decision 17 is why that matters.
+- **The wrap applies inside whichever bank is displayed.** With D = 1 and the wrap at 8K, a display
+  crossing `&8000` lands on SHADOW `&6000`, not main. Measured 2026-09-04. Layer 6e's two zoom
+  bands stand on it: one ring per bank, one band in each.
 - The shadow display bit flips cleanly inside the VSync handler. **Nothing displayed may live
   below `&3000`**: jsbeeb and b-em disagree about what the video fetches there with D set (b-em:
   garbage on alternate frames). Decision 17.
@@ -199,8 +214,9 @@ that one says how much of it is gone, and where the room that is left actually i
 | `&3000-&7FFF` (shadow) | at boot only: `DEPK_STREAM`, where the bank and music streams stage. Nothing is displaying it - the picture is in main |
 | `&3000-&3C7F` × 2 | status panel, 5 rows × 640, in BOTH banks, displayed by rupture cycle A |
 | `&4000-&7FFF` × 2 | play buffers, main and shadow |
+| on the titles only | the display wrap goes to **8K**, so `&6000-&7FFF` is a ring in each bank: the top zoom band's is in MAIN, the bottom's in SHADOW, and the credits are 6 rows at `&4000` in SHADOW. `title_page` puts the 16K wrap back on the way out |
 | SWRAM slot 4 (`SWRAM_DATA`, resting state) | `BANK0`: `char_data &8000` (8K, four MODE 2 column planes), `tile_data` (211 × 16), `map_data` (302 × 5), `col_decode`, `wave_data` (201 × 9) and `anim_decode`. High water `&BC38` |
-| SWRAM slot 5 (`SWRAM_SPRITES0`) | `BANK1`: sprite data, pixel shift 0. High water `&B153` |
+| SWRAM slot 5 (`SWRAM_SPRITES0`) | `BANK1`: sprite data, pixel shift 0, then the titles' zoom scroller and its own rupture handler. High water `&B80A` |
 | SWRAM slot 6 (`SWRAM_SPRITES1`) | `BANK2`: the same, shift 1. High water `&B78B`. The two are identical in layout and **must stay adjacent**: the engine adds the shift to `SWRAM_SPRITES0` |
 | HAZEL `&C000-&DFFF` | `MUSIC`: the tune's high half at `&C000`, the VGI player at `&D200`, its 11 x 256 ring workspace at `&D500`. ACCCON bit 3 (Y). Loaded LAST - it is the filing system's workspace - and nothing may touch the disc after it. **The tune's low half is at `&9D00-&BFFF` in bank 3 and the two are one block**: the bank and HAZEL are visible at the same time, so a pointer walking off `&BFFF` lands in `&C000` |
 
@@ -217,7 +233,7 @@ screens and palettes, the background bank's indexing) and `tools/rip_cpc_sprites
 
 `src/data/` is generated by `tools/export_tiles.py`, `tools/export_sprites.py`,
 `tools/export_waves.py`, `tools/export_title.py`, `tools/export_panel.py`,
-`tools/export_loading.py`, `tools/export_music_akl.py` and
+`tools/export_loading.py`, `tools/export_zoom.py`, `tools/export_music_akl.py` and
 `tools/compile_sprites.py` from `assets/`, `data/`, `source_c64/data/`
 and the C64 source itself, and is committed. `tools/render_bbc.py` renders it back to PNG for checking -
 `render_bbc.py sprites 0|1` unpacks a whole sprite bank from its own box tables, which is the check

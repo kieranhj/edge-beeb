@@ -334,6 +334,65 @@ FRAME_LOCK = 2              ; fields per game frame: 25 Hz
 
 
 \ ******************************************************************
+\ *	The titles page (Layer 6e): four CRTC cycles, two hardware
+\ *	scrolled zoom bands, one in each shadow bank
+\ ******************************************************************
+\ *	The C64's 5-row status bar and 20 rows of titles are our panel and
+\ *	our play area, so its rows 5-24 are our play rows 0-19 and the page
+\ *	transcribes 1:1 with nothing re-centred:
+\ *
+\ *	  cycle A  abs  0-4    5 rows, all shown    panel, &3000, MAIN
+\ *	  cycle B  abs  5-11   7 rows, 6 shown      top band, ring in MAIN
+\ *	  cycle C  abs 12-18   7 rows, 6 shown      credits, &4000, SHADOW
+\ *	  cycle D  abs 19-38  20 rows, 6 shown      bottom band, ring in SHADOW
+\ *
+\ *	The blank 7th row of B and C is the C64's own blank row either side
+\ *	of the credits, and B's is where the display bank is switched: it is
+\ *	fetched by nobody, so the write has a whole row of slack.
+\ *
+\ *	The bands are hardware-scrolled by R12/R13, which needs a ring, and
+\ *	the display wrap gives exactly one per bank: at 8K it is &6000-&7FFF,
+\ *	1,024 byte columns against the 480 a six-row band shows. Measured in
+\ *	jsbeeb 2026-09-04 - the four sizes are 20K, 16K, 10K and 8K, and 8K
+\ *	is latch line 4 high, line 5 low. See CLAUDE.md.
+TTL_RING      = &6000
+TTL_RING_SIZE = &2000
+TTL_CRED      = screen_start        ; the credits block, 6 rows, SHADOW
+TTL_BAND_ROWS = 6                   ; zoom cells high, and CRTC rows displayed
+TTL_BAND_CELLS = 40                 ; 80 byte columns: the band is full width
+TTL_CELL      = 16                  ; 2 byte columns x 8 scanlines
+TTL_CYC_ROWS  = 7                   ; cycles B and C: 6 shown, 1 blank
+TTL_PANEL_R4  = PANEL_ROWS - 1
+TTL_BAND_R4   = TTL_CYC_ROWS - 1
+TTL_LAST_R4   = 39 - PANEL_ROWS - 2 * TTL_CYC_ROWS - 1      ; cycle D: 19
+TTL_R7        = 34 - PANEL_ROWS - 2 * TTL_CYC_ROWS          ; VSync, abs row 34
+ASSERT TTL_R7 > TTL_BAND_R4         ; so R7 is a constant: it cannot fall in A, B or C
+ASSERT TTL_R7 < TTL_LAST_R4
+ASSERT TTL_RING + TTL_BAND_ROWS * row_stride <= TTL_RING + TTL_RING_SIZE
+ASSERT TTL_CRED + TTL_BAND_ROWS * row_stride <= TTL_RING
+
+\ Five T1 fires instead of the game's two. The first two intervals are the
+\ game's own - cycle A is the same 5 rows and B starts in the same place.
+\   fire 1  abs  2   A row 2   R4 for A, R6 and R12/13 for B
+\   fire 2  abs  7   B row 2   R4 for B (C inherits it), R6 and R12/13 for C
+\   fire 3  abs 11   B row 6   display bank -> SHADOW, in a blank row
+\   fire 4  abs 12   C row 0   R6 and R12/13 for D, then the first raster
+\   fire 5  abs 17   C row 5   the second raster
+\   fire 6  abs 20   D row 1   R4 for D
+\
+\ Fire 6 exists because R4 must be written INSIDE its own cycle and every
+\ other candidate is outside D. Fire 5 is still in C, where R4 = 19 would
+\ stretch C to twenty rows; and the VSync handler is too late in a worse
+\ way - with R4 still 6 from cycle C, D would never reach R7 = 15, so
+\ VSync would never happen and the handler that was to fix it would never
+\ run. Measured the hard way: the first build hung in field_wait.
+TTL_T1_I3 = 4 * 8 * SL - 2          ; fire 2 -> fire 3
+TTL_T1_I4 = 1 * 8 * SL - 2          ; fire 3 -> fire 4
+TTL_T1_I5 = 5 * 8 * SL - 2          ; fire 4 -> fire 5
+TTL_T1_I6 = 3 * 8 * SL - 2          ; fire 5 -> fire 6
+
+
+\ ******************************************************************
 \ *	ZERO PAGE
 \ ******************************************************************
 
@@ -709,19 +768,21 @@ ENDIF
 \ *	Not re-entrant, and nothing calls it from an interrupt.
 
 .bank3_call
-{
-    stx target+1
-    sty target+2
     lda #SWRAM_COMPILED
+\ A = the bank, X = LO, Y = HI. The titles' zoom scroller lives in bank 1,
+\ whose sprite data nothing on that page reads.
+.bank_call
+    stx bank_call_t+1
+    sty bank_call_t+2
     sta &f4
     sta &fe30
-    jsr target
+    jsr bank_call_t
     lda #SWRAM_DATA
     sta &f4
     sta &fe30
     rts
-    .target jmp &ffff           ; written above
-}
+.bank_call_t
+    jmp &ffff                   ; written above
 
 \ ******************************************************************
 \ *	field_wait - one field, WITHOUT handing a frame over
