@@ -325,12 +325,29 @@ INCLUDE "src/timing.asm"
     jsr keydown
     bmi p_release
 
+    \\ The tune stops with the game (KC, decision 43) - the C64 leaves it
+    \\ playing, which is the deviation. The VSync handler takes its MUTED
+    \\ path while this is set, so the player is not run at all and the tune
+    \\ stands where it is and carries on from there: Q's mechanism exactly,
+    \\ and for the same reason - silencing the chip after running the player
+    \\ crackles. It also stops the handler reading Q while we are in here,
+    \\ there being nothing left for it to mute.
+    lda #&ff
+    sta music_pause
+
     .paused
     jsr field_wait
 
     ldx #KEY_ABORT
     jsr keydown
     bmi abort
+
+    \\ P comes back out as well as fire (KC). The C64 has only its fire
+    \\ button here, having no second key to spare; P is the one that got
+    \\ us in, so it is the one a player reaches for.
+    ldx #KEY_PAUSE
+    jsr keydown
+    bmi p_out
 
     ldx #KEY_FIRE
     jsr keydown
@@ -342,10 +359,28 @@ INCLUDE "src/timing.asm"
     ldx #KEY_FIRE
     jsr keydown
     bmi f_release
+    jmp resume
+
+    \\ P is down: wait for it to come up too, or the main loop's own test
+    \\ at the top of the next frame would find it still held and pause
+    \\ again on the spot.
+    .p_out
+    jsr field_wait
+    ldx #KEY_PAUSE
+    jsr keydown
+    bmi p_out
+
+    .resume
+    lda #0
+    sta music_pause
     .out
     rts
 
+    \\ ESCAPE: the tune has to come back before the game-over sequence,
+    \\ which is a long way from here and never returns to this routine.
     .abort
+    lda #0
+    sta music_pause
     lda #1
     sta lives
     jmp life_lost

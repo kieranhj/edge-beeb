@@ -72,8 +72,11 @@
 
     \ Q mutes and unmutes the tune. HERE, in the VSync handler, and not in
     \ the main loop, because it has to work wherever the foreground happens
-    \ to be: playing, held in pause_check's blocking loop, sitting on the
-    \ titles, or watching the finale. The handler runs in all of them.
+    \ to be: playing, sitting on the titles, or watching the finale. The
+    \ handler runs in all of them.
+    \
+    \ NOT while paused, though (decision 43): the tune is already stopped
+    \ there, so there is nothing for Q to do and the key is not even read.
     \
     \ Calling keydown from an interrupt is safe the one way round that
     \ matters: the foreground's keydown wraps its latch sequence in
@@ -81,6 +84,8 @@
     \ calls read_joystick makes the latch is already handed back.
     \
     \ Edge-triggered on the PRESS, so holding Q does not toggle every field.
+    lda music_pause
+    bne no_q
     ldx #KEY_MUTE
     jsr keydown                 ; A = &80 down, 0 up
     tax
@@ -93,6 +98,7 @@
     eor #&ff
     sta music_mute
     .mute_done
+    .no_q
 
     \ The music, LAST: after T1 has been restarted, so the decode runs
     \ inside the 3,326 us the counter is going to spend getting to fire 1
@@ -121,7 +127,12 @@
     \
     \ sn_reset is the player's own - four volume-off writes - and it is in
     \ HAZEL, which is still paged in here.
+    \
+    \ music_pause takes the same path, for the same reason: the tune has to
+    \ stop WHERE IT IS and carry on from there when play resumes, which is
+    \ exactly what skipping the update does. Q's mechanism, reused whole.
     lda music_mute
+    ora music_pause
     bne muted
 IF MUSIC_AKL
     jsr akl_frame               ; the Arkos replay + the AY -> SN conversion
@@ -145,10 +156,13 @@ ENDIF
 }
 
 \ Outside rupt_vsync's braces so they are not local labels shadowing
-\ something: both are IRQ-owned and nothing else writes them. In the code
-\ image rather than the &0800 state block, so a new game does not unmute.
+\ something. In the code image rather than the &0800 state block, so a new
+\ game does not unmute. music_mute and mute_was are IRQ-owned and nothing
+\ else writes them; music_pause is written by pause_check in bank 0 and
+\ only read here.
 .music_mute EQUB 0              ; &FF while Q has the tune silenced
 .mute_was   EQUB 0              ; Q's state last field, for the press edge
+.music_pause EQUB 0             ; &FF while pause_check is holding the game
 
 .rupt_timer
 {

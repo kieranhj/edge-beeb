@@ -79,6 +79,27 @@ life left and then lose it, so the game-over sequence runs as it always does rat
 second way out. P is debounced on the way in too, which the original does not need because its
 pause key is read differently.
 
+**Two deviations, both KC's, added 2026-09-04 (decision 43).**
+
+**P comes back out as well as fire.** The C64 has only its fire button here, having no second key
+to spare; P is the one that got the player in, so it is the one they reach for. It needs its own
+release debounce on the way out, or the main loop's test at the top of the very next frame finds it
+still held and pauses again on the spot.
+
+**The tune stops with the game.** The C64's does not — `jsr $2e03` sits in raster split 2 and runs
+every frame whatever the foreground is doing, so the original plays on through `main_pause`. Ours
+reuses Q's mechanism whole: `pause_check` sets `music_pause`, and the VSync handler takes its
+**muted** path, running `sn_reset` INSTEAD OF `vgm_update`. The player is not stepped at all, so
+the tune stands where it is and carries on from there. It has to be that way round rather than
+"silence the chip after running the player", for the crackle reason in decision 39 and `BUGS.md`
+ #11. The flag is cleared on both ways out — the ESCAPE abort included, which never returns to this
+routine. **Q is not read while paused any more**, there being nothing left for it to mute.
+
+Verified in jsbeeb against the SN76489's own registers: all four channels at attenuation 15 while
+held, `char_col` frozen, and both keys resuming play. The proof that the tune is genuinely stopped
+rather than playing on silently is that **a 120-field pause and a 60-field pause resume at exactly
+the same note** — `char_col` 19, `tile_total` 17, channel 2 on tone 212 in both.
+
 ## Completion
 
 `comp_flag` is checked where the C64 checks it, at the end of the tick, after the collision and
