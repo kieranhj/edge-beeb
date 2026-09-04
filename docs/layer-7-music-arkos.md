@@ -232,14 +232,62 @@ Checked: rendered against the AY original from `SongToWav.exe`, both the shippin
 runtime stream track its melody equally well — 76.1% and 77.1% of 50 ms windows within half a
 semitone, median error 0.
 
-## What is left
+## PICKING THIS UP AGAIN — the state, and the next steps
 
-- **The listening test.** Everything above says the two are different; only KC can say whether the
-  difference is acceptable.
-- If the answer is yes, the envelope treatment deserves a second look before it ships — averaging
-  over the frame rather than sampling would cost a few hundred cycles and is closer to what the
-  offline chain does.
-- The noise mapping still needs finishing: rate 3, the tuned noise clocked by tone generator 3,
-  is not implemented at all and the offline chain uses it on 1,701 frames.
-- The untested player paths need a test tune, if the player is going to be a tool for other projects
-  rather than for this one song.
+**Parked 2026-09-04.** The Arkos build works, is committed, and is not the default. `build.ps1`
+without `-Akl` is untouched and byte-identical to the pre-Arkos build. Nothing below blocks any
+other layer; this is a self-contained thread to come back to.
+
+### Where things stand
+
+Done and proved: the format, the 6502 replay, the placement in HAZEL, the IRQ hookup, the mute, the
+in-game verification, and the two tools. `python tools/akl/verify_akl.py` re-proves it in one
+command and should print `IDENTICAL on every frame` and `{'ch2 period': 11}`; see
+[`tools/akl/README.md`](../tools/akl/README.md) for why that 11 is the correct answer and not a
+defect.
+
+Open: **how it sounds**, and three known gaps behind that.
+
+### The next steps, in the order they should be taken
+
+1. **Finish the noise: implement rate 3, the tuned noise.** `ym2sn` clocks the noise from tone
+   generator 3 on 1,701 of its frames — that is how it gets a *pitched* drum and a bass out of the
+   noise channel — and `src/ay2sn.asm` never emits rate 3 at all, only the three fixed rates. This
+   is the largest remaining difference on percussion and the most likely thing still to sound
+   wrong. `BUGS.md` #12 has the analysis; note that the periodic-noise half of the trick is also
+   how `ym2sn` fakes the sub-122 Hz bass, so this and step 2 overlap.
+
+2. **Average the envelope across the frame instead of sampling it once.** It drives a channel's
+   volume on 33% of the tune, every envelope runs at 1.2–2.9 complete cycles per frame, and
+   `ym2sn` low-passes where we take one sample — which is why envelope frames agree on only 3.6% of
+   tone periods. A closed-form average of a saw over a window is a few multiplies; budget a couple
+   of hundred cycles a frame. Cheaper than it sounds and probably the single biggest fidelity win
+   after step 1.
+
+3. **Then listen again**, and only then decide. `verify_akl.py --snf` plus `tools/sn2wav.py` gives
+   a WAV of the runtime stream; render the shipping VGM and the CPC AY original beside it. The
+   drum-heavy stretch is 49–79 s and the envelope-heavy one 33–63 s.
+
+4. **If it is going to ship**, `MUSIC_AKL` stops being a switch and becomes the build, and this
+   file's decision (`docs/decisions.md` #40) needs rewriting from "open" to a decision with its
+   reasons. If it is not, keep it anyway: it is a working Arkos replay for the BBC and the next
+   project may want it.
+
+5. **If it is going to be a tool for other projects**, the untested paths need a test tune —
+   arpeggio tables, pitch tables, soft-and-hard instruments and effects 0, 1, 2, 5 and 6 are
+   written but have never run, because EDGEA uses none of them.
+   `tools/export_music_akl.py --check` will say when a song strays into one.
+
+### Traps, for whoever comes back to this
+
+- **`ENV_BASE` is in two places** — `src/aklplayer.asm` and `tools/akl/akl_reference.py` — and they
+  must agree, or the harness will "prove" the player correct against a reference with the same bug.
+  It is 12 because AKL can only encode 8 or 0xa and EDGEA is 12 throughout. **A different tune will
+  need a different value, or the AKG format instead.**
+- **`MUSIC_AKL_SONG` in `main.asm` and the export address must agree.** The AKL format holds
+  absolute pointers; the song is exported at the address it will be played from. `main.asm`
+  ASSERTs the size but cannot check the address, and getting it wrong fails silently at run time.
+- **142 bytes between the code and the song** at `&CB72`/`&CC00`. Steps 1 and 2 will eat into that;
+  `MUSIC_AKL_SONG` can move up a page if they need more, since HAZEL has 379 free above the tune.
+- **A path nothing has ever called is not a tested path** (`CLAUDE.md`). Five of the seven effects
+  are in that category here.

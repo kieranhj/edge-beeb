@@ -244,9 +244,30 @@ The replay is not in doubt: byte-exact against Arkos's own player over all 17,44
 fields captured out of the running game match the simulation uniquely. **What is open is how it
 sounds.** `ym2sn.py` does whole-song analysis a per-frame converter cannot - a priority bass channel
 synthesised with periodic noise, the hardware envelope averaged across each frame - so the Arkos
-build is the tune *re-voiced*, not the same tune smaller. `tools/sn2wav.py` renders either stream to
-a WAV for the comparison. **KC's ear decides**; until then both builds exist side by side and the
-default is unchanged.
+build is the tune *re-voiced*, not the same tune smaller.
+
+**PARKED 2026-09-04, to come back to.** It blocks nothing; the default build is unchanged. The next
+steps are pinned at the top of [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) under
+"PICKING THIS UP AGAIN", in the order they should be taken:
+
+1. **Noise rate 3, the tuned noise** clocked by tone generator 3. `ym2sn` uses it on 1,701 frames
+   and `src/ay2sn.asm` never emits it - the largest remaining difference on percussion, and the
+   likeliest thing still to sound wrong. (KC already caught one drum bug by ear; that one was
+   `BUGS.md` #12, the white-noise feedback bit, and is fixed.)
+2. **Average the hardware envelope across the frame** instead of sampling it once. It drives a
+   channel's volume on 33% of the tune and is why envelope frames agree on only 3.6% of tone
+   periods. A few hundred cycles a frame.
+3. **Listen again, then decide.** `python tools/akl/verify_akl.py --snf build/runtime.snf` then
+   `tools/sn2wav.py`. Drums are densest at 49-79 s, envelopes at 33-63 s.
+4. If it ships, `MUSIC_AKL` stops being a switch and decision 40 gets rewritten from "open" to a
+   decision. If it does not ship, keep it: it is a working Arkos replay for the BBC and the next
+   project may want it.
+5. If it is to be a tool for other projects, the arpeggio-table, pitch-table, soft-and-hard and
+   five of the seven effect paths need a test tune - EDGEA exercises none of them.
+
+`python tools/akl/verify_akl.py` re-proves the whole thing in one command
+([`tools/akl/README.md`](tools/akl/README.md)); it should print `IDENTICAL on every frame` and
+`{'ch2 period': 11}`, and that 11 is the correct answer, not a defect.
 
 ### Layer 8 — graphics pipeline B (the artist)
 
@@ -294,7 +315,7 @@ Still to do: starfield, real-hardware test, release build, publish.
 | 6d — HUD | [`docs/layer-6d-hud.md`](docs/layer-6d-hud.md) | done 2026-09-03 |
 | 6e — title screen | | |
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, tune truncated to 203 s |
-| 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | built 2026-09-04 behind `MUSIC_AKL`; whole tune, KC's ear decides |
+| 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |

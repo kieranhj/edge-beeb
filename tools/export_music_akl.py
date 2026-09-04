@@ -56,27 +56,32 @@ def main():
                          '(must match MUSIC_AKL_SONG in main.asm)')
     ap.add_argument('--check', action='store_true',
                     help='report which player features the song uses')
+    ap.add_argument('-o', '--out', default=OUT,
+                    help='write somewhere other than src/data/music_akl.bin '
+                         '(the simulator harness exports its own copy at its '
+                         'own address, and must not clobber the committed one)')
     args = ap.parse_args()
     addr = int(args.addr, 0)
 
     if not os.path.exists(EXPORTER):
         raise SystemExit('SongToLightweight.exe not found at %s' % EXPORTER)
 
-    r = subprocess.run([EXPORTER, '-bin', '-adr', hex(addr), SKS, OUT],
+    out = args.out
+    r = subprocess.run([EXPORTER, '-bin', '-adr', hex(addr), SKS, out],
                        capture_output=True, text=True)
     if r.returncode != 0:
         sys.stderr.write(r.stdout + r.stderr)
         raise SystemExit('SongToLightweight failed (%d)' % r.returncode)
 
-    n = os.path.getsize(OUT)
-    print('%s: %d bytes, to be played from &%04X' % (OUT, n, addr))
+    n = os.path.getsize(out)
+    print('%s: %d bytes, to be played from &%04X' % (out, n, addr))
     if addr + n > HAZEL_TOP:
         raise SystemExit('the song runs past &%04X by %d bytes'
                          % (HAZEL_TOP, addr + n - HAZEL_TOP))
     print('room left in HAZEL above it: %d bytes' % (HAZEL_TOP - addr - n))
 
     if args.check:
-        check(OUT, addr)
+        check(out, addr)
 
 
 def check(path, base):

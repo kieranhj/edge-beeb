@@ -82,7 +82,9 @@ the Arkos tracker data and `src/ay2sn.asm` converts to the SN76489 every frame, 
 alone and bank 3's `music_lo` disappears. **It does not sound the same** - the offline chain does
 whole-song analysis a per-frame converter cannot - so it is a comparison build pending KC's ear,
 not a decision. It writes `build/EDGE-AKL*.SSD` with disc title `EDGEAKL`, so it cannot overwrite
-or be mistaken for the normal build. `docs/layer-7-music-arkos.md`.
+or be mistaken for the normal build. **Parked, with the next steps pinned at the top of**
+`docs/layer-7-music-arkos.md`; `python tools/akl/verify_akl.py` re-proves the player in one
+command (`tools/akl/README.md`).
 
 **The build is two passes, and beebasm's own image is NOT bootable.** Every data file on the disc
 ships ZX0-compressed (decision 38) and the boot loader runs the depacker over everything it loads.
