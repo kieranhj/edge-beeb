@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import zx0
 
 # Both must match src/main.asm.
-LOAD_STREAM = 0x2200            # the loading screen's halves, in main RAM
+LOAD_STREAM = 0x2400            # the loading screen's halves, in main RAM
 DEPK_STREAM = 0x3000            # the banks and the music, in the SHADOW screen
 ANDY_STREAM = 0x6800            # ANDY, above them: it is unpacked after MUSIC
 

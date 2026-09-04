@@ -56,6 +56,7 @@ month and this is a Master.
 | Interrupts | IRQ1V owned outright (VSync + System VIA T1); no MOS tick, no OS sound, keyboard read direct from the VIA (`keydown`) |
 | Music | The CPC port's Arkos song through `SongToYm`, `ym2sn` and `vgipacker` to a `.vgi`; `lib/vgiplayer.asm` in HAZEL decodes one byte per register stream per field from `rupt_vsync`. **The whole 349 seconds ships, spread over FOUR regions of memory** - a `.vgi` is eleven independent streams and only each stream has to be contiguous (decision 48). `tools/export_music.py` places them and `tools/verify_vgi.py` proves the placement byte for byte against a jsbeeb capture |
 | Starfield | Ten stars drifting left at **two speeds**, a half and a quarter of the level's, so the play area reads as three planes; plotted only into blank background so they never cover the scenery. **The ten are the CPC port's, not the C64's** - the original animates a character the released game never displays, measured (decision 50) - and **the drift is ours** (decision 51), both originals' stars being still. `src/bank1.asm`, `docs/layer-9c-starfield.md` |
+| Memorial | Between the loading picture and the titles: the picture fades out, "IN MEMORY OF T.M.R." fades up in the credits' own font, holds three seconds, fades out again. **The fade is the palette only** - MODE 2's eight colours on one brightness ladder, white -> yellow -> cyan -> green -> magenta -> red -> blue -> black, sixteen writes to `&FE21` a rung. Interrupts are down and it polls the System VIA's VSync flag itself; `install_irq` is the next CLI. `memorial` in `src/main.asm`, `mem_page` in `src/bank3.asm`, decision 52, `docs/layer-9d-memorial.md` |
 | Sprites | Eight slots, the C64's arrangement (0 player, 1 bullet, 2-7 pool). Interpreted, bounding-boxed, clipped; ~6,155 cycles a sprite for restore + draw, **a figure now known to be optimistic** (`BUGS.md` #9). `src/sprite.asm`, `docs/layer-3-sprites.md` |
 | Game logic | **Ticks twice per display frame** (decision 23): the C64's loop is 50 Hz and ours 25, so its per-frame constants transcribe unaltered. `game_tick` in `src/player.asm` |
 | Controls | Z/X left/right, K/M up/down, L fire, P pause (P or fire unpauses), ESCAPE abort (only while paused), Q mute. Internal key numbers are **measured** (OSBYTE 121 in a BASIC session holding the key), never recalled - Z 97, X 66, K 70, M 101, L 86, P 55, Q 16, ESCAPE 112. `*FX229,1` first, or BASIC eats ESCAPE. **Q is read in the VSync handler**, so it works on the titles and in the finale as well as in play (decision 39). **The tune stops while the game is paused** and Q is not read there at all, there being nothing to mute (decision 43) |
@@ -124,7 +125,7 @@ environment (`RELEASE=1 GFX_CPC=1 sh tools/build.sh`). It exists because that st
 `build.ps1` unusable from a shell that treats a PowerShell error record as a failure. **`build.ps1`
 is still the build**; keep the two in step if either changes.
 
-`!BOOT` is assembled by `main.asm` at `BOOT_STAGE` = `&2400` - inside the sprite saves, which do not
+`!BOOT` is assembled by `main.asm` at `BOOT_STAGE` = `&2600` - inside the sprite saves, which do not
 exist at assembly time - rather than in the code image's address space, where it was costing 200
 bytes of the tightest region in the build for text nothing executes (decision 49). It stamps the
 assembly time with beebasm's `TIME$` so any disc
@@ -142,7 +143,7 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 
 | File | Contents |
 |---|---|
-| `main.asm` | constants, zero page map, boot, the loader (`load_stream`, `unpack_to`, `load_bank`, `load_hazel`), main loop, `scroll_frame` / `scroll_advance` / `scroll_prewind`, SAVEs, `!BOOT`, the `&0800` game-state block, includes |
+| `main.asm` | constants, zero page map, boot, main loop, `scroll_frame` / `scroll_advance` / `scroll_prewind`, SAVEs, `!BOOT`, the `&0800` game-state block, includes. Then, **above `code_end` and therefore boot-only**: the loader (`load_stream`, `unpack_to`, `panel_init`, `load_bank`, `load_hazel`) and **the memorial's palette fade** (`memorial`, `mem_ramp`, `fade_pal`, Layer 9d). Neither is called once the game is running, and neither has to fit under `SPR_SAVE` |
 | `scroll.asm` | map reader, tile readers, column buffer, column copy |
 | `sprite.asm` | the sprite engine: `SCANSTEP`, `spr_restore_all`, `spr_draw_all`, clipping, the hit-flash tables |
 | `keyboard.asm` | `keydown` (direct VIA matrix read) and `read_joystick`, which packs the five keys into the C64's `$dc00` byte |
@@ -160,7 +161,7 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3). Default: region A of the tune from `&C000`, the generated stream map and `lib/vgiplayer.asm` at `&D300`, its 11-page ring workspace at `&D500`. Under `MUSIC_AKL`: `aklplayer.asm` + `ay2sn.asm` at `&C000` and the whole tune as tracker data at `&CC00`. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
 | `aklplayer.asm` | `MUSIC_AKL` only: a 6502 port of Arkos Tracker 2's "lightweight" (AKL) replay, producing the fourteen AY registers a frame. X is the channel throughout, Y the byte offset being read. Byte-exact against Arkos's own player over all 17,446 frames |
 | `ay2sn.asm` | `MUSIC_AKL` only: the runtime AY-3-8912 -> SN76489 conversion and `akl_silence`. SN period = 2 x AY period exactly (1 MHz AY, 4 MHz SN), octave-clamped to ten bits; a 32-entry volume LUT; the envelope **sampled**, not averaged |
-| `bank3.asm` | compiled sprite bodies; the titles' font, credits and text plotter; the HUD glyphs and `status_decode`; then region A of the tune from `&9100` to the join at `&C000`. Reached from main RAM through `bank3_call` |
+| `bank3.asm` | compiled sprite bodies; the titles' font, credits and text plotter; **the memorial's message and `mem_page`** (Layer 9d), which is the half of it that needs the font; the HUD glyphs and `status_decode`; then region A of the tune from `&9100` to the join at `&C000`. Reached from main RAM through `bank3_call` |
 
 `src/data/` (from Layer 1) is generated by the exporters in `tools/` and **is committed**;
 regenerate with the tool rather than editing it. `build.ps1` does not run the exporters.
@@ -225,10 +226,10 @@ that one says how much of it is gone, and where the room that is left actually i
 | `&04A0-&07BF` | collision character map, 40 × 20; `&07C0-&07FF` is its overrun slack. The language workspace - ours once `*RUN` has handed over, verified by sentinel |
 | `&0800-&08E9` | game state: the C64's `$0340` block - `sprite_pos`, `sprite_dp`, the `enemy_*` arrays, the score, and what each bank's last sprite draw did. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
 | `&0C00-&0C5F` | `VGI_STATE`: the VGI player's 96 bytes of decode state, in the MOS user-font page (decision 49) |
-| `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `LOAD_STREAM` = `&2200`). `!BOOT` is assembled at `&2400`, not here: it is a disc file nothing loads or runs from RAM |
+| `&0E00-&1F67` | code read in play, and it ends at `code_end`. Above that, still in the image: the boot-only data, **the boot loader** and **the memorial's fade** (Layer 9d), then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2400`. `!BOOT` is assembled at `&2600`, not here: it is a disc file nothing loads or runs from RAM |
 | after the code | initialised data, **boot-only because it is above `SPR_SAVE`**: the disc filenames and the OSFILE block. `explosion_dirs` used to be here and is in bank 1 now (`BUGS.md` #13) |
-| to `&2147` | `src/zx0depack.asm`, boot code. **Deliberately above `SPR_SAVE`'s base**: it is dead before anything reads there. `&B9` free in a DEV build |
-| `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly. At boot it holds the depacker and, from `LOAD_STREAM` = `&2200`, the loading screen's streams |
+| to `&21F7` | the loader, the memorial's fade and `src/zx0depack.asm` - all boot code. **Deliberately above `SPR_SAVE`'s base**: they are dead before anything reads there. `&209` free to `LOAD_STREAM` in a DEV build |
+| `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly. At boot it holds the loader and the depacker and, from `LOAD_STREAM` = `&2400`, the loading screen's streams. **`LOAD_STREAM` moved up from `&2200` in Layer 9d**, which leaves `LOADSC2`'s stream 252 bytes of headroom rather than 764; `tools/make_disc.py` refuses an image that has overrun it |
 | `&3000-&7FFF` (main) | at boot only: the **loading screen**, a whole MODE 2 picture, displayed while the banks load |
 | `&3000-&7FFF` (shadow) | at boot only: `DEPK_STREAM`, where the bank and music streams stage. Nothing is displaying it - the picture is in main |
 | `&3000-&3C7F` × 2 | status panel, 5 rows × 640, in BOTH banks, displayed by rupture cycle A |
@@ -271,10 +272,11 @@ plays happily for thousands of frames before the stream runs off the end of what
 
 ## Facts about the current code that the old docs got wrong
 
-- **Main RAM's real ceiling is `SPR_SAVE` = `&2000`, NOT `LOAD_STREAM` = `&2200`, for anything read
+- **Main RAM's real ceiling is `SPR_SAVE` = `&2000`, NOT `LOAD_STREAM` = `&2400`, for anything read
   or executed in play.** `&2000-&2FFF` is the blitter's saved-background area and is rewritten every
   frame from the first sprite onwards. Boot code and boot data may live there and do -
-  `src/zx0depack.asm`, the OSFILE block, the disc filenames, and `!BOOT` at `&2400` - because they
+  `src/zx0depack.asm`, the loader, the memorial's fade, the OSFILE block, the disc filenames, and
+  `!BOOT` at `&2600` - because they
   are dead before anything reads there. A runtime table drifted over the line unnoticed and the
   player's explosion pieces stopped flying (`BUGS.md` #13). `main.asm` now carries
   `ASSERT code_end <= SPR_SAVE`, and the listing prints CODE CEILING beside it; the build's FREE

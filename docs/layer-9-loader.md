@@ -27,12 +27,13 @@ screen unpacking to `&3000`–`&7FFF` that is impossible: the stream would have 
 minus its own length and its tail would then run past `&8000`, into the sideways ROM window. There
 is nowhere for it.
 
-So the loading screen's stream is staged **below** the screen instead, at `LOAD_STREAM = &2200` —
-and that is only 3,584 bytes, where the whole picture packs to 4,659. Hence two files, top half and
-bottom half, 1,883 and 2,820 bytes, unpacked to `&3000` and `&5800`. Splitting costs 44 bytes over
+So the loading screen's stream is staged **below** the screen instead, at `LOAD_STREAM`, which was
+`&2200` then and is `&2400` now — and that was only 3,584 bytes (3,072 now), where the whole
+picture packs to 4,659. Hence two files, top half and bottom half, 1,883 and 2,820 bytes,
+unpacked to `&3000` and `&5800`. Splitting costs 44 bytes over
 packing all 20K at once (decision 38).
 
-`&2200` is above the code image, which ends at `&2147` in a DEV build, and the depacker itself is part of that
+`LOAD_STREAM` is above the code image, and the depacker itself is part of that
 — it is boot code, so it is allowed to sit above `SPR_SAVE`'s base at `&2000`. Nothing reads
 `SPR_SAVE` until the game starts, and by then the depacker and the streams are both dead. This is
 the one thing in the image that deliberately overlaps something else.
@@ -51,7 +52,7 @@ drawn.
 1. `OSBYTE 200, 3` — BREAK must clear memory, unchanged (decision 36).
 2. Blank the display (R8 = `&30`, R10 = `&20`), wipe zero page.
 3. `VDU 22, 2`, blank again — `VDU 22` turns R8 and the cursor back on.
-4. `LOADSC1` → `&2200`, unpack to `&3000`. `LOADSC2` → `&2200`, unpack to `&5800`.
+4. `LOADSC1` → `LOAD_STREAM`, unpack to `&3000`. `LOADSC2` → `LOAD_STREAM`, unpack to `&5800`.
 5. R8 = 0. **The picture is up.**
 6. `&FE34`: display main (D = 0), CPU sees shadow (X = 1) — which is the state the game itself
    runs in. From here every stream stages in the shadow screen.
@@ -125,8 +126,10 @@ screen. Without compression the picture would have cost about 3.4 seconds on top
 
 - **The MOS's default MODE 2 palette is what the picture is drawn for.** If `setup_display` ever
   stops mapping logical *n* → physical *n*, the exporter has to change with it.
-- **`&2200` is not slack.** `LOADSC2` packs to 2,820 of the 3,584 available. A busier bottom half —
-  or a code image that grows past `&2200` — hits the assert in `make_disc.py`, and the answer is a
+- **`LOAD_STREAM` is not slack, and it is tighter now.** `LOADSC2` packs to 2,820 bytes. It had
+  3,584 to `&3000` when this was written; **Layer 9d moved `LOAD_STREAM` to `&2400`** to buy the
+  code image 512 bytes (decision 52), so it has 3,072 and the slack is 252. A busier bottom half —
+  or a code image that grows past `&2400` — hits the assert in `make_disc.py`, and the answer is a
   three-way split, not a bigger buffer.
 - The `HAZEL_LOAD_PAGES` constant in `music.asm` is now unused: `move_pages` was its only caller.
   Left in place; it is one line and it documents the image's size.

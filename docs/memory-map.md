@@ -31,8 +31,8 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 | `&0800-&0985` | 390 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **634** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends 12 lower - the frame meter is the difference. The last two things in it are the starfield's 92 bytes (decisions 50 and 51) - 40 for the stars and 52 for where each bank last plotted them - and the "MEGA HERO" message's 15, which are up here because bank 1, where its code is, had tens of bytes left and this has hundreds |
 | `&0C00-&0C5F` | 96 | **`VGI_STATE`**: the VGI player's decode state, eleven streams' worth (decision 49). Not in the image - nothing in it needs initialising | 160 to `&0D00` |
 | `&0D00-&0DFF` | 256 | paged-ROM extended vectors. Not claimed, not tested | 256, unverified — see below |
-| `&0E00-&2158` | 5,465 | code to `&1FF9`, then the boot-only data, then `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2200` | **187** to `LOAD_STREAM` — but see the ceiling below: only **7** of them are usable by anything read in play. `!BOOT` used to be assembled in here and is not any more (decision 49) |
-| `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly. At assembly time `&2400` is where `!BOOT` is built, which costs the run nothing: it is a disc file, never loaded here | 0 by construction |
+| `&0E00-&21F7` | 5,624 | code to `&1F67`, then the boot-only data, **the loader**, **the memorial's fade** and `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2400` | **521** to `LOAD_STREAM`, of which **153** are usable by anything read in play. Layer 9d moved the loader above `code_end` and `LOAD_STREAM` from `&2200` to `&2400` (decision 52); `!BOOT` left in Layer 9 (decision 49) |
+| `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly. At assembly time `&2600` is where `!BOOT` is built, which costs the run nothing: it is a disc file, never loaded here | 0 by construction |
 | `&3000-&3C7F` × 2 | 3,200 each | the status panel, in BOTH shadow banks | 0 |
 | `&3C80-&3FFF` × 2 | 896 each | **nobody's**: above the panel, below the play buffer, fetched by neither rupture cycle | 896 main + 896 shadow, unclaimed — see below |
 | `&4000-&7FFF` × 2 | 16,384 each | the play buffers, main and shadow, hardware-wrapped at 16K | 0 |
@@ -54,12 +54,16 @@ executed in play may not**, and for two layers nothing was checking: `explosion_
 landing on their movement vectors (`BUGS.md` #13). `main.asm` now carries
 `ASSERT code_end <= SPR_SAVE` and the listing prints `CODE CEILING` beside it.
 
-**`code_end` is `&1FF9`: seven bytes under it in a DEV build, 36 in a RELEASE one.** That, and not
-the 187 the FREE line prints, is what main RAM has left for anything permanent. The next thing that
-needs main-RAM code will have to move something out - the boot loader is the obvious candidate,
-being dead by the time the game starts, exactly as `!BOOT` and the depacker already are.
+**`code_end` is `&1F67`: 153 bytes under it in a DEV build.** That, and not the 521 the FREE line
+prints, is what main RAM has left for anything permanent. **Layer 9d is where the boot loader
+moved out**, which is what this page said the next thing to want main-RAM code would have to do:
+`load_stream`, `unpack_to`, `panel_init`, `load_bank`, `unpack_andy` and `load_hazel` are all dead
+before the first sprite is drawn and are above `code_end` now, with `!BOOT` and the depacker. That
+took the ceiling from 7 free to 153. `LOAD_STREAM` went from `&2200` to `&2400` with it, for the
+image as a whole; what that costs is the loading screen's own headroom - `LOADSC2`'s stream has
+252 bytes to `&3000` rather than 764, and `tools/make_disc.py` refuses an image that overruns it.
 
-**At boot the map is a different shape.** `&2200` upwards is the loading screen's ZX0 stream
+**At boot the map is a different shape.** `&2400` upwards is the loading screen's ZX0 stream
 (`LOAD_STREAM`), `&3000-&7FFF` in MAIN is the loading picture itself, and `&3000-&7FFF` in SHADOW is
 `DEPK_STREAM`, where the four bank streams and the music stage before they are unpacked. None of
 that survives into the game.
@@ -72,7 +76,7 @@ that survives into the game.
 | 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFF0` | **16** | 16 | 16 |
 | 5 | `BANK1` | sprite data, pixel shift 0, the titles' zoom scroller (Layer 6e), then `explosion_dirs`, the starfield's tables and the "MEGA HERO" message's data and `mega_one` (Layer 9c) in what used to be dead space, then a tune stream at `MUSIC_B1_BASE` = `&B900`, then the starfield's and the message's code | `&BFAA` | **86**, and **11** left in the hole below `&B900` | 1,370 | 1,364 |
 | 6 | `BANK2` | the same, shift 1, then a tune stream at `MUSIC_B2_BASE` = `&BA00` | `&BF47` | **185** | 1,909 | 1,727 |
-| 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the HUD glyphs and `status_decode`; then region A of the tune | `&8F8E`, then `music_lo` fills `&9100-&BFFF` | **370**, all below the tune, and **0** above it | **12,399** | **12,191** |
+| 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the memorial's message and `mem_page` (Layer 9d), the HUD glyphs and `status_decode`; then region A of the tune | `&9003`, then `music_lo` fills `&9100-&BFFF` | **253**, all below the tune, and **0** above it — **45** with the CPC artwork, which is the tightest this bank has been | **12,399** | **12,191** |
 
 A RELEASE build takes bank 0 to `&BF4A`: **182** free, the frame meter (`src/timing.asm`) being the
 difference.

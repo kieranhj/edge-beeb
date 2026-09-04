@@ -367,7 +367,12 @@ ASSERT LOADSCR_ADDR2 - LOADSCR_ADDR = 16 * row_stride
 \ SPR_SAVE's base, which nothing reads until the game starts.
 \ DEPK_STREAM is the SHADOW screen, free the whole time the picture is up in
 \ main, and roomy: the four bank streams and the music's go there.
-LOAD_STREAM = &2200
+\ It moved from &2200 to &2400 in Layer 9d: the code image had nine bytes
+\ left and the memorial needed twenty. What it costs is the loading
+\ screen's own headroom - LOADSC2's stream is 2,820 bytes and the gap to
+\ &3000 is now 3,072 - and tools/make_disc.py refuses to write an image
+\ where that has been overrun, so it cannot go wrong quietly.
+LOAD_STREAM = &2400
 DEPK_STREAM = &3000
 \ ANDY's stream needs a staging address of its own, because it is the one
 \ file that cannot be unpacked when it is loaded: the depacker would be
@@ -380,7 +385,7 @@ ANDY_STREAM = &6800
 \ And where !BOOT is ASSEMBLED - it is never loaded anywhere, it is a disc
 \ file the MOS *EXECs. Inside the sprite saves, which do not exist at
 \ assembly time and are not written until the first sprite is drawn.
-BOOT_STAGE  = &2400
+BOOT_STAGE  = &2600
 CODE_TOP    = LOAD_STREAM   ; and &2000-&2FFF is the Layer 3 sprite saves,
                             ; which boot code may sit in and boot streams fill
 
@@ -712,6 +717,13 @@ ENDIF
 IF MUSIC_AKL = 0
     jsr unpack_andy             \\ and now the disc is finished with
 ENDIF
+
+    \\ The memorial (Layer 9d, decision 52): the loading picture fades
+    \\ out on the palette, "IN MEMORY OF T.M.R." fades up in the
+    \\ credits' own font, and it fades out again into the titles. It
+    \\ takes the interrupts down with it and leaves them down;
+    \\ install_irq is the next CLI.
+    jsr memorial
 
     lda #SWRAM_DATA
     sta &f4
@@ -1219,6 +1231,32 @@ SCROLL_PREWIND = 4 * COLL_COLS
 
 INCLUDE "src/scroll.asm"
 
+
+INCLUDE "src/sprite.asm"
+INCLUDE "src/player.asm"
+INCLUDE "src/enemy.asm"
+INCLUDE "src/keyboard.asm"
+INCLUDE "src/rupture.asm"
+IF GFX_CPC
+    INCLUDE "src/data/compiled_zp-cpc.asm"  \ what the compiled bodies assume
+ELSE
+    INCLUDE "src/data/compiled_zp.asm"      \ what the compiled bodies assume
+ENDIF
+INCLUDE "src/tables.asm"
+
+\ ******************************************************************
+\ *	The loader - BOOT CODE, and therefore above code_end
+\ ******************************************************************
+\ *	Here, after tables.asm, for the same reason the depacker it drives
+\ *	is: none of it is ever called once the game is running, so none of
+\ *	it has to fit under SPR_SAVE. It used to sit with the play code,
+\ *	where it was spending the tightest region in the build on routines
+\ *	that are dead before the first sprite is drawn - and Layer 9d, all
+\ *	twenty-odd bytes of it, was what would not fit beside them.
+\ *	panel_init comes with it: setup_display calls it, and
+\ *	setup_display runs once.
+\ ******************************************************************
+
 \\ ---- the loader: OSFILE a ZX0 stream in, unpack it out --------------
 \\
 \\ Every file on the disc but Edge and !BOOT ships ZX0-compressed, with a
@@ -1361,17 +1399,158 @@ ENDIF
     rts
 }
 
-INCLUDE "src/sprite.asm"
-INCLUDE "src/player.asm"
-INCLUDE "src/enemy.asm"
-INCLUDE "src/keyboard.asm"
-INCLUDE "src/rupture.asm"
-IF GFX_CPC
-    INCLUDE "src/data/compiled_zp-cpc.asm"  \ what the compiled bodies assume
-ELSE
-    INCLUDE "src/data/compiled_zp.asm"      \ what the compiled bodies assume
-ENDIF
-INCLUDE "src/tables.asm"
+
+\ ******************************************************************
+\ *	The memorial - the fade, and the sequence (Layer 9d)
+\ ******************************************************************
+\ *	BOOT CODE, and up here above code_end with the loader for the same
+\ *	reason: it runs once, between the last file off the disc and
+\ *	setup_display, and is dead before the first sprite is drawn.
+\ *
+\ *	THE FADE IS THE PALETTE AND NOTHING ELSE. MODE 2's eight colours
+\ *	sit on one brightness ladder - black, blue, red, magenta, green,
+\ *	cyan, yellow, white - and a step down the ladder is the whole
+\ *	picture one step darker: white -> yellow -> cyan -> green ->
+\ *	magenta -> red -> blue -> black, which is KC's own sequence.
+\ *	Sixteen writes to &FE21 a step, and not one byte of the picture is
+\ *	touched. Decision 52.
+\ *
+\ *	Fading DOWN subtracts the step from every colour's rung and clamps
+\ *	at black. Fading UP caps every colour's rung at the step instead,
+\ *	so each colour stops when it reaches the one it is meant to be:
+\ *	the credits font's blue arrives at step 1, its cyan at 5 and its
+\ *	white at 7, and the message assembles itself rather than
+\ *	dissolving in.
+\ *
+\ *	Here rather than beside the message in bank 3 because the CPC
+\ *	build's bank 3 has 162 bytes below the tune and the whole thing is
+\ *	275 - and because only the drawing needs the font. mem_page in
+\ *	src/bank3.asm is the other half.
+\ ******************************************************************
+
+MEM_STEP = 6                    ; fields a rung: eight of them is ~1s
+MEM_HOLD = 150                  ; and three seconds to read it in
+
+\ Rung -> physical colour, dark to bright, and its inverse. The MOS's own
+\ MODE 2 palette is logical n -> physical n, which is what setup_display
+\ programs and what the loading picture was drawn against, so a logical
+\ colour's own rung is fade_idx of itself.
+.fade_ramp EQUB 0, 4, 1, 5, 2, 6, 3, 7
+.fade_idx  EQUB 0, 2, 4, 6, 1, 3, 5, 7
+
+.fade_dir  EQUB 0               ; 0 = up (cap), &ff = down (subtract)
+
+\ A = the step, 0-7. All sixteen logical colours, because 8-15 are the
+\ second black the sprites use and must track 0-7.
+.fade_pal
+{
+    sta fp_step
+    ldx #15
+    .lp
+    txa
+    and #7
+    tay
+    lda fade_idx, y
+    bit fade_dir
+    bmi go_down
+    cmp fp_step                 ; up: min(rung, step)
+    bcc keep
+    lda fp_step
+    bcs keep                    ; carry set: the cmp said >=
+    .go_down
+    sec                         ; down: rung - step, clamped at black
+    sbc fp_step
+    bcs keep
+    lda #0
+    .keep
+    tay
+    lda fade_ramp, y
+    eor #7
+    sta fp_tmp
+    txa
+    asl a : asl a : asl a : asl a
+    ora fp_tmp
+    sta VIDEO_ULA_PAL
+    dex
+    bpl lp
+    rts
+
+    .fp_step EQUB 0
+    .fp_tmp  EQUB 0
+}
+
+\ One field, polled. Interrupts are off, so nothing else has taken the
+\ VSync flag before we get to look at it.
+.mem_field
+{
+    lda #2
+    sta SYS_VIA_IFR
+    .w
+    lda SYS_VIA_IFR
+    and #2
+    beq w
+    rts
+}
+
+\ One whole fade, MEM_STEP fields a rung. fade_dir says which way; the
+\ step runs 0 to 7 either way, because "down by 0" and "up capped at 7"
+\ are both the untouched picture, so the beat lands at the end of the
+\ movement rather than in the middle of it.
+.mem_ramp
+{
+    ldx #0
+    .rung
+    stx mr_x
+    txa
+    jsr fade_pal
+    ldy #MEM_STEP
+    .hold
+    jsr mem_field
+    dey
+    bne hold
+    ldx mr_x
+    inx
+    cpx #8
+    bne rung
+    rts
+
+    .mr_x EQUB 0
+}
+
+\ The whole sequence. SEI, and interrupts stay off until install_irq's
+\ CLI: the timing is the System VIA's own VSync flag and the MOS's
+\ handler would take that flag before a poll could see it. Nothing
+\ between here and install_irq wants an interrupt.
+.memorial
+{
+    sei
+    lda &fe34 : and #&ff - 4 : sta &fe34    ; CPU sees MAIN: the picture
+
+    lda #&ff                    ; the loading picture goes out
+    sta fade_dir
+    jsr mem_ramp
+
+    ldx #LO(mem_page)           ; and with the palette black, is replaced
+    ldy #HI(mem_page)
+    jsr bank3_call
+
+    lda #0                      ; the message comes up in its place
+    sta fade_dir
+    jsr mem_ramp
+
+    ldy #MEM_HOLD
+    .sit
+    jsr mem_field
+    dey
+    bne sit
+
+    lda #&ff                    ; and out again, into the titles
+    sta fade_dir
+    jsr mem_ramp
+
+    lda &fe34 : ora #4 : sta &fe34          ; and back to shadow
+    rts
+}
 
 \ The ZX0 depacker LAST, after the tables: it is boot code and nothing
 \ else calls it, so it is the one thing in the image that may sit above

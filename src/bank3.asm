@@ -164,6 +164,106 @@ TITLE_COL0 = 2
 }
 
 \ ******************************************************************
+\ *	The memorial's page - "IN MEMORY OF T.M.R." (Layer 9d)
+\ ******************************************************************
+\ *	Jason "T.M.R." Kelk wrote Edge Grinder, and his name is already
+\ *	in the credits above. Between the loading picture and the titles
+\ *	the picture fades out, this goes up in the credits' own font, and
+\ *	it fades out again. Decision 52.
+\ *
+\ *	Only the half that needs the font is here: the fade, the field
+\ *	timing and the sequencing are in main RAM, because the CPC build's
+\ *	bank 3 has 162 bytes below the tune and the whole thing is 275.
+\ *	This half is one call - clear the picture, draw the message -
+\ *	made with the palette already black, so neither is ever seen
+\ *	happening. `memorial` in src/main.asm is the other half.
+\ *
+\ *	The caller has set &FE34 so the CPU sees MAIN, which is the bank
+\ *	the loading picture is displayed from, and holds interrupts off.
+\ ******************************************************************
+
+\ The message in the credits' own glyph numbers: 0 blank, 1-26 A-Z,
+\ &1c full stop. Nineteen characters of the forty across the screen, so
+\ column 10 centres it bar half a character, and row 15 of 32 puts it
+\ half a row above the middle.
+MEM_LEN = 19
+MEM_ROW = 15
+MEM_COL = 10
+MEM_ADDR = LOADSCR_ADDR + MEM_ROW * row_stride + MEM_COL * TITLE_GLYPH_BYTES
+
+.mem_text
+EQUB  9, 14,  0                 ; I N
+EQUB 13,  5, 13, 15, 18, 25,  0 ; M E M O R Y
+EQUB 15,  6,  0                 ; O F
+EQUB 20, &1c, 13, &1c, 18, &1c  ; T . M . R .
+
+.mem_page
+{
+    \ The picture goes: 20K at &3000, under a black palette.
+    lda #0
+    sta write_ptr
+    lda #HI(LOADSCR_ADDR)
+    sta write_ptr+1
+    lda #0
+    ldx #(&8000 - LOADSCR_ADDR) DIV 256
+    ldy #0
+    .pages
+    .bytes
+    sta (write_ptr), y
+    iny
+    bne bytes
+    inc write_ptr+1
+    dex
+    bne pages
+
+    \ And the message takes its place.
+    lda #LO(MEM_ADDR) : sta write_ptr
+    lda #HI(MEM_ADDR) : sta write_ptr+1
+
+    ldx #0
+    .char_loop
+    stx md_ch
+
+    \ spr_tmp = title_font + glyph * 16, sixteen bits: glyph &1c
+    \ reaches 448 and a single ROL would lose it.
+    lda mem_text, x
+    sta spr_tmp
+    lda #0
+    sta spr_tmp+1
+    ldx #4
+    .shift
+    asl spr_tmp
+    rol spr_tmp+1
+    dex
+    bne shift
+    clc
+    lda spr_tmp   : adc #LO(title_font) : sta spr_tmp
+    lda spr_tmp+1 : adc #HI(title_font) : sta spr_tmp+1
+
+    \ Two byte columns, eight bytes apart and consecutive: one copy.
+    ldy #TITLE_GLYPH_BYTES-1
+    .copy
+    lda (spr_tmp), y
+    sta (write_ptr), y
+    dey
+    bpl copy
+
+    clc
+    lda write_ptr : adc #TITLE_GLYPH_BYTES : sta write_ptr
+    bcc no_carry
+    inc write_ptr+1
+    .no_carry
+
+    ldx md_ch
+    inx
+    cpx #MEM_LEN
+    bne char_loop
+    rts
+
+    .md_ch EQUB 0
+}
+
+\ ******************************************************************
 \ *	The status panel and the HUD (Layer 6d)
 \ ******************************************************************
 \ *	The C64's status bar is five rows of 40 characters assembled
