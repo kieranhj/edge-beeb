@@ -5,15 +5,15 @@ the C64's own, which Layer 6e transcribed, and this port's. Five seconds a set, 
 fade either side, for as long as the page is up.
 
 ```
-edge grinder     by     cosine systems        edge grinder bbc master version
+edge grinder     by     cosine systems    edge grinder        bbc master version
 coding                jason t.m.r kelk    coding               kieran and claude
 graphics           trevor smila storey    graphics          john dethmunk blythe
-music by            sean odie connolly    music conversion tooling     simondotm
+music by            sean odie connolly    arkos music              tom and jerry
 released by        format war and rgcd    released by                bitshifters
 ```
 
 The new set is laid out the way the original's block is — a label at the left and its value hard
-against the right, the first line centred — so the swap reads as the same five lines changing
+against the right, the first line included — so the swap reads as the same five lines changing
 rather than as a different page.
 
 ## The fade is the palette, and it touches the credits alone

@@ -41,18 +41,17 @@ CREDITS = [
 
 # And this port's own, which the titles cross-fade to and back (Layer 9e,
 # decision 53). Laid out the way the original's block is - a label at the left
-# and its value hard against the right - so the swap reads as the same five
-# lines changing rather than as a different page. Line 1 is centred, as the
-# original's title line effectively is.
+# and its value hard against the right, line 1 included - so the swap reads as
+# the same five lines changing rather than as a different page.
 #
 # The font is the C64 status charset and has no digits: A-Z, space and
 # ! . , - ? are all of it. So no year, which is KC's call and costs nothing -
 # ten more glyphs would have been 160 bytes.
 CREDITS_BBC = [
-    "   edge grinder bbc master version    ",
+    "edge grinder        bbc master version",
     "coding               kieran and claude",
     "graphics          john dethmunk blythe",
-    "music conversion tooling     simondotm",
+    "arkos music              tom and jerry",
     "released by                bitshifters",
 ]
 LINE_LEN = 38
