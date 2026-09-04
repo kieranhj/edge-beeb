@@ -7,6 +7,7 @@ ruled out. Index first, detail below.
 |---|---|---|
 | 1 | gone (Layer 3) | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`). The routine it was about no longer exists |
 | 2 | fixed (Layer 3) | No sprite clipping: `x_pos >= 80` indexed past `mult8_*`. The engine now clips the frame's box to 80 columns x 160 scanlines at all four edges (decision 2) |
+| 11 | fixed (Layer 9b) | Muting the tune left a 50 Hz crackle, on jsbeeb and on b2: the player was writing the real volumes and `sn_reset` was taking them off 246 cycles later, so every field put out 123 us of the tune |
 | 10 | fixed (Layer 6b) | The wave table went one byte out of step for the rest of the game if the player died at the wrong moment: the wave manager's no-free-slot path skipped eight bytes of a nine-byte wave. Only the player explosion ever fills all six slots at once, so it hid until the life cycle went in |
 | 9 | fixed (Layer 6a) | The game dropped below 25 Hz while shooting: the walked path for a sprite crossing the end of the buffer cost 97 cycles a byte and was being taken nine times too often. Split into two ladder calls instead; 100 s of play now peaks at 90% of the frame with no missed flips |
 | 3 | fixed (Layer 4) | `read_keyboard` had no movement bounds. `player_manage` clamps x to `$10-$9b` and y to `$5a-$e5`, the C64's own, and `read_joystick` no longer moves the player at all |
@@ -237,6 +238,44 @@ of table for about 60 of code.
 The deferral in decision 19 was taken on the grounds that "the interpreted path fits the frame".
 At 90% with no margin for Layer 6d, it only just does.
 
+
+## 11. Muting the tune crackled
+
+**Fixed 2026-09-04, same day it shipped.** Reported by KC against the Layer 9b WIP: "muting the
+sound leaves a weird crackle audible in both jsbeeb and b2 emulators. it goes away on break so is
+definitely coming from the game."
+
+The mute was written as *silence the chip after the player has run*: `vgm_update` every field as
+usual, then `sn_reset` if `music_mute` is set. The reasoning was that `vgm_decode_frame` writes all
+eleven registers every frame, so the tune would keep its place and unmuting would be right on the
+very next field.
+
+`start_sound_capture` over three muted fields shows what that actually does:
+
+```
+53919520: 0xd9 CH2 vol atten=9      <- vgm_decode_frame, the tune's real volume
+53919574: 0xff CH3 vol atten=15
+53919628: 0x9f CH0 vol atten=15     <- sn_reset begins
+53919766: 0xdf CH2 vol atten=15     <- and channel 2 goes off, 246 cycles later
+```
+
+246 cycles at 2 MHz is **123 microseconds of channel 2 sounding at attenuation 9, fifty times a
+second**. Each burst is a fraction of one cycle of a 550 Hz square wave, so it is not a tone: it is
+an edge, and fifty edges a second is a 50 Hz buzz. It rides the tune, so it changes as the tune
+does — which is what made it sound like a crackle rather than a hum.
+
+There is no ordering that closes the window while the player is still writing volumes; the two
+routines would have to be interleaved register by register. So the fix is to not run the player:
+muted, `sn_reset` goes **instead of** `vgm_update`, not after it. The tune stops where it is and
+resumes there, which is what a mute key is for anyway.
+
+**What it ruled out**, and the general form: "write the wrong value and then correct it" is not
+free on a device that is *listening between the two writes*. The chip is not a frame buffer. Any
+future effect that wants to override the player will have to do it at the point the player writes,
+or not let the player write.
+
+Verified by capturing every SN76489 write across ten muted fields: forty writes, all attenuation
+15, no tone writes at all.
 
 ## 10. Enemies stopped coming, or arrived as nonsense, after the player exploded
 

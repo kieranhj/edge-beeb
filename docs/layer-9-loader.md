@@ -32,7 +32,7 @@ and that is only 3,584 bytes, where the whole picture packs to 4,659. Hence two 
 bottom half, 1,883 and 2,820 bytes, unpacked to `&3000` and `&5800`. Splitting costs 44 bytes over
 packing all 20K at once (decision 38).
 
-`&2200` is above the code image, which now ends at `&2121`, and the depacker itself is part of that
+`&2200` is above the code image, which ends at `&2147` in a DEV build, and the depacker itself is part of that
 — it is boot code, so it is allowed to sit above `SPR_SAVE`'s base at `&2000`. Nothing reads
 `SPR_SAVE` until the game starts, and by then the depacker and the streams are both dead. This is
 the one thing in the image that deliberately overlaps something else.

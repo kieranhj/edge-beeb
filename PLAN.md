@@ -17,8 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5, 6a-6d and 7 are done (2026-09-04).** The game assembles from `src/` through `build.ps1` into
-`build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
+**Layers 0 to 5, 6a-6d, 7 and 9a-9b are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
 over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K/M/L with the C64's
@@ -29,7 +28,7 @@ game over and a new game; and **the state machine** — a titles page carrying t
 credits, pause on P, abort on ESCAPE, and the completion sequence the wave table's end triggers;
 and **the HUD** - the original's own status bar, rendered whole from its charset and its colour
 map, with the score, the high score and the lives bars decoded onto it every frame; and **the
-music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL. The
+music**, the CPC port's own tune on the SN76489, played from the VSync interrupt out of HAZEL, muted and unmuted on Q; and **a loading screen**, a whole MODE 2 picture up while the banks load behind it, with every data file on the disc ZX0-compressed. The
 titles are static until 6e gives them the zoom scroller, the completion's "mega hero" message waits
 for a font to draw it with, and **the tune is truncated to 203 of its 349 seconds because it does
 not fit** - `docs/layer-7-music.md` costs the ways out and wants a decision.
@@ -54,11 +53,14 @@ costed options for buying margin back are in `BUGS.md` #9 and in the Blitter Ana
 per-row spans recover a quarter of the bytes the blitter touches, and compiling the densest
 explosion frames recovers half the cycles but does not all fit.
 
-**Main RAM** (Layer 7 build, DEV): code and tables `&0E00-&1FCB`, **`&35` free** below `&2000`.
-That is with `DEBUG_TIMING` on; `game_init` moved to bank 0 in Layer 7 to make room for the HAZEL
-loader and the IRQ's music call. Bank 0 has `&B2` left; **bank 3 is full** - its code and data end
-at `&9C3D` and the tune's low half runs `&9D00-&BFFF` - and **HAZEL** (`&C000-&DFFF`) holds the
-tune's high half, the player at `&D200` and its ring workspace at `&D500`, with `&DF` free;
+**Main RAM** (Layer 9b build, DEV): code, tables and the ZX0 depacker `&0E00-&2147`, **`&B9`
+free** below `LOAD_STREAM` = `&2200`. The ceiling moved up in 9a: the depacker is boot code and is
+allowed to sit above `SPR_SAVE`'s base at `&2000`, because nothing reads there until the game
+starts and it is dead by then. That is with `DEBUG_TIMING` on; `game_init` moved to bank 0 in Layer
+7 to make room for the HAZEL loader and the IRQ's music call. Bank 0 has `&B2` left; **bank 3 is
+full** - its code and data end at `&9C3D` and the tune's low half runs `&9D00-&BFFF` - and
+**HAZEL** (`&C000-&DFFF`) holds the tune's high half, the player at `&D200` and its ring workspace
+at `&D500`, with `&DF` free;
 `pause_check`, `comp_mess` and `finale_tick` are up in bank 0 because main RAM ran out mid-layer,
 alongside the frame meter, `coll_row_lo/hi` and the boot-time display setup; the multiply tables are
 gone entirely, and the titles' font and text, the panel image and the HUD are in bank 3. **All four
@@ -250,8 +252,10 @@ picture and no more: 11.1 s of loading becomes 10.9 s, with something to look at
 
 **9b — Q mutes the tune, done 2026-09-04.** Read in the VSync handler rather than the main
 loop, so it works wherever the foreground is: playing, paused, on the titles, or watching the
-finale. Muting silences the chip and lets the tune play on underneath — `vgm_update` still
-runs and `sn_reset` follows it — so unmuting is correct on the very next field. Decision 39,
+finale. Muted, `sn_reset` runs *instead of* `vgm_update`, so the tune stops
+where it is and resumes there. Doing it the other way round — silencing the chip after the
+player rather than in place of it — crackled, and the write capture said why: 123 µs of the
+tune's real volume fifty times a second (`BUGS.md` #11). Decision 39,
 [`docs/layer-7-music.md`](docs/layer-7-music.md).
 
 Still to do: starfield, real-hardware test, release build, publish.

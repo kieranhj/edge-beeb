@@ -106,7 +106,7 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 
 | File | Contents |
 |---|---|
-| `main.asm` | constants, zero page map, boot, `game_init`, main loop, `scroll_frame` / `scroll_advance` / `scroll_prewind`, `move_pages`, SAVEs, `!BOOT`, the `&0800` game-state block, includes |
+| `main.asm` | constants, zero page map, boot, the loader (`load_stream`, `unpack_to`, `load_bank`, `load_hazel`), main loop, `scroll_frame` / `scroll_advance` / `scroll_prewind`, SAVEs, `!BOOT`, the `&0800` game-state block, includes |
 | `scroll.asm` | map reader, tile readers, column buffer, column copy |
 | `sprite.asm` | the sprite engine: `SCANSTEP`, `spr_restore_all`, `spr_draw_all`, clipping, the hit-flash tables |
 | `keyboard.asm` | `keydown` (direct VIA matrix read) and `read_joystick`, which packs the five keys into the C64's `$dc00` byte |
@@ -162,7 +162,7 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
 | `&0800-&08E9` | game state: the C64's `$0340` block - `sprite_pos`, `sprite_dp`, the `enemy_*` arrays, the score, and what each bank's last sprite draw did. Declared after the SAVEs, so it is not in the image. `&0800-&0BFF` is MOS sound/serial/soft-key workspace, ours with the MOS interrupt gone - verified by sentinel |
 | `&0E00-&1EC9` | code (`GUARD CODE_TOP` = `LOAD_STREAM` = `&2200`) |
 | to `&1F04` | initialised tables: the sprite row-body dispatch tables, `explosion_dirs`, the OSFILE block |
-| to `&2121` | `src/zx0depack.asm`, boot code. **Deliberately above `SPR_SAVE`'s base**: it is dead before anything reads there. `&DF` free in a DEV build |
+| to `&2147` | `src/zx0depack.asm`, boot code. **Deliberately above `SPR_SAVE`'s base**: it is dead before anything reads there. `&B9` free in a DEV build |
 | `&2000-&2FFF` | `SPR_SAVE`: saved background, 8 slots × 256 B × 2 banks, exactly. At boot it holds the depacker and, from `LOAD_STREAM` = `&2200`, the loading screen's streams |
 | `&3000-&7FFF` (main) | at boot only: the **loading screen**, a whole MODE 2 picture, displayed while the banks load |
 | `&3000-&7FFF` (shadow) | at boot only: `DEPK_STREAM`, where the bank and music streams stage. Nothing is displaying it - the picture is in main |

@@ -66,7 +66,7 @@ Four things make HAZEL the right home rather than a desperate one:
   machine, not recalled — which is above HAZEL's `&DFFF`, so paging HAZEL in cannot break interrupt
   dispatch. We only page it in inside our own handler anyway.
 - **Its resident content is the filing system's workspace**, and the filing system is finished the
-  moment the banks are loaded. `MUSIC` is therefore the **last** of the five files loaded, and
+  moment the banks are loaded. `MUSIC` is therefore the **last** file loaded, and
   nothing may touch the disc afterwards.
 
   That has a consequence beyond the run (KC): **BREAK must clear memory**, or the machine comes back
@@ -102,8 +102,14 @@ code and data end at `&9C3D`, so there are 195 bytes of slack below `music_lo`; 
 it, and if a later layer wants that room `MUSIC_LO_SIZE` comes down and the tune with it.
 
 OSFILE cannot write into HAZEL (the MOS would be overwriting the filing system's own workspace from
-underneath itself), so `MUSIC` stages through `&4000` exactly as a bank does and `move_pages` copies
-it up with the Y bit set. `load_bank`'s OSFILE half is now `load_stage`, shared by both.
+underneath itself), so `MUSIC` stages in RAM exactly as a bank does and is copied up with the Y bit
+set. `load_bank`'s OSFILE half is shared by both.
+
+> **Layer 9a changed the mechanism, not the reasoning.** Every file now ships ZX0-compressed:
+> `MUSIC` stages at `DEPK_STREAM` in the shadow screen and is *unpacked* into HAZEL rather than
+> block-copied from `&4000`, so `move_pages` and `load_stage` are gone and `load_stream` / `unpack_to`
+> take their place. It is still the last file loaded, and nothing may touch the disc after it.
+> See [`layer-9-loader.md`](layer-9-loader.md).
 
 ## The IRQ hookup
 
@@ -230,15 +236,27 @@ Edge-triggered on the **press**, so holding Q does not toggle every field. `musi
 `mute_was` are two bytes in the code image next to the handler rather than in the `&0800` state
 block, so a new game does not silently unmute.
 
-**Muting silences the chip and lets the tune play on underneath**, rather than stopping the player:
-`vgm_update` still runs, and `sn_reset` — the player's own four volume-off writes, in HAZEL, which
-is still paged in at that point — follows it. `vgm_decode_frame` writes all eleven registers every
-frame, so unmuting is correct on the very next field and the tune has not lost its place.
+**Muted, `sn_reset` runs INSTEAD OF `vgm_update`, never as well as.** `sn_reset` is the player's
+own four volume-off writes, in HAZEL, which is still paged in at that point. The tune stops where
+it is and resumes there.
 
-Verified in jsbeeb by reading the SN76489 state: all four channels at attenuation 15 within a few
-fields of the press, tone registers still advancing underneath, and volumes back on the field after
-the second press. Checked on the titles, in play, and while paused with `frame_count` frozen and
-`field_count` still climbing.
+It was written the other way round first — let the player run and silence the chip after it, so the
+tune would play on underneath and unmuting would be correct on the very next field. **That
+crackled**, on jsbeeb and on b2 (KC). The SN76489 write capture said exactly why:
+
+```
+53919520: 0xd9 CH2 vol atten=9      <- vgm_decode_frame, the tune's real volume
+53919766: 0xdf CH2 vol atten=15     <- sn_reset, 246 cycles later
+```
+
+246 cycles is 123 µs of channel 2 at attenuation 9, **fifty times a second** — a 50 Hz buzz made of
+the tune's own leading edges. There is no ordering that closes that window while the player is
+still writing volumes, so the player does not run. `BUGS.md` #11.
+
+Verified in jsbeeb by capturing every SN76489 write across ten muted fields: forty writes, all four
+channels at attenuation 15, no tone writes at all. And by reading the chip state: volumes back the
+field after the second press. Checked on the titles, in play, and while paused with `frame_count`
+frozen and `field_count` still climbing.
 
 ## Left over
 

@@ -18,7 +18,7 @@
 \ *	    it in inside our own handler anyway.
 \ *	  - Its resident content is the filing system's workspace, and the
 \ *	    filing system is finished with the moment the banks are loaded.
-\ *	    MUSIC is therefore loaded LAST of the five files.
+\ *	    MUSIC is therefore the LAST file loaded, of them all.
 \ *
 \ *	  &C000  the HIGH HALF of the tune. Its low half is at the top of
 \ *	         sideways bank 3, ending exactly at &C000, and the two are

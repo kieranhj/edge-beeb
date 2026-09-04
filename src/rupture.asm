@@ -110,17 +110,24 @@
     sta &fe34
     lda #SWRAM_COMPILED         ; the tune's low half is in bank 3
     sta &fe30
-    jsr vgm_update
 
-    \ Muting silences the chip and lets the tune play on underneath, rather
-    \ than stopping the player: vgm_decode_frame writes all eleven registers
-    \ every frame, so unmuting is correct on the very next field and the
-    \ tune has not lost its place. sn_reset is the player's own, four
-    \ volume-off writes, and it is in HAZEL - which is still paged in here.
+    \ Muted: sn_reset INSTEAD OF vgm_update, never as well as. Letting the
+    \ player run and silencing the chip after it CRACKLES, and the capture
+    \ says exactly why: vgm_decode_frame writes the tune's real volumes and
+    \ sn_reset overwrote them 246 cycles later, so every field put out a
+    \ 123 us burst of whatever was playing - a 50 Hz buzz. Skipping the
+    \ update leaves no window at all. The tune stops where it is and
+    \ resumes there, which is what the key is for.
+    \
+    \ sn_reset is the player's own - four volume-off writes - and it is in
+    \ HAZEL, which is still paged in here.
     lda music_mute
-    beq not_muted
+    bne muted
+    jsr vgm_update
+    jmp music_done
+    .muted
     jsr sn_reset
-    .not_muted
+    .music_done
 
     lda &f4                     ; and back to whatever was interrupted: the
     sta &fe30                   ; sprite engine keeps &F4 in step with &FE30
