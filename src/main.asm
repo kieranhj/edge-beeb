@@ -341,6 +341,19 @@ PANEL_ADDR  = &3000
 PANEL_BYTES = PANEL_ROWS * row_stride      ; 3200, to &3C7F
 ASSERT PANEL_ADDR + PANEL_BYTES <= screen_start
 
+\ &3C80-&3FFF: 896 bytes in EACH bank, above the panel and below the play
+\ buffer, fetched by NEITHER rupture cycle. It was listed in
+\ docs/memory-map.md as room going spare and Layer 9e is what spends the
+\ first of it: the titles' second credit set, carried there by the PANEL
+\ disc file, which is unpacked into both banks at boot anyway (decision 53).
+TTL_EXTRA      = PANEL_ADDR + PANEL_BYTES   ; &3C80
+TITLE_GLYPH_BYTES = 16              ; 2 byte columns x 8 scanlines, one cell
+TITLE_LINE_LEN = 38                 ; the C64's own cpx #$26
+TITLE_LINES   = 5
+TTL_CRED_C64   = 0                  ; which set: an index, not a pointer
+TTL_CRED_BBC   = 1
+ASSERT TTL_EXTRA + TITLE_LINE_LEN * TITLE_LINES <= screen_start
+
 \ The starfield (Layer 9c): ten stars standing still on the screen while
 \ the level scrolls under them. The code and the tables are in bank 1;
 \ what is here is the per-bank record of which of them are on screen, one
@@ -1242,6 +1255,86 @@ IF GFX_CPC
 ELSE
     INCLUDE "src/data/compiled_zp.asm"      \ what the compiled bodies assume
 ENDIF
+
+
+\ ******************************************************************
+\ *	The titles' credit crossfade - the main-RAM half (Layer 9e)
+\ ******************************************************************
+\ *	The state machine and the fade itself are in bank 2, which has the
+\ *	room; these three are here because they are the parts that have to
+\ *	reach two banks in one breath, and only main RAM can (decision
+\ *	53). Called from title_page, which is in bank 0 and may therefore
+\ *	call back down here and be returned to.
+\ *
+\ *	BELOW code_end, unlike the memorial's own half: the titles run
+\ *	after a game has been played, so none of this may sit in
+\ *	SPR_SAVE, where the blitter would have walked over it
+\ *	(BUGS.md #13).
+\ ******************************************************************
+
+\ The C64's set is up and the clock starts. title_page has just drawn it.
+\ The state itself is set here rather than in bank 2 because it is nothing
+\ but stores into the &0800 block, and bank 2 had 191 bytes for the state
+\ machine in a -Cpc build and wanted 195 of them.
+.ttl_cred_start
+{
+    lda #LO(title_lines_data) : sta ttl_cred_ptr
+    lda #HI(title_lines_data) : sta ttl_cred_ptr+1
+    lda #TTL_C_LOW  : sta fade_low      ; the credits' own logicals, 8-15
+    lda #0
+    sta ttl_c_set                       ; the C64's credits are what is up
+    sta ttl_fade_on
+    sta ttl_redraw
+    sta ttl_c_tmr+1
+    lda #17 : sta ttl_c_step            ; holding
+    lda #TTL_C_FIRST : sta ttl_c_tmr    ; and a shorter first hold, so the
+    rts                                 ; page is seen to do something
+}
+
+\ One field. Bank 2 does the work; if it asks for the other set, the
+\ bank 3 call that paints it is ours, because bank 2 cannot make one.
+.ttl_cred_tick
+{
+    lda #SWRAM_SPRITES1
+    ldx #LO(ttl_cred_step)
+    ldy #HI(ttl_cred_step)
+    jsr bank_call
+    lda ttl_redraw
+    beq out
+    lda #0
+    sta ttl_redraw
+
+    \ Which set: bank 3's own copy of the C64's, or this port's, which
+    \ rides on the end of the PANEL file at TTL_EXTRA. title_text reads
+    \ through the pointer either way - &3C80 is main RAM and readable
+    \ with bank 3 paged in, and the CPU is looking at SHADOW here,
+    \ which is the bank the credits are displayed from.
+    ldx #LO(title_lines_data)
+    ldy #HI(title_lines_data)
+    lda ttl_c_set
+    beq c64
+    ldx #LO(TTL_EXTRA)
+    ldy #HI(TTL_EXTRA)
+    .c64
+    stx ttl_cred_ptr
+    sty ttl_cred_ptr+1
+    ldx #LO(title_text)
+    ldy #HI(title_text)
+    jmp bank3_call
+    .out
+    rts
+}
+
+\ And on the way out, whether the crossfade had finished or not:
+\ logical 8 is the second black the sprite engine draws with.
+.ttl_cred_end
+{
+    lda #SWRAM_SPRITES1
+    ldx #LO(ttl_cred_off)
+    ldy #HI(ttl_cred_off)
+    jmp bank_call
+}
+
 INCLUDE "src/tables.asm"
 
 \ ******************************************************************
@@ -1431,54 +1524,6 @@ ENDIF
 MEM_STEP = 6                    ; fields a rung: eight of them is ~1s
 MEM_HOLD = 150                  ; and three seconds to read it in
 
-\ Rung -> physical colour, dark to bright, and its inverse. The MOS's own
-\ MODE 2 palette is logical n -> physical n, which is what setup_display
-\ programs and what the loading picture was drawn against, so a logical
-\ colour's own rung is fade_idx of itself.
-.fade_ramp EQUB 0, 4, 1, 5, 2, 6, 3, 7
-.fade_idx  EQUB 0, 2, 4, 6, 1, 3, 5, 7
-
-.fade_dir  EQUB 0               ; 0 = up (cap), &ff = down (subtract)
-
-\ A = the step, 0-7. All sixteen logical colours, because 8-15 are the
-\ second black the sprites use and must track 0-7.
-.fade_pal
-{
-    sta fp_step
-    ldx #15
-    .lp
-    txa
-    and #7
-    tay
-    lda fade_idx, y
-    bit fade_dir
-    bmi go_down
-    cmp fp_step                 ; up: min(rung, step)
-    bcc keep
-    lda fp_step
-    bcs keep                    ; carry set: the cmp said >=
-    .go_down
-    sec                         ; down: rung - step, clamped at black
-    sbc fp_step
-    bcs keep
-    lda #0
-    .keep
-    tay
-    lda fade_ramp, y
-    eor #7
-    sta fp_tmp
-    txa
-    asl a : asl a : asl a : asl a
-    ora fp_tmp
-    sta VIDEO_ULA_PAL
-    dex
-    bpl lp
-    rts
-
-    .fp_step EQUB 0
-    .fp_tmp  EQUB 0
-}
-
 \ One field, polled. Interrupts are off, so nothing else has taken the
 \ VSync flag before we get to look at it.
 .mem_field
@@ -1501,8 +1546,11 @@ MEM_HOLD = 150                  ; and three seconds to read it in
     ldx #0
     .rung
     stx mr_x
-    txa
-    jsr fade_pal
+    stx fade_step               ; fade_pal is in BANK 2 (decision 53): main
+    lda #SWRAM_SPRITES1         ; RAM had no room below SPR_SAVE for it and
+    ldx #LO(fade_pal)           ; the titles need it after a game has run
+    ldy #HI(fade_pal)
+    jsr bank_call
     ldy #MEM_STEP
     .hold
     jsr mem_field
@@ -1525,6 +1573,8 @@ MEM_HOLD = 150                  ; and three seconds to read it in
 {
     sei
     lda &fe34 : and #&ff - 4 : sta &fe34    ; CPU sees MAIN: the picture
+    lda #0
+    sta fade_low                ; all sixteen: the whole picture goes
 
     lda #&ff                    ; the loading picture goes out
     sta fade_dir
@@ -1746,6 +1796,21 @@ ORG GAME_STATE
 .mega_ofs       skip 2      ; the cell mega_plot is to write
 .mega_src       skip 2      ; and the sixteen bytes to write into it
 .mega_guard     skip 1      ; 0 = a letter, anything else the shadow
+
+\ The palette fade (Layer 9d) and the titles' credit crossfade (Layer 9e).
+\ fade_pal and the state machine are in BANK 2 - main RAM had no room below
+\ SPR_SAVE - and a bank_call takes A, X and Y, so every argument comes
+\ through here. ttl_redraw is the one thing bank 2 cannot do for itself:
+\ the bank 3 call that repaints the credits with the other set.
+.fade_step      skip 1      ; 0-7, the rung
+.fade_dir       skip 1      ; 0 = up (cap), &ff = down (subtract)
+.fade_low       skip 1      ; lowest logical colour: 0 memorial, 8 titles
+.ttl_c_step     skip 1      ; 0-7 down, 8 swap, 9-15 up, 16 done, 17 holding
+.ttl_c_tmr      skip 2      ; fields to the next step; 250 needs two bytes
+.ttl_c_set      skip 1      ; 0 the C64's credits, 1 this port's
+.ttl_fade_on    skip 1      ; the credit raster stands down while this is set
+.ttl_redraw     skip 1      ; bank 2 asks main RAM for a bank 3 call
+.ttl_cred_ptr   skip 2      ; where title_text reads its five lines from
 
 \ The frame meter (src/timing.asm). Microseconds, worst case since boot;
 \ double them for 2 MHz cycles. tim_over is the one that matters.

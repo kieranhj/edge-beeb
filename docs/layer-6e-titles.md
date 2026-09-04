@@ -206,6 +206,13 @@ by hue exactly as decision 41 collapses the artwork:
 pastel yellow on yellow with bright yellow, pink on magenta with purple — so nine colours become six
 and the ramp has flat spots the CPC's has not. Faithful is what is built; KC's eye has the last word.
 
+**Since Layer 9e these are logicals 15, 14 and 12, not 7, 6 and 4** (decision 53): the credits'
+font was moved onto the top half of the palette, which `setup_display` maps back onto the same
+colours but which nothing else on this page uses, so the credits can be faded on the palette alone.
+Every byte of `ttl_pal` is the old one plus `&80`, the restore at the end of `ttl_raster` goes with
+it, and `ttl_fade_on` skips the whole routine while a crossfade is running. Nothing else here
+changed.
+
 Logical 7 takes the body list and logical 6 the trailing one, and logical 4 is left alone as the
 shadow. That is the like-for-like reading of the CPC's two pens and it also keeps the C64's own
 choice, because pair 3 — our logical 7 — is the one `ttl_pulse` moves through colour RAM.

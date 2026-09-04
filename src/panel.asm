@@ -23,7 +23,21 @@ CLEAR 0, &FFFF
 ORG PANEL_ADDR
 .panel_file
 INCBIN "src/data/panel.bin"
+.panel_image_end
+ASSERT panel_image_end - panel_file = PANEL_BYTES
+ASSERT panel_image_end = TTL_EXTRA
+
+\ And riding on the end of it: the titles' second credit set (Layer 9e,
+\ decision 53). &3C80-&3FFF is 896 bytes above the panel and below the play
+\ buffer that NEITHER rupture cycle fetches - real RAM in both banks that
+\ nothing has ever claimed - and this file is already being unpacked into
+\ both banks' &3000 at boot, so 190 bytes on the end of it arrive there for
+\ nothing. Bank 3, where the font and the plotter live, has 45 bytes left in
+\ a -Cpc build.
+.ttl_cred_bbc
+INCBIN "src/data/title_extra.bin"
 .panel_file_end
-ASSERT panel_file_end - panel_file = PANEL_BYTES
+ASSERT panel_file_end - ttl_cred_bbc = TITLE_LINE_LEN * TITLE_LINES
+ASSERT panel_file_end <= screen_start
 
 SAVE "PANEL", panel_file, panel_file_end

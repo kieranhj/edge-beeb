@@ -304,13 +304,18 @@ EQUB 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 \ *	logical 6 the trailing one, and logical 4 is left as the shadow.
 \ ******************************************************************
 
+\ LOGICALS 15 AND 14, not 7 and 6: Layer 9e moved the credits' font onto
+\ logicals 12, 14 and 15 so that they could be faded on the palette while
+\ the panel and both zoom bands stay lit (decision 53). setup_display maps
+\ 8-15 back onto 0-7, so the colours are the same ones - every byte here is
+\ the old one plus &80, which is the logical nibble's top bit.
 .ttl_pal
-EQUB &76, &67, &73, &67, &76, &66, &72, &66
-EQUB &76, &63, &72, &63, &74, &66, &74, &66
-EQUB &70, &66, &74, &66, &74, &66, &72, &63
-EQUB &76, &63, &72, &66, &76, &66, &73, &67
-EQUB &76, &67, &73, &67, &76, &66, &72, &66
-EQUB &76, &63, &72, &63, &74, &66, &74, &66
+EQUB &f6, &e7, &f3, &e7, &f6, &e6, &f2, &e6
+EQUB &f6, &e3, &f2, &e3, &f4, &e6, &f4, &e6
+EQUB &f0, &e6, &f4, &e6, &f4, &e6, &f2, &e3
+EQUB &f6, &e3, &f2, &e6, &f6, &e6, &f3, &e7
+EQUB &f6, &e7, &f3, &e7, &f6, &e6, &f2, &e6
+EQUB &f6, &e3, &f2, &e3, &f4, &e6, &f4, &e6
 
 TTL_PAL_STEPS = 16              ; before the repeat; the window is eight long
 TTL_RASTER_ROWS = 8             ; one character row
@@ -334,6 +339,8 @@ TTL_RASTER_ROWS = 8             ; one character row
 TTL_RASTER_PAD = 18
 
 .ttl_raster
+    lda ttl_fade_on             ; the credits are crossfading and the palette
+    bne ttl_r_out               ; is theirs: putting 15 and 14 back to full
     lda #TTL_RASTER_ROWS
     sta ttl_rcount
 .ttl_r_line
@@ -351,10 +358,11 @@ TTL_RASTER_PAD = 18
     bne ttl_r_line
 
     \ and back to what setup_display set, before the panel sees it
-    lda #&70 + (7 EOR 7)                ; logical 7 -> white
+    lda #&f0 + (7 EOR 7)                ; logical 15 -> white
     sta VIDEO_ULA_PAL
-    lda #&60 + (6 EOR 7)                ; logical 6 -> cyan
+    lda #&e0 + (6 EOR 7)                ; logical 14 -> cyan
     sta VIDEO_ULA_PAL
+.ttl_r_out
     rts
 
 \ ******************************************************************

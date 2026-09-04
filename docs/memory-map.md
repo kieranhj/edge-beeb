@@ -31,10 +31,10 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 | `&0800-&0985` | 390 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **634** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends 12 lower - the frame meter is the difference. The last two things in it are the starfield's 92 bytes (decisions 50 and 51) - 40 for the stars and 52 for where each bank last plotted them - and the "MEGA HERO" message's 15, which are up here because bank 1, where its code is, had tens of bytes left and this has hundreds |
 | `&0C00-&0C5F` | 96 | **`VGI_STATE`**: the VGI player's decode state, eleven streams' worth (decision 49). Not in the image - nothing in it needs initialising | 160 to `&0D00` |
 | `&0D00-&0DFF` | 256 | paged-ROM extended vectors. Not claimed, not tested | 256, unverified — see below |
-| `&0E00-&21F7` | 5,624 | code to `&1F67`, then the boot-only data, **the loader**, **the memorial's fade** and `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2400` | **521** to `LOAD_STREAM`, of which **153** are usable by anything read in play. Layer 9d moved the loader above `code_end` and `LOAD_STREAM` from `&2200` to `&2400` (decision 52); `!BOOT` left in Layer 9 (decision 49) |
+| `&0E00-&21F7` | 5,624 | code to `&1FC6`, then the boot-only data, **the loader**, **the memorial's fade** and `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2400` | **491** to `LOAD_STREAM`, of which **58** are usable by anything read in play. Layer 9d moved the loader above `code_end` and `LOAD_STREAM` from `&2200` to `&2400` (decision 52); `!BOOT` left in Layer 9 (decision 49) |
 | `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly. At assembly time `&2600` is where `!BOOT` is built, which costs the run nothing: it is a disc file, never loaded here | 0 by construction |
 | `&3000-&3C7F` × 2 | 3,200 each | the status panel, in BOTH shadow banks | 0 |
-| `&3C80-&3FFF` × 2 | 896 each | **nobody's**: above the panel, below the play buffer, fetched by neither rupture cycle | 896 main + 896 shadow, unclaimed — see below |
+| `&3C80-&3FFF` × 2 | 896 each | above the panel, below the play buffer, fetched by neither rupture cycle. **Layer 9e spends the first 190 of it**: the titles' second credit set, carried into both banks by the `PANEL` file (decision 53) | **706** in each bank, and the region is proved now — see below |
 | `&4000-&7FFF` × 2 | 16,384 each | the play buffers, main and shadow, hardware-wrapped at 16K | 0 |
 | `&E000-&FFFF` | 8,192 | MOS ROM. `&FFFE` on this Master reads `&E59E` — measured — so paging HAZEL in cannot break IRQ dispatch | — |
 
@@ -54,7 +54,7 @@ executed in play may not**, and for two layers nothing was checking: `explosion_
 landing on their movement vectors (`BUGS.md` #13). `main.asm` now carries
 `ASSERT code_end <= SPR_SAVE` and the listing prints `CODE CEILING` beside it.
 
-**`code_end` is `&1F67`: 153 bytes under it in a DEV build.** That, and not the 521 the FREE line
+**`code_end` is `&1FC6`: 58 bytes under it in a DEV build** - Layer 9e's three wrappers took 95 of the 153, and the rest of that layer went to bank 2 for exactly this reason. That, and not the 521 the FREE line
 prints, is what main RAM has left for anything permanent. **Layer 9d is where the boot loader
 moved out**, which is what this page said the next thing to want main-RAM code would have to do:
 `load_stream`, `unpack_to`, `panel_init`, `load_bank`, `unpack_andy` and `load_hazel` are all dead
@@ -75,7 +75,7 @@ that survives into the game.
 | — | ANDY | the Master's own 4K, `&8000-&8FFF`, ROMSEL bit 7 — **measured 2026-09-04**, see below. One of the tune's eleven register streams lives here (decision 48) | `&8F9E` | **98** | 4,096 | 4,096 |
 | 4 | `BANK0` | `char_data`, `tile_data`, `map_data`, `col_decode`, `wave_data`, `anim_decode`, and the run-once and out-of-room code | `&BFF0` | **16** | 16 | 16 |
 | 5 | `BANK1` | sprite data, pixel shift 0, the titles' zoom scroller (Layer 6e), then `explosion_dirs`, the starfield's tables and the "MEGA HERO" message's data and `mega_one` (Layer 9c) in what used to be dead space, then a tune stream at `MUSIC_B1_BASE` = `&B900`, then the starfield's and the message's code | `&BFAA` | **86**, and **11** left in the hole below `&B900` | 1,370 | 1,364 |
-| 6 | `BANK2` | the same, shift 1, then a tune stream at `MUSIC_B2_BASE` = `&BA00` | `&BF47` | **185** | 1,909 | 1,727 |
+| 6 | `BANK2` | the same, shift 1, then the titles' credit crossfade, a tune stream at `MUSIC_B2_BASE` = `&BA00`, and `fade_pal` after it (decision 53) | `&BF96` | **220** in the hole below the tune and **106** in the tail above it — **38** and 106 with the CPC artwork | 1,909 | 1,727 |
 | 7 | `BANK3` | compiled sprite bodies, the titles' font, credits and plotter, the memorial's message and `mem_page` (Layer 9d), the HUD glyphs and `status_decode`; then region A of the tune | `&9003`, then `music_lo` fills `&9100-&BFFF` | **253**, all below the tune, and **0** above it — **45** with the CPC artwork, which is the tightest this bank has been | **12,399** | **12,191** |
 
 A RELEASE build takes bank 0 to `&BF4A`: **182** free, the frame meter (`src/timing.asm`) being the
@@ -140,23 +140,31 @@ survived a run of the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared
 - **`&0D00-&0DFF`, 256 bytes.** The paged-ROM extended-vector space, and NOT covered by KC's note
   above. Boot still uses OSFILE, and extended vectors are how a sideways ROM's service calls are
   dispatched, so this one needs proving after the load rather than assuming.
-- **`&3C80-&3FFF`, 896 bytes in each of the two shadow banks.** It sits between the panel's last
-  byte and `screen_start`, and neither rupture cycle ever fetches it. The main-bank copy is
-  directly addressable; the shadow copy needs the ACCCON X bit, the way `panel_init` reaches the
-  panel. Both are stamped over at boot — main by the loading picture, shadow by `DEPK_STREAM` — so
-  anything living there has to be built after the load.
+- **`&3C80-&3FFF`, 896 bytes in each bank — PROVED, and 190 of it spent.** It sits between the
+  panel's last byte and `screen_start`, and neither rupture cycle ever fetches it. Layer 9e put the
+  titles' second credit set there (decision 53) and the sentinel this page asked for is done: after
+  a full game — three lives, the blitter writing `SPR_SAVE` every frame, the HUD, the scroll, the
+  starfield — all 190 bytes read back out of jsbeeb byte for byte identical to
+  `src/data/title_extra.bin`. The main-bank copy is directly addressable; the shadow copy needs the
+  ACCCON X bit, the way `panel_init` reaches the panel. Both are stamped over at boot — main by the
+  loading picture, shadow by `DEPK_STREAM` — so anything living there has to be built after the
+  load, which is exactly what riding on the end of the `PANEL` file does. **706 free in each
+  bank.**
 
 ## Where the room actually is
 
-The tune took the two big pieces. What is left, largest first: **634** in the `&0800` block, **370**
-in bank 3 below the tune, **185** in bank 2, **167** in main RAM code, **160**
-at `&0C00`, **98** in ANDY, **86** in bank 1's tail, **38** above the music player in HAZEL, **32**
-in region A, **16** in bank 0 and **11** in bank 1's hole. Everything is inside a few hundred bytes of its ceiling now.
+The tune took the two big pieces and Layers 9d and 9e took most of what was left in main RAM. What
+remains, largest first (DEV, C64 artwork): **706** at `&3C80` in each bank, **~610** in the `&0800`
+block, **253** in bank 3 below the tune, **220** in bank 2's hole and **106** in its tail, **160** at
+`&0C00`, **98** in ANDY, **86** in bank 1's tail, **58** in main RAM below `SPR_SAVE`, **38** above
+the music player in HAZEL, **32** in region A, **11** in bank 1's hole and **7** in bank 0.
 
-`&0D00` and the 1,792 bytes at `&3C80` are worth another 2K if they survive a sentinel, and they are
-the obvious next place to look; the 896 in the MAIN bank at `&3C80` is directly addressable and
-would take another music stream without any paging at all, if the exporter's regions ever need a
-fifth.
+**With the CPC artwork the tight ones are tighter**: bank 3 has 45 below the tune and bank 2's hole
+has 38. Those two, and bank 0's 7 in a DEV build, are what the next layer will hit first.
+
+`&0D00` is still unproved. `&3C80` is proved now, and the 706 in the MAIN bank there is directly
+addressable — it would take another music stream with no paging at all, if the exporter's regions
+ever need a fifth.
 
 The disc is not short of anything by comparison: the packed image is 45,824 bytes of a 200K disc.
 

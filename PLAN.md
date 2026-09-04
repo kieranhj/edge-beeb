@@ -17,7 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5, 6a-6e, 7, 9a-9b, the starfield of 9c and 9d are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
+**Layers 0 to 5, 6a-6e, 7, 9a-9b, the starfield of 9c, 9d and 9e are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
 over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K/M/L with the C64's
@@ -36,7 +36,11 @@ Layer 6c had it parked behind an alphabet that does not exist. And **a memorial*
 loading picture and the titles the picture fades out on the palette, "IN MEMORY OF T.M.R." fades
 up in the credits' own font, holds three seconds and fades out again into the titles - eight rungs
 of one brightness ladder, sixteen writes to `&FE21` a rung, and not one byte of the picture
-touched (decision 52). **The whole 349-second tune
+touched (decision 52). And **the titles cross-fade between the C64's credits and
+this port's own**, five seconds a set, on the palette alone: the credits' font moved onto
+logicals 12, 14 and 15, which setup_display maps back onto the same blue, cyan and white but which
+nothing else on that page uses, so the five lines dim and come back while the panel, both zoom
+bands and the scroller stay lit and keep moving (decision 53). **The whole 349-second tune
 ships**, spread over four separate regions of memory, because a `.vgi` is eleven independent
 register streams and only each stream has to be contiguous (decision 48).
 
@@ -523,5 +527,6 @@ CPC's rather than the C64's.
 | 9c — the parallax starfield | [`docs/layer-9c-starfield.md`](docs/layer-9c-starfield.md) | done 2026-09-04, decisions 50 and 51 |
 | 9c — the "MEGA HERO" message | [`docs/layer-9c-mega-hero.md`](docs/layer-9c-mega-hero.md) | done 2026-09-04 |
 | 9d — the memorial | [`docs/layer-9d-memorial.md`](docs/layer-9d-memorial.md) | done 2026-09-04, decision 52 |
+| 9e — the credits crossfade | [`docs/layer-9e-credits.md`](docs/layer-9e-credits.md) | done 2026-09-04, decision 53 |
 | 9c — the rest of the outstanding features | | **open 2026-09-04**: the win tune, redefinable keys, a BBC scroll text |
 | 9 — polish and release | | |

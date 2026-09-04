@@ -25,6 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CHARSET = os.path.join(ROOT, 'source_c64', 'data', 'status.chr')
 OUT = os.path.join(ROOT, 'src', 'data', 'title.bin')
+OUT_EXTRA = os.path.join(ROOT, 'src', 'data', 'title_extra.bin')
 
 GLYPHS = 32
 
@@ -37,13 +38,36 @@ CREDITS = [
     "music by            sean odie connolly",
     "released by        format war and rgcd",
 ]
+
+# And this port's own, which the titles cross-fade to and back (Layer 9e,
+# decision 53). Laid out the way the original's block is - a label at the left
+# and its value hard against the right - so the swap reads as the same five
+# lines changing rather than as a different page. Line 1 is centred, as the
+# original's title line effectively is.
+#
+# The font is the C64 status charset and has no digits: A-Z, space and
+# ! . , - ? are all of it. So no year, which is KC's call and costs nothing -
+# ten more glyphs would have been 160 bytes.
+CREDITS_BBC = [
+    "   edge grinder bbc master version    ",
+    "coding               kieran and claude",
+    "graphics          john dethmunk blythe",
+    "music conversion tooling     simondotm",
+    "released by                bitshifters",
+]
 LINE_LEN = 38
 
 # The multicolour bit pair -> our MODE 2 logical colour. Pair 0 is the
 # background and stays black; the glyphs use 3 for the body and 1 and 2 for the
 # shadow and highlight they are drawn with. Blue/cyan/white is the scenery's
 # own palette, so the page sits with the rest of the game.
-PAIR_COLOUR = {0: 0, 1: 4, 2: 6, 3: 7}
+# **Logicals 12, 14 and 15, not 4, 6 and 7** (Layer 9e, decision 53).
+# setup_display maps 8-15 back onto 0-7, so these ARE blue, cyan and white
+# and the page looks exactly as it did - but they are palette entries
+# nothing else on the titles uses, so the credits can be faded on the
+# palette alone while the panel and both zoom bands stay at full
+# brightness. ttl_pal in src/bank1.asm pulses 15 and 14 to match.
+PAIR_COLOUR = {0: 0, 1: 12, 2: 14, 3: 15}
 
 
 def mode2_pixel(colour, left):
@@ -92,16 +116,34 @@ def main():
         out += cols[0] + cols[1]
 
     dec = scroll_decode()
-    for line in CREDITS:
-        assert len(line) == LINE_LEN, '%r is %d characters, not %d' % (
-            line, len(line), LINE_LEN)
-        for ch in line:
-            out.append(dec[screen_code(ch) & 63])
+
+    def encode(lines):
+        block = bytearray()
+        for line in lines:
+            assert len(line) == LINE_LEN, '%r is %d characters, not %d' % (
+                line, len(line), LINE_LEN)
+            for ch in line:
+                g = dec[screen_code(ch) & 63]
+                assert g or ch == ' ', '%r has no glyph in this font' % ch
+                block.append(g)
+        return block
+
+    out += encode(CREDITS)
+
+    # The second set goes in its own file, which src/panel.asm puts on the end
+    # of the PANEL image so that it lands at &3C80 - the 896 bytes above the
+    # panel that neither rupture cycle ever fetches. Bank 3, where the font and
+    # the plotter are, has 45 bytes left in a -Cpc build and this is 190.
+    extra = encode(CREDITS_BBC)
 
     with open(OUT, 'wb') as f:
         f.write(out)
+    with open(OUT_EXTRA, 'wb') as f:
+        f.write(extra)
     print('%s: %d bytes (%d glyphs, %d lines of %d)'
           % (OUT, len(out), GLYPHS, len(CREDITS), LINE_LEN))
+    print('%s: %d bytes (%d lines of %d)'
+          % (OUT_EXTRA, len(extra), len(CREDITS_BBC), LINE_LEN))
 
 
 if __name__ == '__main__':

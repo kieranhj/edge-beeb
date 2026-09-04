@@ -553,7 +553,8 @@ INCLUDE "src/timing.asm"
     lda &fe34 : ora #4 : sta &fe34              ; CPU sees SHADOW
     jsr clear_play
     jsr status_call
-    ldx #LO(title_text)
+    jsr ttl_cred_start          ; the crossfade's clock, and which set is
+    ldx #LO(title_text)         ; up - BEFORE the draw, which reads it
     ldy #HI(title_text)
     jsr bank3_call
 
@@ -586,12 +587,15 @@ INCLUDE "src/timing.asm"
     ldx #LO(ttl_frame)
     ldy #HI(ttl_frame)
     jsr bank_call
+    jsr ttl_cred_tick
     ldx #KEY_FIRE
     jsr keydown
     bpl wait
 
     \\ ---- and back to the game's own shape --------------------------
     CRTC 8, &30
+    jsr ttl_cred_end            ; logicals 8-15 back: logical 8 is the
+                                ; second black the sprites draw with
     lda #0
     sta ttl_active
     lda #4  : sta &fe40         ; 16K wrap again: the play buffers' own

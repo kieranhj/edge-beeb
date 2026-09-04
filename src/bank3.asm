@@ -43,9 +43,8 @@ ENDIF
 \ *	Nothing in this bank can page its own bank out.
 \ ******************************************************************
 
-TITLE_GLYPH_BYTES = 16
-TITLE_LINE_LEN = 38
-TITLE_LINES = 5
+\ TITLE_GLYPH_BYTES, TITLE_LINE_LEN and TITLE_LINES are in main.asm now:
+\ src/panel.asm needs them too, and it is assembled before this file.
 
 .title_font
 INCBIN "src/data/title.bin"
@@ -57,6 +56,11 @@ title_lines_data = title_font + 32 * TITLE_GLYPH_BYTES
 \ 10, 11 and 12. Layer 6c had them a row lower, re-centred, because there
 \ was nothing else on the page; with the zoom bands in, the original's own
 \ spacing is what fits.
+\
+\ Layer 9e draws this block twice over, from two sets of five lines: bank 3's
+\ own, below, and this port's at TTL_EXTRA, which rides on the end of the
+\ PANEL file. ttl_cred_ptr in main RAM says which, and is the only change the
+\ crossfade needed here - the fade itself is the palette (decision 53).
 \
 \ These are rows of the CREDITS BLOCK, not of the play area: cycle C starts
 \ at TTL_CRED and play row 7 is its row 0.
@@ -102,9 +106,9 @@ TITLE_COL0 = 2
     .times_done
     tya
     clc
-    adc #LO(title_lines_data) : sta read_ptr
-    lda #0
-    adc #HI(title_lines_data) : sta read_ptr+1
+    adc ttl_cred_ptr : sta read_ptr        ; WHICH SET: bank 3's own copy of
+    lda #0                                 ; the C64's, or this port's at
+    adc ttl_cred_ptr+1 : sta read_ptr+1    ; TTL_EXTRA (decision 53)
 
     ldx #0
     .char_loop

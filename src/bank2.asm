@@ -18,11 +18,128 @@ ELSE
 INCBIN "src/data/sprites1.bin"
 ENDIF
 
+\ ******************************************************************
+\ *	The titles' credit crossfade (Layer 9e, decision 53)
+\ ******************************************************************
+\ *	The five credit lines dim to black, the text swaps between the
+\ *	C64's own credits and this port's, and it comes back up - while
+\ *	the panel, both zoom bands and the scroller stay at full
+\ *	brightness.
+\ *
+\ *	IT IS THE PALETTE AND NOTHING ELSE, and that is possible only
+\ *	because export_title.py draws the credits' font in logicals 12, 14
+\ *	and 15 rather than 4, 6 and 7. setup_display maps 8-15 back onto
+\ *	0-7, so they ARE the same blue, cyan and white and the page looks
+\ *	exactly as it did - but they are palette entries nothing else on
+\ *	the titles uses, so eight writes to &FE21 fade the credits and
+\ *	leave everything else alone. No redraw, so nothing tears and the
+\ *	scroller never loses a field.
+\ *
+\ *	ttl_c_step is the whole state machine: 0-7 fade down, 8 swaps the
+\ *	set, 9-15 fade up, 16 is "done" and 17 is "holding". The redraw at
+\ *	the swap happens with the palette already black, so it is not
+\ *	seen.
+\ *
+\ *	ttl_fade_on stands the credit raster down while it runs: the
+\ *	raster in bank 1 writes logicals 15 and 14 on the first and last
+\ *	credit lines every field and would otherwise put them straight
+\ *	back to full brightness. It comes back with the new text.
+\ ******************************************************************
+
+TTL_C_HOLD = 250                ; fields a set is up: five seconds
+TTL_C_FIRST = 150               ; but three for the first, so that a page
+                                ; just arrived at is seen to change
+TTL_C_STEP = 3                  ; fields a rung: sixteen of them is ~1s
+TTL_C_LOW  = 8                  ; the credits' own logical colours, 8-15
+
+\ ---- ttl_cred_off: logicals 8-15 back before the game sees them ---
+\ Logical 8 is the second black the sprite engine draws with, so
+\ leaving the page mid-fade may not leave the palette mid-fade.
+.ttl_cred_off
+{
+    lda #0 : sta fade_dir : sta ttl_fade_on
+    lda #7 : sta fade_step                  ; capped at 7 is the palette itself
+    lda #TTL_C_LOW : sta fade_low
+    jmp fade_pal
+}
+
+\ ---- ttl_cred_step: one field of it ------------------------------
+.ttl_cred_step
+{
+    lda ttl_c_tmr               ; a 16-bit countdown, because 250 fields
+    ora ttl_c_tmr+1             ; does not fit a byte
+    beq expired
+    lda ttl_c_tmr
+    bne no_borrow
+    dec ttl_c_tmr+1
+    .no_borrow
+    dec ttl_c_tmr
+    rts
+
+    .expired
+    ldx ttl_c_step
+    cpx #17
+    bne not_hold
+    ldx #0                      ; the hold is over: the crossfade starts
+    stx ttl_c_step
+    dex
+    stx ttl_fade_on             ; &FF: the raster stands down
+    ldx #0
+    .not_hold
+    cpx #16
+    bne fading
+
+    \ 16: the crossfade is over. The raster comes back, and so does the
+    \ five-second hold.
+    lda #0 : sta ttl_fade_on
+    lda #17 : sta ttl_c_step
+    lda #LO(TTL_C_HOLD) : sta ttl_c_tmr
+    lda #HI(TTL_C_HOLD) : sta ttl_c_tmr+1
+    rts
+
+    .fading
+    inc ttl_c_step
+    cpx #8
+    bcc down
+    beq swap
+    txa                         ; 9-15: fading up, capped at step - 8
+    sec
+    sbc #8
+    ldy #0
+    sty fade_dir
+    jmp pal
+
+    .swap
+    lda ttl_c_set               ; 8: everything is black, so the swap and
+    eor #1                      ; the redraw behind it are invisible
+    sta ttl_c_set
+    lda #&ff
+    sta ttl_redraw              ; main RAM makes the bank 3 call
+    lda #0
+    sta fade_dir
+    beq pal                     ; A = 0: capped at 0 is black
+
+    .down
+    txa                         ; 0-7: fading down, subtracting the step
+    ldy #&ff
+    sty fade_dir
+
+    .pal
+    sta fade_step
+    lda #TTL_C_LOW : sta fade_low
+    jsr fade_pal
+    lda #TTL_C_STEP : sta ttl_c_tmr
+    lda #0 : sta ttl_c_tmr+1
+    rts
+}
+
+
 IF MUSIC_AKL = 0
 \ The tune's B2 streams (decision 48). Nothing in this bank reads them:
 \ they are here because the .vgi's eleven register streams do not have to be
 \ in one place, and the tail of a sprite bank is a place. lib/vgiplayer.asm
 \ pages this bank in for the byte and out again.
+PRINT "BANK 2 HOLE BELOW THE TUNE =", ~MUSIC_B2_BASE - P%
 ASSERT P% <= MUSIC_B2_BASE
 CLEAR MUSIC_B2_BASE, &C000
 ORG MUSIC_B2_BASE
@@ -31,6 +148,92 @@ INCBIN "src/data/music_b2.bin"
 .music_b2_end
 ASSERT music_b2_end <= &C000
 ENDIF
+
+
+\ ******************************************************************
+\ *	The palette fade, and the titles' credit crossfade (Layers 9d, 9e)
+\ ******************************************************************
+\ *	HERE, in the tail of a sprite bank, because it is the only place
+\ *	with room. Main RAM below SPR_SAVE - the only ground anything read
+\ *	after a game has started may use - had 68 bytes left and this is
+\ *	more than twice that, and bank 3, where the credits' font and
+\ *	plotter are, has 45 in a -Cpc build. Bank 2 has 185, and nothing
+\ *	on the titles reads a sprite - exactly why bank 1 holds the zoom
+\ *	scroller.
+\ *
+\ *	Nothing in a sideways bank other than bank 0 may call main RAM, so
+\ *	all of this is self-contained: the arguments come in through
+\ *	variables in the &0800 block, and the one thing it cannot do
+\ *	itself - the bank 3 call that redraws the credits - is asked for
+\ *	by setting ttl_redraw and done by ttl_cred_tick in main RAM.
+\ ******************************************************************
+
+\ ---- the brightness ladder ---------------------------------------
+\
+\ MODE 2's eight colours sit on ONE of them - black, blue, red,
+\ magenta, green, cyan, yellow, white - so a step down it is one step
+\ darker: white -> yellow -> cyan -> green -> magenta -> red -> blue ->
+\ black, which is KC's own sequence. fade_ramp is rung -> colour and
+\ fade_idx its inverse. The MOS's MODE 2 palette is logical n ->
+\ physical n, which is what setup_display programs, so a logical
+\ colour's own rung is fade_idx of itself. Decision 52.
+.fade_ramp EQUB 0, 4, 1, 5, 2, 6, 3, 7
+.fade_idx  EQUB 0, 2, 4, 6, 1, 3, 5, 7
+.fade_tmp  EQUB 0
+
+\ ******************************************************************
+\ *	fade_pal - one rung of the ladder, on the palette alone
+\ ******************************************************************
+\ *	fade_step 0-7, fade_dir 0 = up and &FF = down, fade_low = the
+\ *	lowest logical colour to touch. All three are in the &0800 block,
+\ *	because A, X and Y are the bank_call's own.
+\ *
+\ *	Down subtracts the step from every colour's rung and clamps at
+\ *	black - everything moves together and arrives at different times,
+\ *	which dims a picture rather than dissolving it. Up CAPS the rung
+\ *	at the step, so each colour stops when it reaches the one it is
+\ *	meant to be, and a message assembles itself.
+\ *
+\ *	fade_low is 0 for the memorial, which fades a whole picture, and 8
+\ *	for the titles, which fade logicals 8-15 - the credits' own, and
+\ *	nothing else's on that page (decision 53).
+\ ******************************************************************
+
+.fade_pal
+{
+    ldx #15
+    .lp
+    txa
+    and #7
+    tay
+    lda fade_idx, y
+    bit fade_dir
+    bmi go_down
+    cmp fade_step               ; up: min(rung, step)
+    bcc keep
+    lda fade_step
+    bcs keep                    ; carry set: the cmp said >=
+    .go_down
+    sec                         ; down: rung - step, clamped at black
+    sbc fade_step
+    bcs keep
+    lda #0
+    .keep
+    tay
+    lda fade_ramp, y
+    eor #7
+    sta fade_tmp
+    txa
+    asl a : asl a : asl a : asl a
+    ora fade_tmp
+    sta VIDEO_ULA_PAL
+    cpx fade_low                ; and NOT dex/bpl: fade_low is 0 for the
+    beq done                    ; memorial, and X would wrap past it
+    dex
+    jmp lp
+    .done
+    rts
+}
 
 .bank2_end
 
