@@ -588,8 +588,7 @@ INCLUDE "src/timing.asm"
     ldy #HI(ttl_frame)
     jsr bank_call
     jsr ttl_cred_tick
-    ldx #KEY_FIRE
-    jsr keydown
+    jsr key_start               ; fire or SPACE (KC)
     bpl wait
 
     \\ ---- and back to the game's own shape --------------------------

@@ -40,6 +40,14 @@ the last credit line and writes the same byte leftwards along the first, pushing
 
 `scrolltext` is 468 characters and ends in `$00`.
 
+**Since Layer 9f the message is `assets/scrolltext.txt` and is meant to be edited** (decision 54).
+`tools/export_zoom.py` reads it — lines joined end to end with nothing added, `#` and blank lines
+dropped — and refuses a character the font has not got, naming the line. It is seeded with the
+C64's own text, verbatim. **It also moved**: behind the font in bank 1 it had eleven bytes of
+headroom, which is no use for a file a person is supposed to change, so it rides in the `PANEL`
+disc file at `TTL_SCROLL` with the second credit set and has 237 characters to grow into. The build
+prints `SCROLLTEXT HEADROOM`, and bank 1's hole went from 11 bytes to 475.
+
 ## 2. What the CPC does, and what of it ports
 
 `source_cpc/Source/EG_Zoom.asm` and the `int_rout*title` chain in `EG_Interrupts2.asm`. The CPC has

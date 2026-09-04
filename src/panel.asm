@@ -36,8 +36,20 @@ ASSERT panel_image_end = TTL_EXTRA
 \ a -Cpc build.
 .ttl_cred_bbc
 INCBIN "src/data/title_extra.bin"
+ASSERT P% - ttl_cred_bbc = TITLE_LINE_LEN * TITLE_LINES
+ASSERT P% = TTL_SCROLL
+
+\ And after them the zoom scroller's message, out of assets/scrolltext.txt
+\ (Layer 9f). It used to sit behind the font in bank 1, which has eleven
+\ bytes of headroom - no use at all for something a person is meant to
+\ edit. Here it has hundreds, and the build prints how many.
+.ttl_scroll
+INCBIN "src/data/scroll.bin"
 .panel_file_end
-ASSERT panel_file_end - ttl_cred_bbc = TITLE_LINE_LEN * TITLE_LINES
 ASSERT panel_file_end <= screen_start
+
+PRINT "------"
+PRINT "SCROLLTEXT =", panel_file_end - ttl_scroll - 1, "characters, HEADROOM =", screen_start - panel_file_end
+PRINT "------"
 
 SAVE "PANEL", panel_file, panel_file_end

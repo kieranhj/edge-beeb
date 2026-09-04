@@ -77,6 +77,9 @@ IKN_l = 86
 IKN_p = 55
 IKN_q = 16
 IKN_escape = 112            ; the MOS interrupt is gone, so it is just a key
+IKN_space = 98              ; measured 2026-09-04, alongside L to prove the
+                            ; method: INKEY(-n) gave 86 for L, which is what
+                            ; IKN_l already said
 
 \ ******************************************************************
 \ *	GAME defines
@@ -104,8 +107,14 @@ KEY_RIGHT = IKN_x
 KEY_UP = IKN_k
 KEY_DOWN = IKN_m
 KEY_FIRE = IKN_l
+KEY_START = IKN_space       ; SPACE starts a game as well as fire (KC). Only
+                            ; on the titles: it does not unpause
 KEY_PAUSE = IKN_p           ; decision 32
-KEY_ABORT = IKN_escape      ; and only while paused, as the C64 has it
+KEY_ABORT = IKN_escape      ; and only while paused, as the C64 has it.
+                            ; Tried at any time and reverted (KC): it is
+                            ; polled every frame, so holding it re-entered
+                            ; life_lost and rebuilt the player's explosion
+                            ; pieces on the spot. It would need a debounce
 KEY_MUTE = IKN_q            ; decision 39. Read in the VSync handler, so it
                             ; works wherever the foreground happens to be
 
@@ -350,6 +359,12 @@ TTL_EXTRA      = PANEL_ADDR + PANEL_BYTES   ; &3C80
 TITLE_GLYPH_BYTES = 16              ; 2 byte columns x 8 scanlines, one cell
 TITLE_LINE_LEN = 38                 ; the C64's own cpx #$26
 TITLE_LINES   = 5
+TTL_SCROLL     = TTL_EXTRA + TITLE_LINE_LEN * TITLE_LINES
+                                    ; and after them the zoom scroller's
+                                    ; message, from assets/scrolltext.txt.
+                                    ; It was behind the font in bank 1,
+                                    ; which had ELEVEN bytes of headroom -
+                                    ; no use for a file meant to be edited
 TTL_CRED_C64   = 0                  ; which set: an index, not a pointer
 TTL_CRED_BBC   = 1
 ASSERT TTL_EXTRA + TITLE_LINE_LEN * TITLE_LINES <= screen_start
@@ -1322,6 +1337,26 @@ ENDIF
     ldy #HI(title_text)
     jmp bank3_call
     .out
+    rts
+}
+
+\ ******************************************************************
+\ *	key_start - fire OR space, and why it is down here
+\ ******************************************************************
+\ *	title_page reads it and title_page is in bank 0, which had SEVEN
+\ *	bytes left - so it is down here, where there are fifty. Below
+\ *	code_end, because the titles run after a game has been played.
+\ ******************************************************************
+
+\ Fire OR space starts a game. Returns with N set if either is down.
+.key_start
+{
+    ldx #KEY_FIRE
+    jsr keydown
+    bmi down
+    ldx #KEY_START
+    jmp keydown
+    .down
     rts
 }
 

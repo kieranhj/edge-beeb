@@ -54,7 +54,13 @@ ENDIF
 .ttl_font                       ; 32 glyphs x 8 bytes, 1bpp, rows 1-6 inked
 INCBIN "src/data/zoom.bin"
 ttl_block   = ttl_font + 256    ; character $8e rendered: 16 bytes, one cell
-ttl_message = ttl_font + 272    ; glyph numbers, &FF ends it
+ttl_message = TTL_SCROLL        ; glyph numbers, &FF ends it - and NOT in
+                                ; this bank any more (Layer 9f). It rides
+                                ; in the PANEL file and lands at &3C80,
+                                ; where assets/scrolltext.txt has room to
+                                ; grow; behind the font here it had eleven
+                                ; bytes. Main RAM, and readable from a
+                                ; paged-in bank like any other
 
 .ttl_blank
 EQUB 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -655,6 +661,7 @@ IF MUSIC_AKL = 0
 \ they are here because the .vgi's eleven register streams do not have to be
 \ in one place, and the tail of a sprite bank is a place. lib/vgiplayer.asm
 \ pages this bank in for the byte and out again.
+PRINT "BANK 1 HOLE BELOW THE TUNE =", ~MUSIC_B1_BASE - P%
 ASSERT P% <= MUSIC_B1_BASE
 CLEAR MUSIC_B1_BASE, &C000
 ORG MUSIC_B1_BASE

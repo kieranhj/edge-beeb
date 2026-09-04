@@ -8,15 +8,17 @@ rupture, eight software sprites clipped and redrawn every frame in both shadow b
 you can fly, shoot with and be killed in, the original's 201 attack waves, three lives with the
 six-piece explosion and the drop-in shield, game over, the completion sequence, score and high
 score on the panel, the CPC port's tune on the SN76489 out of HAZEL, and a titles page with the
-original's zoom scroller running across it twice over. What is left is hand-drawn BBC artwork
+original's zoom scroller running across it twice over. There is a memorial to T.M.R. between the loading screen and the titles, and the credits
+cross-fade between the original's and this port's. What is left is hand-drawn BBC artwork
 (Layer 8) and the rest of the polish.
 
 Try the current build in a browser:
 
 **https://bbc.xania.org/?disc=https://bitshifters.github.io/content/wip/edge-beeb.ssd&autoboot&model=Master**
 
-**Z** and **X** steer left and right, **K** and **M** up and down, **L** fires, **P** pauses,
-**ESCAPE** gives up (only from inside the pause, as the original has it) and **Q** mutes the tune.
+**Z** and **X** steer left and right, **K** and **M** up and down, **L** fires, **SPACE** or **L**
+starts a game from the titles, **P** pauses, **ESCAPE** gives up (only from inside the pause, as the
+original has it) and **Q** mutes the tune.
 Boot takes about eleven seconds with the loading screen up, while four sideways banks and the music
 come off the disc and the scroll is wound forward a screen.
 
@@ -69,6 +71,15 @@ write. The C64's colour pulse on the first and last credit lines is a horizontal
 that MODE 2 cannot do, so it is the CPC port's answer instead: a raster down the eight scanlines of
 each line, through the CPC's own colour list, the two indexed from opposite ends.
 
+The credits **cross-fade** between the original's and this port's, five seconds a set — on the
+palette alone, and touching nothing else on the page. The trick is that their font is drawn in
+logicals 12, 14 and 15 rather than 4, 6 and 7: the MODE 2 palette maps 8–15 back onto 0–7, so they
+are the same blue, cyan and white and the page looks identical, but they are entries nothing else
+there uses. Eight writes to the palette register a step, no screen memory touched, so the panel and
+both zoom bands stay lit and the scroller never loses a field. The scroller's own message is
+**`assets/scrolltext.txt`**, seeded with the C64's, and meant to be edited: run
+`python tools/export_zoom.py` and rebuild. The build prints how many characters are left.
+
 **The music.** The Amstrad CPC port's Arkos tune, converted SKS → YM → VGM → VGI and played by the
 VGI player at 50 Hz from the VSync handler. All 349 seconds of it, which took some finding: it is
 23,514 bytes and the largest contiguous hole on the machine is about 17K. But a `.vgi` is not one
@@ -88,6 +99,11 @@ while the banks come in behind it, staged in the shadow screen where nothing is 
 Every data file on the disc ships ZX0-compressed: 104,192 bytes of files becomes 45,824. The status
 panel is one of them — 3,200 bytes read exactly twice in the life of a run, unpacked straight into
 each bank's screen, because the sideways bank it used to sit in is where the tune has to be.
+
+When the loading is done the picture **fades out**, **IN MEMORY OF T.M.R.** fades up in the credits'
+own font, holds, and fades out again into the titles. That is the palette too: MODE 2's eight
+colours sit on one brightness ladder — black, blue, red, magenta, green, cyan, yellow, white — so a
+step down it is the whole picture one step darker, and not a byte of it is touched.
 
 Roughly 90% of the 79,872-cycle frame is spoken for in ordinary play, plus 4.3% for the music —
 measured with the frame meter, not estimated. A deliberate stress test (fire held, the ship parked

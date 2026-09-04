@@ -1,0 +1,39 @@
+# The titles' zoom scroller. EDIT THIS FILE, then run:
+#
+#     python tools/export_zoom.py
+#
+# and rebuild. It is the C64's own scrolltext to start with, verbatim from
+# source_c64/edge_grinder.asm.
+#
+# THE RULES, all of which the exporter enforces rather than letting a mistake
+# through as a blank:
+#
+#   * Lines are joined END TO END with NOTHING added - a line break is not a
+#     space. The trailing spaces below are what pace the scroller, so keep
+#     putting them in yourself.
+#   * Blank lines and lines starting with # are ignored.
+#   * The font has A-Z, space, and ! . , - ? and NOTHING else. No digits.
+#     Case does not matter; it is a one-case font.
+#   * There is room for 705 characters in all. The build prints how many are
+#     left as SCROLLTEXT HEADROOM and refuses an image that overruns.
+
+edge grinder    
+developed by cosine 
+for format war   
+published on cartridge by rgcd    
+code by jason   
+graphics by smila   
+music by sean    
+
+quick hellos to the cosine inmates,
+the forum regulars at oldschool gaming and 
+format war,
+smila and the ovine boys,
+james and everyone at rgcd,
+kenz and co. at psytronik 
+and anyone out there actually writing eight bit 
+code rather than just talking about how to!    
+
+why not visit   
+cosine.org.uk   formatwar.net   
+rgcd.co.uk        

@@ -40,7 +40,9 @@ touched (decision 52). And **the titles cross-fade between the C64's credits and
 this port's own**, five seconds a set, on the palette alone: the credits' font moved onto
 logicals 12, 14 and 15, which setup_display maps back onto the same blue, cyan and white but which
 nothing else on that page uses, so the five lines dim and come back while the panel, both zoom
-bands and the scroller stay lit and keep moving (decision 53). **The whole 349-second tune
+bands and the scroller stay lit and keep moving (decision 53). **SPACE starts a game**
+as well as fire, and the zoom scroller's message is `assets/scrolltext.txt` now - an editable file,
+seeded with the C64's own text, with 237 characters of room to grow (decision 54). **The whole 349-second tune
 ships**, spread over four separate regions of memory, because a `.vgi` is eleven independent
 register streams and only each stream has to be contiguous (decision 48).
 
@@ -528,5 +530,6 @@ CPC's rather than the C64's.
 | 9c — the "MEGA HERO" message | [`docs/layer-9c-mega-hero.md`](docs/layer-9c-mega-hero.md) | done 2026-09-04 |
 | 9d — the memorial | [`docs/layer-9d-memorial.md`](docs/layer-9d-memorial.md) | done 2026-09-04, decision 52 |
 | 9e — the credits crossfade | [`docs/layer-9e-credits.md`](docs/layer-9e-credits.md) | done 2026-09-04, decision 53 |
-| 9c — the rest of the outstanding features | | **open 2026-09-04**: the win tune, redefinable keys, a BBC scroll text |
+| 9f — SPACE starts, and an editable scrolltext | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04, decision 54 |
+| 9c — the rest of the outstanding features | | **open 2026-09-04**: the win tune, redefinable keys |
 | 9 — polish and release | | |
