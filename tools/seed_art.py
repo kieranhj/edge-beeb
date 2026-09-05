@@ -4,8 +4,12 @@ game runs on today, so he starts from a working picture rather than blank.
   python tools/seed_art.py           the C64 conversion (the default build)
   python tools/seed_art.py --cpc     the Amstrad port's art instead
 
-Writes assets/art/palette.png, chars.png, sprites.png, panel.png and hud.png,
-plus palette.gpl and palette.act for Aseprite and GIMP. Because it goes through the same bbc.py
+Writes assets/art/palette.png, chars.png, sprites.png, panel.png, hud.png and
+titlefont.png, plus palette.gpl and palette.act for Aseprite and GIMP.
+
+--cpc seeds the four sheets the Amstrad port has its own art for; the title
+font is not one of them, the two ports sharing the title page, so it is always
+the C64's. Because it goes through the same bbc.py
 colour path the exporters do, re-exporting the seeded sheets reproduces
 src/data/*.bin byte for byte - which is the check that the whole PNG path is
 transparent (tools/validate_art.py --roundtrip).
@@ -37,7 +41,8 @@ def main(cpc=False, blank=False):
     art = ((sheets.CHARS, mechanical.characters(cpc)),
            (sheets.SPRITES, mechanical.sprites(cpc)),
            (sheets.PANEL, mechanical.panel(cpc)),
-           (sheets.HUD, mechanical.hud(cpc)))
+           (sheets.HUD, mechanical.hud(cpc)),
+           (sheets.TITLE, mechanical.title_font()))
     if blank:
         art = tuple((sheet, [None] * len(cells)) for sheet, cells in art)
     for sheet, cells in art:

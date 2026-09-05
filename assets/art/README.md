@@ -1,11 +1,11 @@
 # Edge Grinder on the BBC Master — artwork
 
-Four PNGs in this folder are the game's artwork. Repaint them, send them back,
+Five PNGs in this folder are the game's artwork. Repaint them, send them back,
 and they go straight into the build. Everything else — the level layout, which
 tile goes where, the animation order, what kills you — is fixed and is not in
 these files.
 
-All four sheets are seeded with the current conversion of the C64 original, so
+All five sheets are seeded with the current conversion of the C64 original, so
 you are always painting over a working game rather than starting from nothing.
 
 ## The palette — eight colours, and that is all there is
@@ -42,7 +42,7 @@ done, leave the rest orange, and the game still builds complete. It must be a
 
 ## Pixels are 2:1
 
-A BBC MODE 2 pixel is twice as wide as it is tall. All four sheets are drawn at
+A BBC MODE 2 pixel is twice as wide as it is tall. All five sheets are drawn at
 **2 image pixels across, 1 down** per screen pixel, so they look on your screen
 roughly the way they will look on a TV. **Always paint in 2×1 blocks** — a
 1-pixel-wide mark is half a pixel and we cannot use it. In Aseprite, set the
@@ -138,6 +138,28 @@ bright body with a darker shadow pixel, which is what makes them legible on
 eight colours, and that is worth keeping in mind rather than copying.
 
 Cells 13–15 are spare and ignored.
+
+## `titlefont.png` — the credits lettering, 128 × 16
+
+32 cells, 16 to a row, each 8 × 8 image pixels (4 screen pixels by 8) — the same
+size as a character. In order: blank, then **A–Z**, then `!` `.` `,` `-` `?`.
+There are no digits and no lower case; the credits are written in this alphabet
+and nothing else needs them.
+
+It draws the five credit lines on the title screen, and the "IN MEMORY OF
+T.M.R." message before them.
+
+**This one sheet has only three colours: blue, cyan and white** (plus black for
+the background). Not a stylistic preference — the credits fade in and out by
+changing the palette rather than by redrawing, and there are exactly three
+palette slots set aside for it. A fourth colour has nowhere to live, so we bounce
+it back rather than let it quietly drag the status bar into the fade with it.
+
+*(We think this limit can be lifted later — there is a way to give the title
+screen a palette of its own — so if three colours is really cramping the
+lettering, say so and we will look at it rather than you working around it.)*
+
+The credit **text** is not in this file; if you want wording changed, just say.
 
 ## Sending work back
 

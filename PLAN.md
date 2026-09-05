@@ -183,16 +183,19 @@ steps are pinned at the top of [`docs/layer-7-music-arkos.md`](docs/layer-7-musi
 
 ### Layer 8 — graphics pipeline B (the artist) — built
 
-Decisions 58-61, [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md). `PROPOSAL.md`
-§5.2's Phase B: the characters, the sprites, **the status panel, the HUD font** and **the
-palette** are read from PNGs in `assets/art/` now, seeded from the conversion the game already
+Decisions 58-62, [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md). `PROPOSAL.md`
+§5.2's Phase B: the characters, the sprites, **the status panel, the HUD font, the title
+page's font** and **the palette** are read from PNGs in `assets/art/` now, seeded from the conversion the game already
 ran on, so the artist repaints a working game.
 
-**Four sheets, all at 2:1** — `chars.png` 128x128 (256 characters of 4x8 fat pixels),
+**Five sheets, all at 2:1** — `chars.png` 128x128 (256 characters of 4x8 fat pixels),
 `sprites.png` 192x336 (frames 0-118 of 12x21), `panel.png` 320x40 (the status bar as a picture,
-at the size it appears) and `hud.png` 128x8 (blank, the digits 0-9, the life marker's two
-halves). The panel and the HUD cost almost nothing to add: a panel cell, a HUD glyph and a
-character are the same 4x8 shape, so one reader does all four (decision 61). Characters are the
+at the size it appears), `hud.png` 128x8 (blank, the digits 0-9, the life marker's two halves)
+and `titlefont.png` 128x16 (blank, A-Z, `! . , - ?`). The last three cost almost nothing to add:
+a panel cell, a HUD glyph, a title glyph and a character are all the same 4x8 shape, so one
+reader does all five (decisions 61, 62). **A sheet carries the logical colours it may use**, which
+is what keeps the title font on entries 12/14/15 where the credit crossfade needs it - they are
+the same RGB as 4/6/7, so the obvious rule would have looked right and faded the panel too. Characters are the
 paintable surface and tiles are not: the tile definitions and the map are index tables shared verbatim with the C64 and CPC
 ports, and the charset is reused about thirteen times over them, so `render_bbc.py tiles` and
 `map` regenerate the assembled views instead of them being what he edits. Grey `96,96,96` is
@@ -214,11 +217,18 @@ The tools: `tools/seed_art.py` (write the sheets from either conversion), `tools
 transparency rules, blank-character count for the starfield, the HUD-cell warning, and
 `--roundtrip`), `tools/export_palette.py`, and `tools/art/` behind them.
 
-Still to do: the title and credits fonts, the zoom scroller's font and the loading screen are
-still generated from the C64 and CPC sources — and those are the awkward ones, being glyph sets
-of their own shapes rather than 4x8 cells, so each needs a `Sheet` and not just an `INCBIN`
-swap. Then a `-Gallery` debug build, and the transport question (`PROPOSAL.md` §5.2, decision 4)
-— a mirrored shared folder or the artist committing to `assets/` himself.
+The zoom scroller's font and the loading screen stay as they are, KC explicitly; `mega.bin` is
+not a font either. Still to do: a `-Gallery` debug build, and the transport question
+(`PROPOSAL.md` §5.2, decision 4) — a mirrored shared folder or the artist committing to
+`assets/` himself.
+
+**And decision 53's three-colour limit on the title font is flagged for revisiting** (KC): the
+palette can be reprogrammed per CRTC cycle and the titles already take an interrupt at each of
+their four, so the credits could have a palette of their own — or the titles and the game need
+not share one at all. The last section of
+[`docs/layer-9e-credits.md`](docs/layer-9e-credits.md) is the write-up, with the two things to
+weigh first (`&FE21` is on the 1 MHz bus, and the memorial draws through this font with
+interrupts off).
 
 ### Layer 8a — the CPC artwork, behind `GFX_CPC` — built
 
@@ -286,7 +296,7 @@ bitshifters.github.io for testing.
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, the whole 349 s tune in four regions |
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
-| 8 — the artist's PNGs | [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md) | **built 2026-09-05**, decisions 58-61. Characters, sprites, the status panel, the HUD font and the palette come from `assets/art/*.png`; seeded from the C64 conversion, so the disc is unchanged until the artist starts work. NULA-ready by construction |
+| 8 — the artist's PNGs | [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md) | **built 2026-09-05**, decisions 58-62. Characters, sprites, the status panel, the HUD font, the title font and the palette come from `assets/art/*.png`; seeded from the C64 conversion, so the disc is unchanged until the artist starts work. NULA-ready by construction |
 | 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **built 2026-09-04**, behind `GFX_CPC`, and all eight flag combinations assemble; **recoloured 2026-09-05** to Rich's MODE 2 dither pairs (decision 55). Which artwork ships is KC's choice |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |

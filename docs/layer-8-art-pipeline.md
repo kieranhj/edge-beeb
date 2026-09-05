@@ -1,8 +1,8 @@
 # Layer 8 — graphics pipeline B: the artist's PNGs (2026-09-05)
 
 `PROPOSAL.md` §5.2 asked for a path that lets a non-developer repaint the game.
-This is that path. The characters, the sprites, **the status panel, the HUD font**
-and **the palette** are read from PNGs in `assets/art/` now; the C64 and CPC conversions are still there, and are
+This is that path. The characters, the sprites, **the status panel, the HUD font,
+the title page's font** and **the palette** are read from PNGs in `assets/art/` now; the C64 and CPC conversions are still there, and are
 what the PNGs were seeded from.
 
 ## What was built
@@ -13,7 +13,7 @@ art sources and this is the third:
 | File | Contents |
 |---|---|
 | `palette.py` | `assets/art/palette.png` — the sixteen MODE 2 logical colours as RGB — and the RGB → logical mapping in both directions |
-| `sheets.py` | the four sheets' geometry, and the reader/writer that turns a PNG into cells of logical colour and back |
+| `sheets.py` | the five sheets' geometry, and the reader/writer that turns a PNG into cells of logical colour and back |
 | `pngart.py` | the exporter-facing interface: `characters()`, `sprites(n)`, `panel()`, `hud()` - deliberately the same four-function shape `tools/cpc/bbcart.py` presents for the Amstrad art |
 | `mechanical.py` | the C64 and CPC conversions, lifted out of the three exporters so the seeder and the fallback path can call them too |
 
@@ -25,6 +25,7 @@ and five tools beside it:
 | `tools/validate_art.py` | what a drop from the artist goes through on receipt |
 | `tools/export_palette.py` | `palette.png` → `src/data/palette.asm`, the bytes `setup_display` writes |
 | `tools/export_panel.py` | `panel.png` and `hud.png` → `panel.bin` and `hud.bin`; the C64 reading it used to do is `mechanical.py`'s now |
+| `tools/export_title.py` | `titlefont.png` → the glyph half of `title.bin`. The credit *text* stays in the tool: it is not art |
 | `tools/render_bbc.py` | unchanged in purpose, but reads the palette file now instead of assuming logical = physical `AND 7` |
 
 `export_tiles.py` and `export_sprites.py` take their art from the PNGs by
@@ -33,7 +34,7 @@ outright. **No new build symbol** — `RELEASE`, `MUSIC_AKL` and `GFX_CPC` are
 still the three, and the PNGs feed the same `src/data/*.bin` the build already
 INCBINs.
 
-## The four sheets
+## The five sheets
 
 Both at 2:1 — a screen fat pixel is 2 image pixels across and 1 down, which is
 the aspect the Beeb shows and the scale `reference/sprite-sheet.png` already
@@ -47,6 +48,8 @@ assets/art/sprites.png  192 x 336   128 slots,  8 a row, cell 24 x 21
                                     frames 0-118 are the game's
 assets/art/panel.png    320 x 40    the status bar as a picture
 assets/art/hud.png      128 x 8     16 slots, 13 used, cell 8 x 8
+assets/art/titlefont.png
+                        128 x 16    32 glyphs, 16 a row, cell 8 x 8
 ```
 
 **The panel is a picture, not a sheet** (decision 61). It is 5 character rows of
@@ -117,6 +120,40 @@ almost nothing:
   `&FE21` writes. Sixteen free colours have no such ladder, so both need a fade
   of their own — genuinely new work, and the only part of this that is.
 
+## A sheet carries the colours it is allowed
+
+Decision 62, and the reason the title font could not just be another sheet.
+
+Decision 53 draws that font in logicals **12, 14 and 15**, not 4, 6 and 7,
+because those are palette entries nothing else on the titles uses — which is
+the whole mechanism by which the credits cross-fade on the palette alone while
+the panel and both zoom bands stay lit. But 12/14/15 and 4/6/7 are *the same
+RGB*. A plain "lowest index with this RGB" rule would have resolved the painted
+font to 4/6/7, looked exactly right on screen, and faded the panel with the
+credits. Nothing downstream would have noticed.
+
+So a `Sheet` carries an `allowed` set and an RGB takes the lowest index **in
+that set**:
+
+| Sheet | Allowed | Why |
+|---|---|---|
+| chars, panel, hud | `palette.ALL` | black is 0, which is what the starfield tests for |
+| sprites | `NOT_TRANSPARENT` | 0 is the transparency key, so black becomes logical 8 |
+| titlefont | `TITLE_FADE` = {0, 12, 14, 15} | the three entries the crossfade owns |
+
+That subsumes the old `sprite=True` flag — it was the same idea with one case
+hard-coded. A colour that is in the palette but not in the sheet's set is an
+error naming both, so a fourth ink in the credits is refused rather than
+silently breaking the fade.
+
+**KC has flagged the three-colour limit for revisiting** and it is written up at
+the end of [`docs/layer-9e-credits.md`](layer-9e-credits.md): the palette can be
+reprogrammed per CRTC cycle, and the titles already take an interrupt at each of
+their four, so the credits could have a palette to themselves — or the titles
+and the game could simply not share one. Against it: `&FE21` is on the 1 MHz bus
+and the rupture is timed to the scanline, and the memorial draws through this
+font with interrupts off.
+
 ## The panel and the HUD have to agree
 
 The bar is drawn once and never redrawn; the score, the high score and the lives
@@ -160,8 +197,8 @@ transparency key alone on its own, which is what `CPC_KEEP` said by hand.
 
 * **The seeded sheets re-export byte for byte.** `git diff src/data/` is empty
   after `seed_art.py` and all three sources — PNG, `--c64`, `--cpc` — for
-  `chars.bin`, `sprites0/1.bin`, `compiled.bin`, `compiled_zp.asm`, `panel.bin`
-  and `hud.bin`, and for the four `-cpc` copies. This is
+  `chars.bin`, `sprites0/1.bin`, `compiled.bin`, `compiled_zp.asm`, `panel.bin`,
+  `hud.bin` and `title.bin`, and for the four `-cpc` copies. This is
   the check that the PNG path adds and loses nothing, and
   `validate_art.py --roundtrip` runs it in one command: *all 256 characters and
   all 119 frames identical to the C64 conversion*.
@@ -195,12 +232,14 @@ transparency key alone on its own, which is what `CPC_KEEP` said by hand.
 
 ## Left for later
 
-* The title screen, the credits font, the zoom scroller's font and the loading
-  screen are still generated from the C64 and CPC sources. The panel and the HUD
-  went through this machinery (decision 61) and the rest can, but nothing about
-  them is decided yet. The credits and zoom fonts are the awkward ones: they are
-  glyph sets of their own shapes rather than 4x8 cells, so each needs a `Sheet`
-  and not just an `INCBIN` swap.
+* **The zoom scroller's font and the loading screen stay as they are** — KC,
+  explicitly, and both for good reasons: the scroller's font is its own shape
+  and its own rupture cycle, and the loading screen is already a picture on
+  disc. `mega.bin` is not a font either — it is two on/off bitmaps and one
+  repeated cell — so there is nothing there to paint.
+* `assets/scrolltext.txt` is the precedent for making the credits' *text*
+  editable the way the scroller's is (decision 54). Not done: `CREDITS_BBC`
+  lives in `export_title.py` where the 38-character assertion can see it.
 * A `-Gallery` debug build that pages through every sprite and tile on the
   machine itself (`PROPOSAL.md` §5.2.4). Worth an hour when there is art to look
   at.

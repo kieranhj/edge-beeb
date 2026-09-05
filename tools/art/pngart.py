@@ -57,6 +57,11 @@ def hud(fallback=None):
     return _merge(sheets.read(sheets.HUD)[:13], fallback, "HUD glyph")
 
 
+def title_font(fallback=None):
+    """The 32 title glyphs, each 8 rows of 4 BBC logical colours."""
+    return _merge(sheets.read(sheets.TITLE), fallback, "title glyph")
+
+
 def game_palette():
     return palette.load()
 

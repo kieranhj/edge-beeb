@@ -8,6 +8,7 @@ diffed against an emulator screenshot.
   python tools/render_bbc.py sprites [s] -> tools/output/sprites.png  (8 per row, shift s)
   python tools/render_bbc.py panel      -> tools/output/panel.png    (the status bar as shown)
   python tools/render_bbc.py hud        -> tools/output/hud.png      (the 13 poked glyphs)
+  python tools/render_bbc.py title      -> tools/output/title.png    (the 32 credit glyphs)
 
 Add --cpc to read the GFX_CPC build's data instead (src/data/*-cpc.bin) and
 write to tools/output/*-cpc.png. tiles and map have no CPC copies of their own
@@ -169,6 +170,8 @@ def main():
         img = render_cells("panel", 200, 40, 4, 8)
     elif what == "hud":
         img = render_cells("hud", 13, 13, 4, 8)
+    elif what == "title":
+        img = render_cells("title", 32, 16, 4, 8)
     elif what == "sprites":
         img = render_sprites(int(argv[1]) if len(argv) > 1 else 0)
     else:

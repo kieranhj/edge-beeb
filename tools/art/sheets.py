@@ -18,6 +18,13 @@ uniform 2x1 block; validate_art.py is what says so, with coordinates.
   assets/art/hud.png      128 x 8     16 slots, 13 used: blank, the digits 0-9,
                           then the life marker's two halves. A cell is 8 x 8,
                           the same 4 x 8 fat pixels a character is.
+  assets/art/titlefont.png
+                          128 x 16    32 glyphs, 16 a row, cell 8 x 8: blank,
+                          A-Z, then ! . , - ? - which is all the credits need.
+                          Three ink colours only, and they must be palette
+                          entries 12, 14 and 15 (see palette.py): the credits
+                          cross-fade on the palette alone, so they need entries
+                          nothing else on the titles uses.
 
 The panel and the HUD are two halves of one thing and have to agree. The panel
 is drawn once and never redrawn; the score, the high score and the lives are
@@ -49,12 +56,14 @@ CHARS_PNG = os.path.join(ART, "chars.png")
 SPRITES_PNG = os.path.join(ART, "sprites.png")
 PANEL_PNG = os.path.join(ART, "panel.png")
 HUD_PNG = os.path.join(ART, "hud.png")
+TITLE_PNG = os.path.join(ART, "titlefont.png")
 
 
 class Sheet:
     """One sheet's geometry: a grid of cells, each a block of fat pixels."""
 
-    def __init__(self, path, count, slots, per_row, wide, high, transparent):
+    def __init__(self, path, count, slots, per_row, wide, high, transparent,
+                 allowed=palette.ALL):
         self.path = path
         self.count = count            # cells the game reads
         self.slots = slots            # cells the sheet has room for
@@ -62,6 +71,7 @@ class Sheet:
         self.wide = wide              # fat pixels across a cell
         self.high = high              # rows down a cell
         self.transparent = transparent
+        self.allowed = allowed        # logical colours this sheet may resolve to
         self.rows = (slots + per_row - 1) // per_row
 
     @property
@@ -74,11 +84,14 @@ class Sheet:
 
 
 CHARS = Sheet(CHARS_PNG, 256, 256, 16, 4, 8, transparent=False)
-SPRITES = Sheet(SPRITES_PNG, 119, 128, 8, 12, 21, transparent=True)
+SPRITES = Sheet(SPRITES_PNG, 119, 128, 8, 12, 21, transparent=True,
+                allowed=palette.NOT_TRANSPARENT)
 PANEL = Sheet(PANEL_PNG, 200, 200, 40, 4, 8, transparent=False)
 HUD = Sheet(HUD_PNG, 13, 16, 16, 4, 8, transparent=False)
+TITLE = Sheet(TITLE_PNG, 32, 32, 16, 4, 8, transparent=False,
+              allowed=palette.TITLE_FADE)
 
-ALL = (CHARS, SPRITES, PANEL, HUD)
+ALL = (CHARS, SPRITES, PANEL, HUD, TITLE)
 
 
 def pack_cell(cell):
@@ -99,7 +112,7 @@ def read(sheet, pal=None, strict=True):
     With strict=False, unknown colours are reported rather than raised.
     """
     pal = palette.load() if pal is None else pal
-    lut = palette.lookup(pal, sprite=sheet.transparent)
+    lut = palette.lookup(pal, sheet.allowed)
     im = Image.open(sheet.path).convert("RGB")
     if im.size != sheet.size:
         raise SystemExit(f"{sheet.path}: expected {sheet.size[0]}x{sheet.size[1]}, "
@@ -132,6 +145,13 @@ def read(sheet, pal=None, strict=True):
                     row.append(0)
                 elif rgb in lut:
                     row.append(lut[rgb])
+                elif rgb in palette.lookup(pal):
+                    errors.append((sheet.path, n, x, y,
+                                   f"{rgb} is palette entry "
+                                   f"{palette.lookup(pal)[rgb]}, which this "
+                                   f"sheet may not use; it is restricted to "
+                                   f"entries {sorted(sheet.allowed)}"))
+                    row.append(0)
                 else:
                     errors.append((sheet.path, n, x, y,
                                    f"{rgb} is not in the palette"))

@@ -9,13 +9,29 @@ that is not in it is an error with coordinates, never a nearest match.
 Today entries 0-7 are the eight BBC colours, 8 is a second black (the sprite
 engine's, because logical 0 is its transparency key) and 9-15 alias 1-7, which
 is exactly what setup_display's old palette loop did. That aliasing is why the
-RGB -> logical direction needs a rule:
+RGB -> logical direction needs a rule, and the rule is per sheet: each carries
+the set of logical colours it is ALLOWED to resolve to, and an RGB takes the
+lowest index in that set. Three sheets want three different things:
 
-  * background art takes the LOWEST index with that RGB, so black is 0 and the
-    starfield still sees an empty byte as empty (src/bank1.asm plots a star
-    only where the buffer byte reads exactly 0);
-  * sprite art takes the lowest index ABOVE 0, so black inside a sprite is 8
-    and is drawn rather than seen through.
+  * background art allows all sixteen, so black is 0 and the starfield still
+    sees an empty byte as empty (src/bank1.asm plots a star only where the
+    buffer byte reads exactly 0);
+  * sprite art allows everything but 0, so black inside a sprite is 8 and is
+    drawn rather than seen through;
+  * the title font allows 0, 12, 14 and 15 ONLY. Those are the same blue, cyan
+    and white as 4, 6 and 7 and the page looks identical, but they are palette
+    entries nothing else on the titles uses, which is the whole reason the
+    credits can cross-fade on the palette alone while the panel and both zoom
+    bands stay lit (decision 53). Painted as 4, 6 and 7 the fade would take the
+    rest of the page with it, and nothing downstream would notice.
+
+    Three inks is a tight brief and we may well lift it: the palette can be
+    reprogrammed per CRTC cycle and the titles already take an interrupt at
+    each one, so the credits could have a palette of their own. See the last
+    section of docs/layer-9e-credits.md before relaxing TITLE_FADE.
+
+An RGB that is in the palette but not in a sheet's allowed set is an error
+naming both, not a silent substitution.
 
 Under NULA the sixteen entries stop aliasing and become sixteen free 12-bit
 colours; both rules still hold, index 0 stays the transparency key, and the
@@ -70,12 +86,16 @@ def save(pal, path=PALETTE_PNG):
     im.save(path)
 
 
-def lookup(pal, sprite=False):
-    """RGB -> logical colour. See the module docstring for the two rules."""
+ALL = frozenset(range(ENTRIES))
+NOT_TRANSPARENT = frozenset(range(1, ENTRIES))    # sprites: 0 is the key
+TITLE_FADE = frozenset((0, 12, 14, 15))           # decision 53; see above
+
+
+def lookup(pal, allowed=ALL):
+    """RGB -> logical colour, restricted to `allowed`. See the module
+    docstring: the lowest allowed index with that RGB wins."""
     out = {}
-    for n in reversed(range(ENTRIES)):        # lowest index wins
-        if sprite and n == 0:
-            continue                          # 0 is the transparency key
+    for n in reversed(sorted(allowed)):       # lowest index wins
         out[tuple(pal[n])] = n
     return out
 

@@ -121,3 +121,46 @@ In jsbeeb, as a Master, booting `build/EDGE-200K.SSD`:
 - the `-Cpc` build does all of the same.
 
 All eight flag combinations assemble.
+
+
+## Open — the three-colour constraint can be lifted, and probably should be
+
+**KC, 2026-09-05, raised when Layer 8 made the title font paintable.** Reserving
+logicals 12, 14 and 15 for the credits was the cheap way to fade them without
+touching the panel or the zoom bands, and it works — but it costs the credits
+every colour but three, and the artist now feels that as a rule the validator
+enforces (`palette.TITLE_FADE`, decision 62). A fourth ink is currently
+impossible.
+
+It need not stay that way, and the reason is that **the palette can be
+reprogrammed per CRTC cycle**. The titles already run a four-cycle rupture with
+an interrupt at every one of them (`src/bank1.asm`, decision 44), so the fade
+does not have to share a palette with the panel and the bands at all: give the
+credits' own cycle its own sixteen entries and the whole eight colours are
+available to fade, with nothing else on the page affected because nothing else
+on the page is being fetched at the time.
+
+Cheaper still, and worth measuring first: **the titles and the game do not have
+to share a palette either**. `title_page` already puts the display wrap back on
+the way out and `ttl_cred_end` already restores logicals 8–15, so there is
+precedent for the page owning display state and handing it back; a whole
+palette swap between the two would let the title font use 0–7 freely and leave
+the game's palette alone.
+
+Two things to weigh before doing it:
+
+* `&FE21` is on the 1 MHz bus, so the CPU stalls on every write. Sixteen writes
+  inside a cycle boundary is a real cost against a rupture whose timings are
+  already measured to the scanline (`T1_I1`, `T1_I2`) — measure it, do not
+  assume it fits.
+* The memorial (decision 52) draws through this same font and fades on the same
+  ladder. Whatever replaces the constraint has to leave `mem_page` working, and
+  the memorial runs with interrupts **off** and polls VSync itself, so it has no
+  per-cycle interrupt to hang a palette change on.
+
+Under a NULA the question mostly goes away: sixteen independent entries mean the
+credits can have their own without borrowing anyone's.
+
+Until then the constraint stands and `validate_art.py` enforces it, because the
+failure it prevents is silent — entries 12/14/15 and 4/6/7 are the same colours,
+so a font painted in ordinary blue looks perfect and fades the panel with it.

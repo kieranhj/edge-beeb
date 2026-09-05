@@ -210,3 +210,28 @@ def hud(cpc=False):
     chars = _status_charset()
     return [_c64_cell(chars, code, HUD_COLOUR, body=HUD_PAIR_3)
             for code in HUD_CHARS]
+
+
+# --- the title page's font -----------------------------------------------
+#
+# The same C64 status charset the panel and the HUD use, read as multicolour:
+# four double-width pixels a character, which is one of our cells exactly, so
+# the original's 38-column credit lines transcribe at 1:1. Glyphs $00-$1f are
+# all the credits need - blank, A-Z, then ! . , - ? - and the CPC port shares
+# the titles, so there is no --cpc variant of this one.
+#
+# The ink is logicals 12, 14 and 15, NOT 4, 6 and 7. Those are the same blue,
+# cyan and white, but they are palette entries nothing else on the titles uses,
+# and that is what lets the credits cross-fade on the palette alone while the
+# panel and both zoom bands stay lit (decision 53, and palette.TITLE_FADE).
+
+TITLE_GLYPHS = 32
+TITLE_PAIR = {0: 0, 1: 12, 2: 14, 3: 15}
+
+
+def title_font():
+    """The 32 title glyphs, each 8 rows of 4 BBC logical colours."""
+    chars = _status_charset()
+    return [[[TITLE_PAIR[(chars[g * 8 + y] >> (6 - 2 * p)) & 3] for p in range(4)]
+             for y in range(8)]
+            for g in range(TITLE_GLYPHS)]

@@ -11,6 +11,16 @@ Glyphs $00-$1f are all the title needs: $00 blank, $01-$1a A-Z, then ! . , - ?
 The mapping is the original's own `scroll_decode`, which turns a C64 screen
 code into one of those.
 
+The GLYPHS come from assets/art/titlefont.png (Layer 8, decision 62); the
+credit TEXT below does not, because it is not art - it is five lines that have
+to be 38 characters and to say true things, and it lives here where the
+assertion that checks both can see it. --c64 bypasses the PNG and takes the
+status charset outright, which is what the sheet was seeded from and therefore
+produces the same bytes.
+
+The font is restricted to logicals 12, 14 and 15 and the reader enforces it
+(palette.TITLE_FADE): see PAIR_COLOUR below for why.
+
 Output: src/data/title.bin
     0..511    32 glyphs, 16 bytes each: byte column 0's eight scanlines, then
               byte column 1's. A glyph is therefore a straight 16-byte copy to
@@ -20,14 +30,20 @@ Output: src/data/title.bin
 """
 
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-CHARSET = os.path.join(ROOT, 'source_c64', 'data', 'status.chr')
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, 'art'))
+import mechanical  # noqa: E402
+import pngart      # noqa: E402
+import sheets      # noqa: E402
+
 OUT = os.path.join(ROOT, 'src', 'data', 'title.bin')
 OUT_EXTRA = os.path.join(ROOT, 'src', 'data', 'title_extra.bin')
 
-GLYPHS = 32
+GLYPHS = mechanical.TITLE_GLYPHS
 
 # ttl_credits, verbatim from source_c64/edge_grinder.asm. Each is 38 characters,
 # which is what the original's `cpx #$26` loop copies.
@@ -66,13 +82,7 @@ LINE_LEN = 38
 # nothing else on the titles uses, so the credits can be faded on the
 # palette alone while the panel and both zoom bands stay at full
 # brightness. ttl_pal in src/bank1.asm pulses 15 and 14 to match.
-PAIR_COLOUR = {0: 0, 1: 12, 2: 14, 3: 15}
-
-
-def mode2_pixel(colour, left):
-    """MODE 2 encodes a pixel's four bits at 7,5,3,1 (left) or 6,4,2,0 (right)."""
-    b = ((colour & 1) << 0) | ((colour & 2) << 1) | ((colour & 4) << 2) | ((colour & 8) << 3)
-    return b << 1 if left else b
+PAIR_COLOUR = mechanical.TITLE_PAIR
 
 
 def scroll_decode():
@@ -97,22 +107,10 @@ def screen_code(ch):
     return ord(ch)                 # punctuation is its ASCII code in this range
 
 
-def main():
-    raw = open(CHARSET, 'rb').read()
-    assert len(raw) == 2 + 2048, 'status.chr should be a load address and 256 chars'
-    chars = raw[2:]
-
-    out = bytearray()
-    for g in range(GLYPHS):
-        cols = [bytearray(8), bytearray(8)]
-        for y in range(8):
-            b = chars[g * 8 + y]
-            for p in range(4):                     # four multicolour pixels
-                colour = PAIR_COLOUR[(b >> (6 - 2 * p)) & 3]
-                if colour == 0:
-                    continue
-                cols[p // 2][y] |= mode2_pixel(colour, left=(p % 2 == 0))
-        out += cols[0] + cols[1]
+def main(c64=False):
+    glyphs = (mechanical.title_font() if c64 else
+              pngart.title_font(fallback=mechanical.title_font()))
+    out = bytearray(b''.join(sheets.pack_cell(g) for g in glyphs))
 
     dec = scroll_decode()
 
@@ -146,4 +144,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(c64='--c64' in sys.argv[1:])

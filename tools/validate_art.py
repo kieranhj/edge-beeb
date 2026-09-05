@@ -25,6 +25,15 @@ What it checks:
     status panel and a HUD glyph are all opaque: none of them has anything
     behind it to show through;
   * the not-yet-drawn key is a whole cell or nothing;
+  * every colour is one this sheet is ALLOWED (palette.py). Sprites may not use
+    logical 0, which is the transparency key, and the title font may use only
+    0, 12, 14 and 15 - the same blue, cyan and white as 4, 6 and 7, but palette
+    entries nothing else on the titles touches, which is what lets the credits
+    cross-fade on the palette alone (decision 53). Entries alias, so painting
+    the font in ordinary blue would look right and break the fade silently;
+    this is the check that stops that. It is a constraint we may lift - the
+    palette can be reprogrammed per CRTC cycle, and the titles already take an
+    interrupt at every one - see the last section of docs/layer-9e-credits.md;
   * the palette is legal for MODE 2 (all eight entries one of the BBC eight),
     or says plainly that it would need a NULA.
 
@@ -45,6 +54,10 @@ game mechanic that lives in the art and is easy to paint away:
     which eighteen. The C64's own bar leaves them all blank; the Amstrad's
     draws its digits and markers in deliberately, so this is a warning rather
     than a rule.
+  * THE TITLE FONT'S THREE COLOURS. It has exactly three inks and no more,
+    because the fade has three palette entries reserved for it; a fourth would
+    need a fourth entry that nothing else on the page uses, and there is not
+    one to spare without a NULA.
 
 Collision is NOT in the art and cannot be painted: it is bit 4 of col_decode
 per character number (docs/layer-1-graphics-pipeline.md). Repainting a solid
@@ -126,7 +139,14 @@ def main(roundtrip=False):
     print("  blank, the digits 0-9, then the life marker's two halves")
     print()
 
-    errors = e1 + e2 + e3 + e4
+    title, e5 = check_sheet(sheets.TITLE, pal, "title")
+    inks = sorted({v for c in title if c is not None
+                   for row in c for v in row} - {0})
+    print(f"  blank, A-Z, then ! . , - ?; inks {inks} of the three the credit "
+          "crossfade has entries for")
+    print()
+
+    errors = e1 + e2 + e3 + e4 + e5
     if not errors:
         import export_sprites
         merged = [f if f is not None else m for f, m in
@@ -148,7 +168,7 @@ def main(roundtrip=False):
         raise SystemExit(f"{len(errors)} error(s) - nothing exported")
     print("OK. Now: python tools/export_palette.py && "
           "python tools/export_tiles.py && python tools/export_sprites.py && "
-          "python tools/export_panel.py")
+          "python tools/export_panel.py && python tools/export_title.py")
 
 
 def roundtrip_check():
@@ -164,7 +184,9 @@ def roundtrip_check():
              ("panel cells", pngart.panel(fallback=mechanical.panel()),
               mechanical.panel()),
              ("HUD glyphs", pngart.hud(fallback=mechanical.hud()),
-              mechanical.hud()))
+              mechanical.hud()),
+             ("title glyphs", pngart.title_font(fallback=mechanical.title_font()),
+              mechanical.title_font()))
     for what, a, b in pairs:
         diff = [n for n, (x, y) in enumerate(zip(a, b)) if x != y]
         if diff:
