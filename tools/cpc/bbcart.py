@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import bbc          # noqa: E402
 import bgdata       # noqa: E402
 import cpcscr       # noqa: E402
+import paneldata    # noqa: E402
 from dsk import Dsk  # noqa: E402
 
 SPRITE_DSK = os.path.join('source_cpc', 'Work Disks', 'edge_sprites2.dsk')
@@ -95,4 +96,40 @@ def sprites(count):
         for col in range(6):
             put(20, col, f[120 + col])
         out.append(rows)
+    return out
+
+
+def panel():
+    """The status panel as 32 rows of 160 BBC logical colours, top-aligned in
+    the five rows ours has: the CPC's is FOUR character rows to the C64's five
+    (paneldata.py), so the caller pads the fifth. Black is black - the panel is
+    opaque - and the dither phase is the panel's own (x, y), which is the phase
+    the HUD glyphs land on because every cell they are poked into starts on an
+    even column and an even row."""
+    return [[_pen(p, x, y, True)
+             for x, p in enumerate(_pens(row))]
+            for y, row in enumerate(paneldata.panel())]
+
+
+def _pens(row):
+    """A row of mode 0 bytes as its mode 0 pens."""
+    return [p for b in row for p in cpcscr._decode(b, 0)]
+
+
+def hud():
+    """The thirteen HUD glyphs the runtime pokes, each 8 rows of 4 BBC logical
+    colours, in the order src/bank3.asm indexes them: blank, digits 0-9, then
+    the life marker's two cells. A digit is one cell; the marker is two.
+
+    Their dither phase is glyph-local, which is the panel's: a glyph goes into
+    a whole cell, cells are 4 pixels wide and 8 rows high, and both are even."""
+    blank = [[0] * 4 for _ in range(8)]
+    out = [blank]
+    for d in paneldata.digits():
+        out.append([[_pen(p, x, y, True) for x, p in enumerate(_pens(row))]
+                    for y, row in enumerate(d)])
+    marker = [[_pen(p, x, y, True) for x, p in enumerate(_pens(row))]
+              for y, row in enumerate(paneldata.life())]
+    out.append([row[0:4] for row in marker])
+    out.append([row[4:8] for row in marker])
     return out

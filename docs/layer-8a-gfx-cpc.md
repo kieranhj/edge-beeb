@@ -132,6 +132,57 @@ Two things fall out of the CPC art being sixteen-colour rather than four:
   everything lit goes white or magenta. Which frames flash, and when, is unchanged: that
   is `dp_dcd` and `lut_dcd`, game logic, not art.
 
+## The status panel and the HUD (decision 56)
+
+The artwork switch used to stop at the tiles and the sprites: the panel above the CPC's
+scenery was still the C64's, five rows of `status.chr` under decision 34's colour mapping.
+The Amstrad has its own, and it is in two places.
+
+**`EG_Panel.asm` holds the image as eight `PanelBlockN` tables of 320 bytes, and `N` is the
+SCANLINE, not a frame.** A CPC screen interleaves `(line % 8) * &800 + (line / 8) * 80`, so
+block N sits at `&4000 + N * &800` — which is what the `defs` padding between the blocks adds
+up to — and its 320 bytes are scanline N of four consecutive character rows of 80 bytes.
+`EG_Interrupts2.asm` confirms the geometry from the other end: `int_rout4` sets R12/R13 to
+`&10, &00` for base &4000 and `int_rout5` sets R6 = 4. So the panel is **4 character rows by
+8 scanlines**, 160 mode 0 pixels wide — our 160 exactly, and one row *shorter* than the C64's
+five.
+
+**`EG_GameFont.ASM` holds the ten digits and the life marker**, and neither is stored in any
+tidy order. `PrintScoreChar` and `PrintLife` in `EG_Display3.asm` are unrolled copies that
+walk the CPC's scanline bits with `set`/`res` on D while zig-zagging along E, so the source
+bytes come out neither row-major nor column-major: a digit's twelve bytes are scanlines
+1, 3, 2, 6, 5, 4 with the byte pair reversed on alternate lines, and the marker's thirty-two
+are scanlines 0, 1, 3, 2, 6, 7, 5, 4 four bytes at a time, left to right on the way out and
+right to left on the way back.
+
+**Both orders are proved, not assumed.** The panel image ships with `000000`, `012345` and
+three life markers already drawn into it, so it is its own oracle:
+`tools/cpc/paneldata.py`'s `verify()` re-derives all fifteen glyphs from the panel bytes and
+raises if a single one disagrees. It runs on every export.
+
+Two things fell out of the comparison, and both were luck:
+
+* **The HUD needed no code change at all.** The CPC port copied the C64's panel layout to the
+  column — including the two blank columns at the end that the C64's 38-column border ate —
+  so its score sits at row 1 column 7, its high score at row 1 column 27 and its three life
+  markers at row 2 columns 17-22. That is exactly where `PANEL_SHIFT` = 1 and `bank3.asm`'s
+  `hud_cell_lo/hi` already put the C64's. Only the `INCBIN` moves.
+* **The dither phase lines up for free.** Decision 55's checkerboard is `(x + y) & 1` in art
+  coordinates, and a HUD glyph is poked into a whole cell — 4 pixels wide, 8 rows high, both
+  even — so glyph-local parity *is* the panel's. The exporter proves it rather than trusting
+  it: it rebuilds the panel's own three life markers out of glyphs 11 and 12 and compares.
+
+The one thing that did not line up is the height. **The CPC's panel is four rows and the
+rupture wants five**, so the art lands in rows 0-3 and row 4 is left black. Moving the split
+instead would mean re-deriving decision 44's two cycles for one build, and the blank row costs
+nothing visible: the play area's scenery never reaches its own top edge.
+
+Colour goes through the same dither pairs as the rest of the CPC art, so nothing here consults
+`C64_TO_MODE2`. In particular the `HUD_PAIR_3` brightening is gone — decision 34 had to force
+the C64 digits' body to white because dark grey and blue both collapsed to blue and left a
+four-pixel digit almost invisible; the CPC draws its digits bright cyan on blue, which needs no
+help. It costs 135 packed bytes on `PANEL` and 15 on `BANK3`.
+
 ## What this build gives up: the compiled bullet
 
 **Nothing is compiled under `GFX_CPC`, and the reason is 13 bytes.** A compiled body

@@ -278,6 +278,11 @@ EQUB 20, &1c, 13, &1c, 18, &1c  ; T . M . R .
 \ *	character is four double-width pixels, which is one of our
 \ *	4-fat-pixel cells (decision 34 for the colour mapping).
 \ *
+\ *	Under GFX_CPC the glyphs are the Amstrad port's game font and its
+\ *	life marker (decision 56). The CPC port copied the C64's panel
+\ *	layout to the column, blank border columns included, so every
+\ *	address below is the same in both builds - only the INCBIN moves.
+\ *
 \ *	The image itself is no longer here - it is a disc file, unpacked
 \ *	straight into each bank's screen at boot (decision 47). What is
 \ *	left is the HUD: its glyphs, its cell addresses, and the cache of
@@ -288,7 +293,11 @@ HUD_GLYPH_BYTES = 16
 HUD_CELLS = 18                  ; 6 score + 6 high score + 6 lives
 
 .hud_glyphs
+IF GFX_CPC
+INCBIN "src/data/hud-cpc.bin"       \ the Amstrad port's own font, decision 56
+ELSE
 INCBIN "src/data/hud.bin"
+ENDIF
 
 \ The C64's status_decode writes the score to buffer_1+$02e, the high score
 \ to +$042 and the lives bars to +$060: row 1 columns 6 and 26, row 2 column

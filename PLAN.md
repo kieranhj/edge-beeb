@@ -198,6 +198,12 @@ Rich Talbot-Watkins's scheme approximates each of the CPC's 27 colours with two 
 colours checkerboarded a pixel at a time. `reference/cpc-palette-map-to-bbc-mode2.png` is the
 chart, `bbc.dither_pair` the rule, and the flat nearest-hue table it replaces is gone.
 
+**Panel and HUD 2026-09-05 (decision 56).** The switch reaches the status bar now: the panel
+image, the score font and the life marker are the Amstrad's, out of `EG_Panel.asm` and
+`EG_GameFont.ASM` through `tools/cpc/paneldata.py`. Its panel is four character rows to the
+C64's five, so it sits in rows 0-3 with row 4 black; its HUD is in the same cells as ours, so
+nothing in `src/` changed but two `INCBIN`s.
+
 Still to do: real-hardware test, release build, publish. The starfield is 9c above, and is the
 CPC's rather than the C64's.
 

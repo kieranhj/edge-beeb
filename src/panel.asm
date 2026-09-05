@@ -5,6 +5,12 @@
 \ *	MODE 2 once, at 1:1. It is 3,200 bytes that are read EXACTLY
 \ *	TWICE - once into each bank's &3000 at boot - and never again.
 \ *
+\ *	Under GFX_CPC it is the Amstrad port's panel instead (decision 56).
+\ *	That one is FOUR character rows to the C64's five, so it sits in
+\ *	rows 0-3 and row 4 is black; the file is the same 3,200 bytes and
+\ *	the score, high score and lives land in the same cells, so nothing
+\ *	below this line changes.
+\ *
 \ *	It used to live in sideways bank 3, which is the one bank the
 \ *	tune wants: bank 3 and HAZEL are adjacent in the address map, so
 \ *	the .vgi streams that span the join have to start there. Boot-time
@@ -22,7 +28,11 @@
 CLEAR 0, &FFFF
 ORG PANEL_ADDR
 .panel_file
+IF GFX_CPC
+INCBIN "src/data/panel-cpc.bin"     \ the Amstrad port's own panel, decision 56
+ELSE
 INCBIN "src/data/panel.bin"
+ENDIF
 .panel_image_end
 ASSERT panel_image_end - panel_file = PANEL_BYTES
 ASSERT panel_image_end = TTL_EXTRA

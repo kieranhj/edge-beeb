@@ -90,9 +90,13 @@ tie-broken by closest brightness, ordered darkest first, and `bbc.dither_pair` r
 `reference/cpc-palette-map-to-bbc-mode2.png` cell for cell. The checkerboard is `(x + y) & 1`
 in the **art's** coordinates, baked into the bitmaps, so it travels with the scenery as it
 scrolls instead of crawling over it. **The CPC port renumbered nothing**, so the tile table, the
-map, `col_decode`, the waves, `dp_dcd`, the panel and the titles are shared and only the
+map, `col_decode`, the waves, `dp_dcd` and the titles are shared and only the
 `INCBIN` changes; `tools/export_tiles.py --cpc` and `tools/export_sprites.py --cpc` write the
-data and `tools/render_bbc.py --cpc` renders it back. It writes `build/EDGE-CPC*.SSD` with disc
+data and `tools/render_bbc.py --cpc` renders it back. **The status panel and the HUD font are
+the CPC's too** (decision 56, `tools/export_panel.py --cpc` through `tools/cpc/paneldata.py`):
+the Amstrad's panel is four character rows to the C64's five, so it sits in rows 0-3 with row 4
+black, and its score, high score and lives land in the cells `hud_cell_lo/hi` already names,
+the CPC port having copied the C64's layout to the column. It writes `build/EDGE-CPC*.SSD` with disc
 title `EDGEC`, and composes with `-Akl`. **The compiled bullet is dropped in this build** - it
 needs 13 bytes bank 3 has not got - so do not compare frame meters across the two.
 `docs/layer-8a-gfx-cpc.md`. It used not to assemble at all without `-Akl`; decisions 47-49 gave
@@ -159,7 +163,7 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `tables.asm` | initialised main-RAM data. It sits ABOVE `SPR_SAVE`'s base and is therefore **boot-only** - the disc filenames and the OSFILE block. Nothing read in play may go here (`BUGS.md` #13); the mutable state lives at `&0800` (see `main.asm`) |
 | `zx0depack.asm` | the ZX0 depacker, lifted from Paradroid. Boot code, called only by the loader; the last thing in the image and the one part allowed above `SPR_SAVE`'s base |
 | `loading.asm` | the loading screen's two disc files, `LOADSC1` and `LOADSC2` |
-| `panel.asm` | the status panel image as the disc file `PANEL` (decision 47). It used to live in bank 3; it is 3,200 bytes read exactly twice, and bank 3's tail is where the tune has to be. **The titles' second credit set rides on the end of it** and lands at `&3C80`, above the panel and below the play buffer, which neither rupture cycle fetches (decision 53) |
+| `panel.asm` | the status panel image as the disc file `PANEL` (decision 47), the C64's or - under `GFX_CPC` - the Amstrad's (decision 56). It used to live in bank 3; it is 3,200 bytes read exactly twice, and bank 3's tail is where the tune has to be. **The titles' second credit set rides on the end of it** and lands at `&3C80`, above the panel and below the play buffer, which neither rupture cycle fetches (decision 53) |
 | `andy.asm` | ANDY's share of the tune as the disc file `ANDY`: 4K at `&8000-&8FFF`, ROMSEL bit 7 (decision 48). Loaded before `MUSIC` and unpacked after it, because the loader cannot write into ANDY while the filing system is running |
 | `bank0.asm` | the SWRAM data bank, plus the run-once and out-of-room code: `setup_display`, `clear_play`, `panel_init`, `score_boot`, `status_call`, `title_page`, `pause_check`, `comp_mess`, `finale_tick`, the frame meter |
 | `bank1.asm` | the SWRAM sprite bank for pixel shift 0, and after it **the titles' zoom scroller** (Layer 6e): its font, its message, its four-cycle rupture and the code that drives them. There because nothing on the titles reads a sprite, and reached through `bank_call` in main RAM. Then **the starfield** (Layer 9c, decisions 50 and 51): its tables in what used to be dead space below the tune's B1 stream, its code in the bank's tail. And the completion sequence's **"MEGA HERO" message** (Layer 9c), split the same way: its data and `mega_one` in the same hole, `mega_mess` and `mega_plot` in the tail. The 240-field loop is up here too, because `comp_mess` in bank 0 has sixteen bytes left |

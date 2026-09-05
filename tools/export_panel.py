@@ -50,10 +50,27 @@ src/data/hud.bin, 208 bytes
         0       blank
         1-10    digits '0' to '9'   (C64 characters $21-$2a)
         11, 12  the lives bar pair  (C64 characters $8f, $90)
+
+With --cpc (decision 56) the panel and the HUD come from the Amstrad port's own
+art instead - `PanelBlock0-7` in EG_Panel.asm and `gamefont0-9` / `playerlife`
+in EG_GameFont.ASM, read through tools/cpc/paneldata.py - and are written to
+panel-cpc.bin and hud-cpc.bin. Colour goes through the dither pairs of decision
+55 like the rest of the CPC art, so nothing here consults C64_TO_MODE2 or the
+HUD_PAIR_3 brightening: the CPC draws its digits bright cyan on blue, which
+needs no help.
+
+The CPC's panel is FOUR character rows to the C64's five, so it lands in rows
+0-3 and row 4 is left black. Its HUD is in the same cells as ours to the
+column: the score at row 1 column 7, the high score at row 1 column 27 and the
+three life markers at row 2 columns 17-22, which is exactly what
+export_panel.py's PANEL_SHIFT of 1 puts the C64's at. The CPC port copied the
+C64's layout including the two blank columns the 38-column border ate, so
+src/bank3.asm's hud_cell tables need no change at all.
 """
 
 import os
 import re
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -61,6 +78,8 @@ CHARSET = os.path.join(ROOT, 'source_c64', 'data', 'status.chr')
 SOURCE = os.path.join(ROOT, 'source_c64', 'edge_grinder.asm')
 OUT = os.path.join(ROOT, 'src', 'data', 'panel.bin')
 OUT_HUD = os.path.join(ROOT, 'src', 'data', 'hud.bin')
+OUT_CPC = os.path.join(ROOT, 'src', 'data', 'panel-cpc.bin')
+OUT_HUD_CPC = os.path.join(ROOT, 'src', 'data', 'hud-cpc.bin')
 
 PANEL_ROWS = 5
 PANEL_COLS = 40
@@ -151,6 +170,65 @@ def render(chars, code, colour_ram, body=None):
     return bytes(cols[0] + cols[1])
 
 
+def cpc_cell(rows, x0, y0):
+    """One 4-pixel-by-8-row cell of BBC logical colour as our 16 panel bytes:
+    byte column 0's eight scanlines, then byte column 1's."""
+    out = bytearray()
+    for bc in range(2):
+        for y in range(8):
+            b = 0
+            for i in range(2):
+                colour = rows[y0 + y][x0 + bc * 2 + i]
+                if colour:
+                    b |= mode2_pixel(colour, left=(i == 0))
+            out.append(b)
+    return out
+
+
+def main_cpc():
+    sys.path.insert(0, os.path.join(HERE, 'cpc'))
+    import bbcart
+    import paneldata
+
+    print('paneldata: verified against the panel image -', paneldata.verify())
+    rows = bbcart.panel()
+    assert len(rows) == paneldata.HIGH and len(rows[0]) == PANEL_COLS * 4
+
+    # The CPC's four character rows, then a blank fifth: our rupture is five
+    # rows and the CPC's panel is four (paneldata.py). Top-aligned, so the
+    # score and lives keep the rows src/bank3.asm's hud_cell tables name.
+    out = bytearray()
+    for row in range(PANEL_ROWS):
+        for col in range(PANEL_COLS):
+            if row * 8 < paneldata.HIGH:
+                out += cpc_cell(rows, col * 4, row * 8)
+            else:
+                out += bytes(16)
+    assert len(out) == PANEL_ROWS * 640
+
+    hud = bytearray()
+    for glyph in bbcart.hud():
+        hud += cpc_cell(glyph, 0, 0)
+
+    # The glyphs are poked into the panel, so they must land on its dither
+    # phase: every cell they go into starts on an even pixel column and an
+    # even row, so glyph-local (x + y) parity is the panel's. Prove it by
+    # rebuilding the panel's own life markers out of glyphs 11 and 12.
+    marker = bytes(hud[11 * 16:13 * 16])
+    for i in range(3):
+        col = paneldata.LIVES_AT[1] // 2 + i * 2
+        at = (paneldata.LIVES_AT[0] * PANEL_COLS + col) * 16
+        assert out[at:at + 32] == marker, ('lives glyph phase', i)
+
+    with open(OUT_CPC, 'wb') as f:
+        f.write(out)
+    with open(OUT_HUD_CPC, 'wb') as f:
+        f.write(hud)
+    print('%s: %d bytes (%d cells, CPC art, row 4 blank)'
+          % (OUT_CPC, len(out), PANEL_CELLS))
+    print('%s: %d bytes (%d glyphs)' % (OUT_HUD_CPC, len(hud), len(hud) // 16))
+
+
 def main():
     raw = open(CHARSET, 'rb').read()
     assert len(raw) == 2 + 2048, 'status.chr should be a load address and 256 chars'
@@ -180,4 +258,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if '--cpc' in sys.argv[1:]:
+        main_cpc()
+    else:
+        main()
