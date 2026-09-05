@@ -6,6 +6,8 @@ diffed against an emulator screenshot.
   python tools/render_bbc.py tiles      -> tools/output/tiles.png    (16 per row)
   python tools/render_bbc.py map [a b]  -> tools/output/map.png      (tile columns a..b, default all)
   python tools/render_bbc.py sprites [s] -> tools/output/sprites.png  (8 per row, shift s)
+  python tools/render_bbc.py panel      -> tools/output/panel.png    (the status bar as shown)
+  python tools/render_bbc.py hud        -> tools/output/hud.png      (the 13 poked glyphs)
 
 Add --cpc to read the GFX_CPC build's data instead (src/data/*-cpc.bin) and
 write to tools/output/*-cpc.png. tiles and map have no CPC copies of their own
@@ -134,6 +136,24 @@ def render_sprites(shift=0):
     return img
 
 
+def render_cells(name, count, per_row, wide, high):
+    """panel.bin and hud.bin are cells of 4 fat pixels by 8 rows, sixteen bytes
+    each - byte column 0's eight scanlines then column 1's - so one reader does
+    both. The panel comes back as the picture the machine shows."""
+    d = open(f"{DATA}/{name}{SUFFIX}.bin", "rb").read()
+    img = new_image(per_row * wide, ((count + per_row - 1) // per_row) * high)
+    for n in range(count):
+        cell = d[n * 16:n * 16 + 16]
+        rows = [[0] * wide for _ in range(high)]
+        for bc in range(2):
+            for y in range(8):
+                left, right = bbc.mode2_unpack(cell[bc * 8 + y])
+                rows[y][bc * 2] = left
+                rows[y][bc * 2 + 1] = right
+        blit(img, (n % per_row) * wide, (n // per_row) * high, rows)
+    return img
+
+
 def main():
     global SUFFIX
     os.makedirs(OUT, exist_ok=True)
@@ -145,6 +165,10 @@ def main():
         img = render_chars()
     elif what == "tiles":
         img = render_tiles()
+    elif what == "panel":
+        img = render_cells("panel", 200, 40, 4, 8)
+    elif what == "hud":
+        img = render_cells("hud", 13, 13, 4, 8)
     elif what == "sprites":
         img = render_sprites(int(argv[1]) if len(argv) > 1 else 0)
     else:

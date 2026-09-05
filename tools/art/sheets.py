@@ -12,6 +12,20 @@ uniform 2x1 block; validate_art.py is what says so, with coordinates.
   assets/art/sprites.png  192 x 336   128 slots, 8 a row; frames 0-118 are the
                           game's and 119-127 are blank. A cell is 24 x 21:
                           12 fat pixels by 21 rows. The grey key is see-through.
+  assets/art/panel.png    320 x 40    the status bar as a PICTURE, 5 character
+                          rows of 40 - which is what it is on screen, at the
+                          size it appears. Cut into 200 cells on export.
+  assets/art/hud.png      128 x 8     16 slots, 13 used: blank, the digits 0-9,
+                          then the life marker's two halves. A cell is 8 x 8,
+                          the same 4 x 8 fat pixels a character is.
+
+The panel and the HUD are two halves of one thing and have to agree. The panel
+is drawn once and never redrawn; the score, the high score and the lives are
+the only parts that move, and the runtime pokes HUD glyphs into fixed cells of
+it (`hud_cell_lo/hi` in src/bank3.asm): the score at row 1 columns 7-12, the
+high score at row 1 columns 27-32, the lives at row 2 columns 17-22. Those
+cells must be left free in the panel art, and a digit painted in the HUD sheet
+has to sit on whatever background the panel puts behind it.
 
 Frame and character NUMBERS are the C64's and are not ours to change: the tile
 table, the map, col_decode, the wave table and sprite_dp_dcd all index into
@@ -33,6 +47,8 @@ SX, SY = 2, 1                     # image pixels per fat pixel
 
 CHARS_PNG = os.path.join(ART, "chars.png")
 SPRITES_PNG = os.path.join(ART, "sprites.png")
+PANEL_PNG = os.path.join(ART, "panel.png")
+HUD_PNG = os.path.join(ART, "hud.png")
 
 
 class Sheet:
@@ -59,6 +75,20 @@ class Sheet:
 
 CHARS = Sheet(CHARS_PNG, 256, 256, 16, 4, 8, transparent=False)
 SPRITES = Sheet(SPRITES_PNG, 119, 128, 8, 12, 21, transparent=True)
+PANEL = Sheet(PANEL_PNG, 200, 200, 40, 4, 8, transparent=False)
+HUD = Sheet(HUD_PNG, 13, 16, 16, 4, 8, transparent=False)
+
+ALL = (CHARS, SPRITES, PANEL, HUD)
+
+
+def pack_cell(cell):
+    """One 4-fat-pixel-by-8-row cell as the sixteen bytes panel.bin, hud.bin
+    and the runtime all use: byte column 0's eight scanlines, then column 1's.
+    Our byte columns are eight bytes apart and consecutive, so a cell is
+    sixteen contiguous bytes of screen."""
+    import bbc
+    return bytes(bbc.mode2_byte(cell[y][bc * 2], cell[y][bc * 2 + 1])
+                 for bc in (0, 1) for y in range(8))
 
 
 def read(sheet, pal=None, strict=True):

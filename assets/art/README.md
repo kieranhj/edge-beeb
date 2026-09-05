@@ -1,12 +1,12 @@
 # Edge Grinder on the BBC Master — artwork
 
-Two PNGs in this folder are the game's artwork. Repaint them, send them back,
+Four PNGs in this folder are the game's artwork. Repaint them, send them back,
 and they go straight into the build. Everything else — the level layout, which
 tile goes where, the animation order, what kills you — is fixed and is not in
 these files.
 
-Both sheets are seeded with the current conversion of the C64 original, so you
-are always painting over a working game rather than starting from nothing.
+All four sheets are seeded with the current conversion of the C64 original, so
+you are always painting over a working game rather than starting from nothing.
 
 ## The palette — eight colours, and that is all there is
 
@@ -42,7 +42,7 @@ done, leave the rest orange, and the game still builds complete. It must be a
 
 ## Pixels are 2:1
 
-A BBC MODE 2 pixel is twice as wide as it is tall. Both sheets are drawn at
+A BBC MODE 2 pixel is twice as wide as it is tall. All four sheets are drawn at
 **2 image pixels across, 1 down** per screen pixel, so they look on your screen
 roughly the way they will look on a TV. **Always paint in 2×1 blocks** — a
 1-pixel-wide mark is half a pixel and we cannot use it. In Aseprite, set the
@@ -96,11 +96,53 @@ you get exactly that. If you use colour more freely — which you are welcome to
 — the flash recolours the whole sprite instead. Both look fine; we just check
 which one your sheet is going to get and tell you.
 
+## `panel.png` — the status bar, 320 × 40
+
+This one is not a sheet of cells, it is a **picture**: the status bar exactly as
+it appears across the top of the screen, at the size it appears. 40 characters
+wide and 5 rows tall, which is 160 screen pixels by 40. Paint it as one image.
+
+It is drawn once, at the start, and never redrawn — so it costs nothing and you
+can be as detailed as you like.
+
+**Three parts of it are not yours to paint**, because the game writes over them
+every time the numbers change:
+
+| What | Where |
+|---|---|
+| score | row 1, columns 7–12 |
+| high score | row 1, columns 27–32 |
+| lives | row 2, columns 17–22 |
+
+Columns and rows count from 0, and a column is 8 image pixels wide, a row 8
+tall. Anything you paint in those eighteen cells is seen at boot and then
+replaced. The C64's bar leaves them empty and lets the digits sit on black; the
+Amstrad's paints a background into them and lets the digits sit on that. Either
+works — we just tell you which you have done, so it is never a surprise.
+
+## `hud.png` — the digits and the life marker, 128 × 8
+
+Thirteen small cells in a row, each 8 × 8 image pixels (4 screen pixels by 8) —
+the same size as one character:
+
+```
+ 0        blank (used to rub a digit out)
+ 1 .. 10  the digits 0 to 9
+ 11, 12   the life marker, left half and right half
+```
+
+These are stamped into the cells listed above whenever the score or the lives
+change, so they have to read against whatever background `panel.png` puts
+behind them. Four pixels is not much width for a digit — the current ones use a
+bright body with a darker shadow pixel, which is what makes them legible on
+eight colours, and that is worth keeping in mind rather than copying.
+
+Cells 13–15 are spare and ignored.
+
 ## Sending work back
 
-Send the two PNGs (and `palette.png` if you changed nothing, just send the
-sheets). We run one command that checks them and tells us, with exact
-coordinates, about anything that is off — a colour outside the palette, a
+Send whichever PNGs you have changed. We run one command that checks them and
+tells us, with exact coordinates, about anything that is off — a colour outside the palette, a
 half-width pixel, transparency where it cannot go. Then it goes into a disc
 image and you get a link that boots the real game in a web browser, no
 emulator to install.

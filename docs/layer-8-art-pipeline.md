@@ -1,8 +1,8 @@
 # Layer 8 — graphics pipeline B: the artist's PNGs (2026-09-05)
 
 `PROPOSAL.md` §5.2 asked for a path that lets a non-developer repaint the game.
-This is that path. The characters, the sprites **and the palette** are read from
-PNGs in `assets/art/` now; the C64 and CPC conversions are still there, and are
+This is that path. The characters, the sprites, **the status panel, the HUD font**
+and **the palette** are read from PNGs in `assets/art/` now; the C64 and CPC conversions are still there, and are
 what the PNGs were seeded from.
 
 ## What was built
@@ -13,17 +13,18 @@ art sources and this is the third:
 | File | Contents |
 |---|---|
 | `palette.py` | `assets/art/palette.png` — the sixteen MODE 2 logical colours as RGB — and the RGB → logical mapping in both directions |
-| `sheets.py` | the two sheets' geometry, and the reader/writer that turns a PNG into cells of logical colour and back |
-| `pngart.py` | the exporter-facing interface: `characters()`, `sprites(n)`. Deliberately the same four-function shape `tools/cpc/bbcart.py` presents for the Amstrad art |
-| `mechanical.py` | the C64 and CPC conversions, lifted out of the two exporters so the seeder and the fallback path can call them too |
+| `sheets.py` | the four sheets' geometry, and the reader/writer that turns a PNG into cells of logical colour and back |
+| `pngart.py` | the exporter-facing interface: `characters()`, `sprites(n)`, `panel()`, `hud()` - deliberately the same four-function shape `tools/cpc/bbcart.py` presents for the Amstrad art |
+| `mechanical.py` | the C64 and CPC conversions, lifted out of the three exporters so the seeder and the fallback path can call them too |
 
-and four tools beside it:
+and five tools beside it:
 
 | Tool | Does |
 |---|---|
 | `tools/seed_art.py` | writes the sheets and the palette from the conversion the game runs on today (`--cpc` for the Amstrad's, `--blank` for a redraw from nothing) |
 | `tools/validate_art.py` | what a drop from the artist goes through on receipt |
 | `tools/export_palette.py` | `palette.png` → `src/data/palette.asm`, the bytes `setup_display` writes |
+| `tools/export_panel.py` | `panel.png` and `hud.png` → `panel.bin` and `hud.bin`; the C64 reading it used to do is `mechanical.py`'s now |
 | `tools/render_bbc.py` | unchanged in purpose, but reads the palette file now instead of assuming logical = physical `AND 7` |
 
 `export_tiles.py` and `export_sprites.py` take their art from the PNGs by
@@ -32,7 +33,7 @@ outright. **No new build symbol** — `RELEASE`, `MUSIC_AKL` and `GFX_CPC` are
 still the three, and the PNGs feed the same `src/data/*.bin` the build already
 INCBINs.
 
-## The two sheets
+## The four sheets
 
 Both at 2:1 — a screen fat pixel is 2 image pixels across and 1 down, which is
 the aspect the Beeb shows and the scale `reference/sprite-sheet.png` already
@@ -44,7 +45,16 @@ rather than whichever half the reader happened to sample.
 assets/art/chars.png    128 x 128   256 characters, 16 a row, cell 8 x 8
 assets/art/sprites.png  192 x 336   128 slots,  8 a row, cell 24 x 21
                                     frames 0-118 are the game's
+assets/art/panel.png    320 x 40    the status bar as a picture
+assets/art/hud.png      128 x 8     16 slots, 13 used, cell 8 x 8
 ```
+
+**The panel is a picture, not a sheet** (decision 61). It is 5 character rows of
+40 on screen and it is painted that way, at the size it appears; the exporter
+cuts it into the 200 sixteen-byte cells the runtime copies to `&3000`. Which is
+possible only because a panel cell, a HUD glyph and a character are *the same
+shape* — 4 fat pixels by 8 rows — so one `Sheet`, one reader and one
+`pack_cell` do all four sheets.
 
 **Characters are the paintable surface and tiles are not** (decision 58). The
 211 tile definitions and the 302-column map are *index tables* shared verbatim
@@ -107,6 +117,31 @@ almost nothing:
   `&FE21` writes. Sixteen free colours have no such ladder, so both need a fade
   of their own — genuinely new work, and the only part of this that is.
 
+## The panel and the HUD have to agree
+
+The bar is drawn once and never redrawn; the score, the high score and the lives
+are the only parts that move, and the runtime pokes HUD glyphs into eighteen
+fixed cells of it (`hud_cell_lo/hi` in `src/bank3.asm`) — score at row 1 columns
+7-12, high score at row 1 columns 27-32, lives at row 2 columns 17-22, all
+including `PANEL_SHIFT`. Nothing in the picture says which eighteen those are,
+so `check_hud_cells` says it: ink painted there is seen at boot and never again.
+
+A **warning**, not a rule, and measured rather than assumed — the C64's own bar
+leaves all eighteen blank and the Amstrad's paints all eighteen (decision 56),
+so both are defensible and the game runs either way.
+
+The CPC path keeps its **hard** assert, which is a different thing: its panel
+image has the three life markers drawn in, and they must equal HUD glyphs 11
+and 12 byte for byte. That is what proves the dither phase — every HUD cell
+starts on an even pixel column and an even row, so a glyph's own `(x + y)`
+parity is the panel's. It is not a matter of taste and stays an assert.
+
+An earlier version of this check compared the C64 panel's markers against the
+glyphs and fired every time. Two reasons, both worth writing down: the C64 panel
+has **nothing** in those cells, and `HUD_PAIR_3` deliberately gives the glyphs a
+white body where the ornament's colour RAM would give blue, so even where they
+do coexist they are not meant to match on colour.
+
 ## The hit flash is derived from the art, not from a flag
 
 Decision 59. `export_sprites.py`'s two flash LUTs recolour everything outside
@@ -125,7 +160,8 @@ transparency key alone on its own, which is what `CPC_KEEP` said by hand.
 
 * **The seeded sheets re-export byte for byte.** `git diff src/data/` is empty
   after `seed_art.py` and all three sources — PNG, `--c64`, `--cpc` — for
-  `chars.bin`, `sprites0/1.bin`, `compiled.bin` and `compiled_zp.asm`. This is
+  `chars.bin`, `sprites0/1.bin`, `compiled.bin`, `compiled_zp.asm`, `panel.bin`
+  and `hud.bin`, and for the four `-cpc` copies. This is
   the check that the PNG path adds and loses nothing, and
   `validate_art.py --roundtrip` runs it in one command: *all 256 characters and
   all 119 frames identical to the C64 conversion*.
@@ -159,11 +195,12 @@ transparency key alone on its own, which is what `CPC_KEEP` said by hand.
 
 ## Left for later
 
-* The panel, the HUD font, the title screen, the credits font, the zoom
-  scroller's font and the loading screen are all still generated from the C64
-  and CPC sources. They go through the same machinery when they are wanted —
-  `bbcart.py` already presents `panel()` and `hud()` and `pngart.py` would need
-  the matching two — but nothing about them is decided yet.
+* The title screen, the credits font, the zoom scroller's font and the loading
+  screen are still generated from the C64 and CPC sources. The panel and the HUD
+  went through this machinery (decision 61) and the rest can, but nothing about
+  them is decided yet. The credits and zoom fonts are the awkward ones: they are
+  glyph sets of their own shapes rather than 4x8 cells, so each needs a `Sheet`
+  and not just an `INCBIN` swap.
 * A `-Gallery` debug build that pages through every sprite and tile on the
   machine itself (`PROPOSAL.md` §5.2.4). Worth an hour when there is art to look
   at.

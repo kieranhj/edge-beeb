@@ -51,6 +51,17 @@ src/data/hud.bin, 208 bytes
         1-10    digits '0' to '9'   (C64 characters $21-$2a)
         11, 12  the lives bar pair  (C64 characters $8f, $90)
 
+The panel and the HUD come from assets/art/panel.png and hud.png (Layer 8,
+decision 61): the artist paints the status bar as a picture at the size it
+appears on screen, and the exporter cuts it into the 200 cells the runtime
+copies. A cell he has not drawn yet falls back to the mechanical conversion.
+--c64 bypasses the PNGs and takes that conversion outright, which is what the
+sheets were seeded from and therefore produces the same bytes.
+
+The C64 reading below moved to tools/art/mechanical.py, so the seeder and the
+fallback path can call it too; everything it embodies - decision 34's colour
+mapping, PANEL_SHIFT, HUD_PAIR_3 - is unchanged and still documented here.
+
 With --cpc (decision 56) the panel and the HUD come from the Amstrad port's own
 art instead - `PanelBlock0-7` in EG_Panel.asm and `gamefont0-9` / `playerlife`
 in EG_GameFont.ASM, read through tools/cpc/paneldata.py - and are written to
@@ -69,196 +80,117 @@ src/bank3.asm's hud_cell tables need no change at all.
 """
 
 import os
-import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-CHARSET = os.path.join(ROOT, 'source_c64', 'data', 'status.chr')
-SOURCE = os.path.join(ROOT, 'source_c64', 'edge_grinder.asm')
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, 'art'))
+import mechanical  # noqa: E402
+import pngart      # noqa: E402
+import sheets      # noqa: E402
+
 OUT = os.path.join(ROOT, 'src', 'data', 'panel.bin')
 OUT_HUD = os.path.join(ROOT, 'src', 'data', 'hud.bin')
 OUT_CPC = os.path.join(ROOT, 'src', 'data', 'panel-cpc.bin')
 OUT_HUD_CPC = os.path.join(ROOT, 'src', 'data', 'hud-cpc.bin')
 
-PANEL_ROWS = 5
-PANEL_COLS = 40
-PANEL_CELLS = PANEL_ROWS * PANEL_COLS
-PANEL_SHIFT = 1         # columns right, to centre the bar - see above
+PANEL_ROWS = mechanical.PANEL_ROWS
+PANEL_COLS = mechanical.PANEL_COLS
+PANEL_CELLS = mechanical.PANEL_CELLS
+PANEL_SHIFT = mechanical.PANEL_SHIFT     # columns right, to centre the bar
 
-# $d021, $d022, $d023 as rout1 sets them for the panel's raster.
-D021, D022, D023 = 0x00, 0x06, 0x01
-
-# C64 colour -> our MODE 2 logical colour. Decision 34.
-C64_TO_MODE2 = {
-    0x00: 0,        # black
-    0x01: 7,        # white
-    0x06: 4,        # blue
-    0x0b: 4,        # dark grey   -> blue
-    0x0d: 2,        # light green -> green
-    0x0f: 7,        # light grey  -> white
-}
-
-# The characters the HUD writes, in the order the runtime indexes them.
-HUD_CHARS = [0x00] + list(range(0x21, 0x2b)) + [0x8f, 0x90]
-HUD_COLOUR = 0x0b       # every cell status_decode writes into carries this
-
-# ...but the HUD's glyphs get a brighter body than the ornament does (KC:
-# "a bit dark and hard to read"). A digit is bit pair 3 for the body, with one
-# pair-2 highlight pixel and one pair-1 shadow pixel, so on the C64 it is dark
-# grey lit by white and shaded by blue. Our mapping collapses dark grey AND
-# blue to the same blue, which leaves a four-pixel-wide digit almost entirely
-# blue on black - legible on a 16-colour screen, not on this one. So for these
-# thirteen glyphs only, the colour-RAM body is white: the shadow pixel stays
-# blue, so the shape the artist drew survives, and the digit reads at a glance.
-# The panel's own artwork is untouched.
-HUD_PAIR_3 = 7          # white, where the ornament's $0b would give blue
+# The colour and glyph decisions above are mechanical.py's now: C64_TO_MODE2
+# (decision 34), HUD_CHARS, HUD_COLOUR and HUD_PAIR_3, the white body that
+# makes a four-pixel digit legible where the ornament's dark grey would not be.
 
 
-def mode2_pixel(colour, left):
-    """MODE 2 encodes a pixel's four bits at 7,5,3,1 (left) or 6,4,2,0 (right)."""
-    b = ((colour & 1) << 0) | ((colour & 2) << 1) | ((colour & 4) << 2) | ((colour & 8) << 3)
-    return b << 1 if left else b
+def pack(cells):
+    """Cells of logical colour as the bytes the runtime copies: sixteen a cell,
+    byte column 0's eight scanlines then byte column 1's."""
+    return b''.join(sheets.pack_cell(c) for c in cells)
 
 
-def byte_list(text, want):
-    """The first `want` !byte operands after the start of `text`, in order.
-    Stops at the first operand that is not a literal, which is where the
-    tables we read run out and the original's symbolic wave data begins."""
-    out = []
-    for line in text.splitlines():
-        line = line.split(';')[0]
-        m = re.search(r'!byte\s+(.*)', line)
-        if not m:
-            continue
-        for term in m.group(1).split(','):
-            term = term.strip()
-            try:
-                out.append(int(term[1:], 16) if term.startswith('$') else int(term))
-            except ValueError:
-                return out
-            if len(out) == want:
-                return out
-    return out
+# The eighteen panel cells the runtime writes over: the score at row 1 columns
+# 7-12, the high score at row 1 columns 27-32 and the lives at row 2 columns
+# 17-22, all inclusive of PANEL_SHIFT. The same cells src/bank3.asm's
+# hud_cell_lo/hi name, and the reason that table needs no change under GFX_CPC:
+# the Amstrad port copied the C64's layout to the column (decision 56).
+HUD_CELLS = ([1 * PANEL_COLS + c for c in range(6 + PANEL_SHIFT, 12 + PANEL_SHIFT)]
+             + [1 * PANEL_COLS + c for c in range(26 + PANEL_SHIFT, 32 + PANEL_SHIFT)]
+             + [2 * PANEL_COLS + c for c in range(16 + PANEL_SHIFT, 22 + PANEL_SHIFT)])
+LIVES_CELLS = HUD_CELLS[12:]
 
 
-def block_after(source, marker, count):
-    """The first `count` !byte values following `marker`."""
-    i = source.index(marker)
-    got = byte_list(source[i:], count)
-    assert len(got) >= count, '%s: found %d of %d' % (marker, len(got), count)
-    return got[:count]
+def check_hud_cells(panel_cells):
+    """Warn about ink painted where the HUD will land.
+
+    Those eighteen cells are overwritten the first time the score, the high
+    score or the lives are drawn, so anything painted there is seen at boot and
+    never again. The C64's own panel leaves all eighteen blank - measured, not
+    assumed - and an artist repainting the bar has no way of knowing which cells
+    those are from looking at it.
+
+    A warning, not an error: the Amstrad's panel draws its digits and markers
+    into the image deliberately (decision 56), so this is a defensible thing to
+    do and the game is fine either way.
+    """
+    ink = [n for n in HUD_CELLS
+           if panel_cells[n] is not None
+           and any(v for row in panel_cells[n] for v in row)]
+    if not ink:
+        return None
+    return ('%d of the 18 cells the HUD writes into carry ink in panel.png '
+            '(cells %s); they are overwritten the first time the score or the '
+            'lives are drawn' % (len(ink), ', '.join(str(n) for n in ink[:6])
+                                 + (', ...' if len(ink) > 6 else '')))
 
 
-def render(chars, code, colour_ram, body=None):
-    """One character as 16 MODE 2 bytes: column 0's scanlines then column 1's.
-    `body` overrides the colour bit pair 3 takes, for the HUD glyphs."""
-    pair_colour = [
-        C64_TO_MODE2[D021],
-        C64_TO_MODE2[D022],
-        C64_TO_MODE2[D023],
-        C64_TO_MODE2[colour_ram & 0x0f] if body is None else body,
-    ]
-    cols = [bytearray(8), bytearray(8)]
-    for y in range(8):
-        b = chars[code * 8 + y]
-        for p in range(4):
-            colour = pair_colour[(b >> (6 - 2 * p)) & 3]
-            if colour == 0:
-                continue
-            cols[p // 2][y] |= mode2_pixel(colour, left=(p % 2 == 0))
-    return bytes(cols[0] + cols[1])
-
-
-def cpc_cell(rows, x0, y0):
-    """One 4-pixel-by-8-row cell of BBC logical colour as our 16 panel bytes:
-    byte column 0's eight scanlines, then byte column 1's."""
-    out = bytearray()
-    for bc in range(2):
-        for y in range(8):
-            b = 0
-            for i in range(2):
-                colour = rows[y0 + y][x0 + bc * 2 + i]
-                if colour:
-                    b |= mode2_pixel(colour, left=(i == 0))
-            out.append(b)
-    return out
-
-
-def main_cpc():
-    sys.path.insert(0, os.path.join(HERE, 'cpc'))
-    import bbcart
-    import paneldata
-
-    print('paneldata: verified against the panel image -', paneldata.verify())
-    rows = bbcart.panel()
-    assert len(rows) == paneldata.HIGH and len(rows[0]) == PANEL_COLS * 4
-
-    # The CPC's four character rows, then a blank fifth: our rupture is five
-    # rows and the CPC's panel is four (paneldata.py). Top-aligned, so the
-    # score and lives keep the rows src/bank3.asm's hud_cell tables name.
-    out = bytearray()
-    for row in range(PANEL_ROWS):
-        for col in range(PANEL_COLS):
-            if row * 8 < paneldata.HIGH:
-                out += cpc_cell(rows, col * 4, row * 8)
-            else:
-                out += bytes(16)
-    assert len(out) == PANEL_ROWS * 640
-
-    hud = bytearray()
-    for glyph in bbcart.hud():
-        hud += cpc_cell(glyph, 0, 0)
-
-    # The glyphs are poked into the panel, so they must land on its dither
-    # phase: every cell they go into starts on an even pixel column and an
-    # even row, so glyph-local (x + y) parity is the panel's. Prove it by
-    # rebuilding the panel's own life markers out of glyphs 11 and 12.
-    marker = bytes(hud[11 * 16:13 * 16])
+def check_hud_phase(panel_cells, hud_cells):
+    """Under GFX_CPC the life markers ARE drawn into the panel art, and must
+    match the two HUD glyphs that replace them EXACTLY, colours included - which
+    is what proves the dither phase: every HUD cell starts on an even pixel
+    column and an even row, so a glyph's own (x + y) parity is the panel's
+    (decision 56). Hard, because nothing else catches a phase error and it is
+    not a matter of taste."""
+    marker = pack(hud_cells[11:13])
     for i in range(3):
-        col = paneldata.LIVES_AT[1] // 2 + i * 2
-        at = (paneldata.LIVES_AT[0] * PANEL_COLS + col) * 16
-        assert out[at:at + 32] == marker, ('lives glyph phase', i)
-
-    with open(OUT_CPC, 'wb') as f:
-        f.write(out)
-    with open(OUT_HUD_CPC, 'wb') as f:
-        f.write(hud)
-    print('%s: %d bytes (%d cells, CPC art, row 4 blank)'
-          % (OUT_CPC, len(out), PANEL_CELLS))
-    print('%s: %d bytes (%d glyphs)' % (OUT_HUD_CPC, len(hud), len(hud) // 16))
+        at = LIVES_CELLS[i * 2]
+        assert pack(panel_cells[at:at + 2]) == marker, \
+            'lives glyph phase, marker %d' % i
 
 
-def main():
-    raw = open(CHARSET, 'rb').read()
-    assert len(raw) == 2 + 2048, 'status.chr should be a load address and 256 chars'
-    chars = raw[2:]
+def main(cpc=False, c64=False):
+    if cpc:
+        sys.path.insert(0, os.path.join(HERE, 'cpc'))
+        import paneldata
+        print('paneldata: verified against the panel image -', paneldata.verify())
+        panel = mechanical.panel(cpc=True)
+        hud = mechanical.hud(cpc=True)
+        check_hud_phase(panel, hud)
+    elif c64:
+        panel, hud = mechanical.panel(), mechanical.hud()
+    else:
+        panel = pngart.panel(fallback=mechanical.panel())
+        hud = pngart.hud(fallback=mechanical.hud())
 
-    source = open(SOURCE, 'r', encoding='latin-1').read()
-    screen = block_after(source, '; Add in the status bar character data', PANEL_CELLS)
-    cols = block_after(source, '; Status bar colour data', PANEL_CELLS)
+    if not cpc:
+        warn = check_hud_cells(panel)
+        if warn:
+            print('  warning: ' + warn)
 
-    out = bytearray()
-    for cell in range(PANEL_CELLS):
-        row, col = divmod(cell, PANEL_COLS)
-        src = row * PANEL_COLS + (col - PANEL_SHIFT) % PANEL_COLS
-        out += render(chars, screen[src], cols[src])
+    out, glyphs = pack(panel), pack(hud)
     assert len(out) == PANEL_ROWS * 640
-
-    hud = bytearray()
-    for code in HUD_CHARS:
-        hud += render(chars, code, HUD_COLOUR, body=HUD_PAIR_3)
-
-    with open(OUT, 'wb') as f:
-        f.write(out)
-    with open(OUT_HUD, 'wb') as f:
-        f.write(hud)
-    print('%s: %d bytes (%d cells)' % (OUT, len(out), PANEL_CELLS))
-    print('%s: %d bytes (%d glyphs)' % (OUT_HUD, len(hud), len(HUD_CHARS)))
+    suffix = '-cpc' if cpc else ''
+    for path, data, what in (
+            (os.path.join(ROOT, 'src', 'data', 'panel%s.bin' % suffix), out,
+             '%d cells%s' % (PANEL_CELLS, ', CPC art, row 4 blank' if cpc else '')),
+            (os.path.join(ROOT, 'src', 'data', 'hud%s.bin' % suffix), glyphs,
+             '%d glyphs' % (len(glyphs) // 16))):
+        with open(path, 'wb') as f:
+            f.write(data)
+        print('%s: %d bytes (%s)' % (path, len(data), what))
 
 
 if __name__ == '__main__':
-    if '--cpc' in sys.argv[1:]:
-        main_cpc()
-    else:
-        main()
+    main(cpc='--cpc' in sys.argv[1:], c64='--c64' in sys.argv[1:])

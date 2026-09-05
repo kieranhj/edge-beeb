@@ -183,14 +183,17 @@ steps are pinned at the top of [`docs/layer-7-music-arkos.md`](docs/layer-7-musi
 
 ### Layer 8 — graphics pipeline B (the artist) — built
 
-Decisions 58-60, [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md). `PROPOSAL.md`
-§5.2's Phase B: the characters, the sprites **and the palette** are read from PNGs in
-`assets/art/` now, seeded from the conversion the game already ran on, so the artist repaints a
-working game.
+Decisions 58-61, [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md). `PROPOSAL.md`
+§5.2's Phase B: the characters, the sprites, **the status panel, the HUD font** and **the
+palette** are read from PNGs in `assets/art/` now, seeded from the conversion the game already
+ran on, so the artist repaints a working game.
 
-**Two sheets, both at 2:1** — `chars.png` 128x128 (256 characters of 4x8 fat pixels) and
-`sprites.png` 192x336 (frames 0-118 of 12x21). Characters are the paintable surface and tiles
-are not: the tile definitions and the map are index tables shared verbatim with the C64 and CPC
+**Four sheets, all at 2:1** — `chars.png` 128x128 (256 characters of 4x8 fat pixels),
+`sprites.png` 192x336 (frames 0-118 of 12x21), `panel.png` 320x40 (the status bar as a picture,
+at the size it appears) and `hud.png` 128x8 (blank, the digits 0-9, the life marker's two
+halves). The panel and the HUD cost almost nothing to add: a panel cell, a HUD glyph and a
+character are the same 4x8 shape, so one reader does all four (decision 61). Characters are the
+paintable surface and tiles are not: the tile definitions and the map are index tables shared verbatim with the C64 and CPC
 ports, and the charset is reused about thirteen times over them, so `render_bbc.py tiles` and
 `map` regenerate the assembled views instead of them being what he edits. Grey `96,96,96` is
 see-through (sprites only); orange `255,128,0` marks a cell **not drawn yet** and falls back to
@@ -208,13 +211,14 @@ MODE 2's eight-colour brightness ladder and sixteen free colours have no such la
 
 The tools: `tools/seed_art.py` (write the sheets from either conversion), `tools/validate_art.py`
 (what a drop goes through on receipt — exact palette with coordinates, fat-pixel doubling,
-transparency rules, blank-character count for the starfield, and `--roundtrip`),
-`tools/export_palette.py`, and `tools/art/` behind them.
+transparency rules, blank-character count for the starfield, the HUD-cell warning, and
+`--roundtrip`), `tools/export_palette.py`, and `tools/art/` behind them.
 
-Still to do: the panel, the HUD font, the title and credits fonts and the loading screen are all
-still generated from the C64 and CPC sources; a `-Gallery` debug build; and the transport
-question (`PROPOSAL.md` §5.2, decision 4) — a mirrored shared folder or the artist committing to
-`assets/` himself.
+Still to do: the title and credits fonts, the zoom scroller's font and the loading screen are
+still generated from the C64 and CPC sources — and those are the awkward ones, being glyph sets
+of their own shapes rather than 4x8 cells, so each needs a `Sheet` and not just an `INCBIN`
+swap. Then a `-Gallery` debug build, and the transport question (`PROPOSAL.md` §5.2, decision 4)
+— a mirrored shared folder or the artist committing to `assets/` himself.
 
 ### Layer 8a — the CPC artwork, behind `GFX_CPC` — built
 
@@ -282,7 +286,7 @@ bitshifters.github.io for testing.
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, the whole 349 s tune in four regions |
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
-| 8 — the artist's PNGs | [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md) | **built 2026-09-05**, decisions 58-60. Characters, sprites and the palette come from `assets/art/*.png`; seeded from the C64 conversion, so the disc is unchanged until the artist starts work. NULA-ready by construction |
+| 8 — the artist's PNGs | [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md) | **built 2026-09-05**, decisions 58-61. Characters, sprites, the status panel, the HUD font and the palette come from `assets/art/*.png`; seeded from the C64 conversion, so the disc is unchanged until the artist starts work. NULA-ready by construction |
 | 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **built 2026-09-04**, behind `GFX_CPC`, and all eight flag combinations assemble; **recoloured 2026-09-05** to Rich's MODE 2 dither pairs (decision 55). Which artwork ships is KC's choice |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |

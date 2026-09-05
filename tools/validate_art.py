@@ -21,14 +21,15 @@ What it checks:
     not-yet-drawn key. An unknown colour is an error naming the cell and the
     pixel, never a nearest match - a nearest match is how art quietly stops
     being what the artist drew;
-  * the transparency key appears only on the sprite sheet. A character is
-    opaque: the background has nothing behind it to show through;
+  * the transparency key appears only on the sprite sheet. A character, the
+    status panel and a HUD glyph are all opaque: none of them has anything
+    behind it to show through;
   * the not-yet-drawn key is a whole cell or nothing;
   * the palette is legal for MODE 2 (all eight entries one of the BBC eight),
     or says plainly that it would need a NULA.
 
-And two things that are not errors but are worth knowing, because both are
-game mechanics that live in the art and are easy to paint away:
+And three things that are not errors but are worth knowing, because each is a
+game mechanic that lives in the art and is easy to paint away:
 
   * BLANK CHARACTERS. The starfield plots a star only where the play buffer
     byte reads exactly zero (src/bank1.asm), so "empty space" has to stay
@@ -38,6 +39,12 @@ game mechanics that live in the art and are easy to paint away:
     holds blue, white and one free colour flashes the way the C64 does, and
     anything else flashes whole. This prints which way the sheet will go, so
     the change is never a surprise.
+  * THE HUD CELLS. Eighteen cells of the panel are overwritten the moment the
+    score, the high score or the lives are drawn - anything painted there is
+    seen at boot and never again - and there is nothing in the picture to say
+    which eighteen. The C64's own bar leaves them all blank; the Amstrad's
+    draws its digits and markers in deliberately, so this is a warning rather
+    than a rule.
 
 Collision is NOT in the art and cannot be painted: it is bit 4 of col_decode
 per character number (docs/layer-1-graphics-pipeline.md). Repainting a solid
@@ -107,7 +114,19 @@ def main(roundtrip=False):
     frames, e2 = check_sheet(sheets.SPRITES, pal, "sprites")
     print()
 
-    errors = e1 + e2
+    panel, e3 = check_sheet(sheets.PANEL, pal, "panel")
+    import export_panel
+    warn = export_panel.check_hud_cells(panel)
+    print("  " + (warn if warn else
+                  "the 18 cells the HUD writes into are clear, as the C64's bar "
+                  "leaves them"))
+    print()
+
+    glyphs, e4 = check_sheet(sheets.HUD, pal, "hud")
+    print("  blank, the digits 0-9, then the life marker's two halves")
+    print()
+
+    errors = e1 + e2 + e3 + e4
     if not errors:
         import export_sprites
         merged = [f if f is not None else m for f, m in
@@ -128,7 +147,8 @@ def main(roundtrip=False):
     if errors:
         raise SystemExit(f"{len(errors)} error(s) - nothing exported")
     print("OK. Now: python tools/export_palette.py && "
-          "python tools/export_tiles.py && python tools/export_sprites.py")
+          "python tools/export_tiles.py && python tools/export_sprites.py && "
+          "python tools/export_panel.py")
 
 
 def roundtrip_check():
@@ -140,7 +160,11 @@ def roundtrip_check():
               mechanical.characters()),
              ("frames", pngart.sprites(mechanical.FRAMES,
                                        fallback=mechanical.sprites()),
-              mechanical.sprites()))
+              mechanical.sprites()),
+             ("panel cells", pngart.panel(fallback=mechanical.panel()),
+              mechanical.panel()),
+             ("HUD glyphs", pngart.hud(fallback=mechanical.hud()),
+              mechanical.hud()))
     for what, a, b in pairs:
         diff = [n for n, (x, y) in enumerate(zip(a, b)) if x != y]
         if diff:

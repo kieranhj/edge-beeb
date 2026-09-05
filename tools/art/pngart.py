@@ -47,11 +47,20 @@ def sprites(count, fallback=None):
     return _merge(cells, fallback, "frame")
 
 
+def panel(fallback=None):
+    """The status panel as 200 cells of 8 rows of 4 BBC logical colours."""
+    return _merge(sheets.read(sheets.PANEL), fallback, "panel cell")
+
+
+def hud(fallback=None):
+    """The thirteen HUD glyphs, each 8 rows of 4 BBC logical colours."""
+    return _merge(sheets.read(sheets.HUD)[:13], fallback, "HUD glyph")
+
+
 def game_palette():
     return palette.load()
 
 
 def available():
     return (os.path.exists(palette.PALETTE_PNG)
-            and os.path.exists(sheets.CHARS_PNG)
-            and os.path.exists(sheets.SPRITES_PNG))
+            and all(os.path.exists(s.path) for s in sheets.ALL))
