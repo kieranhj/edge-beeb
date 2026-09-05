@@ -212,6 +212,24 @@ interpreted path by simulating the emitted 6502.
 Still to do: real-hardware test, release build, publish. The starfield is 9c above, and is the
 CPC's rather than the C64's.
 
+### Open: the win tune
+
+The CPC has **two** songs and we ship one. `source_cpc/Music/WON4.SKS` is its end-game tune, 66.2
+seconds, and `EG_Interrupts2.asm` switches to it by re-initing the Arkos replay at a second address.
+Measured 2026-09-05, both ways, and the answer is lopsided — see the last section of
+[`docs/memory-map.md`](docs/memory-map.md):
+
+* **VGI build (default): it does not fit.** 2,889 bytes of `.vgi` against 1,757 free, and its
+  largest single stream (494 bytes) is bigger than the largest hole in the machine (bank 1's 475),
+  so no placement exists at all. Truncated to ~20 seconds it fits with a working margin; 30 would
+  leave a `-Cpc` build 192 bytes for everything else, ever.
+* **`-Akl` build: 695 bytes, whole, untruncated.** Bank 3 alone has 12,280 free there, `akl_init`
+  already takes a song address in A/X, and re-initing at a second one is exactly what the CPC does.
+
+So it is a reason to prefer `MUSIC_AKL`, not something to squeeze into the VGI build. **KC's ear on
+the `-Akl` tune is the decision that gates it**, and that is still pending
+([`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md)). No decision taken.
+
 ### Release
 
 Real-hardware test, a `-Release` build, and publish. `publish-wip` puts the current disc on
