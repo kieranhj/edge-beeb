@@ -15,52 +15,44 @@ Writes to src/data/:
 Colours: bit pair 00 -> black, 01 -> brown ($d022), 10 -> white ($d023),
 11 -> col_decode low 3 bits; each then through C64_TO_BBC (decision 11).
 
+The charset comes from assets/art/chars.png (Layer 8): the artist paints there
+and the exporter resolves every pixel through assets/art/palette.png. A
+character he has not drawn yet falls back to the C64 mechanical conversion, so
+a partial drop still builds a complete game. --c64 bypasses the PNGs and takes
+the mechanical conversion outright, which is what the sheets were seeded from
+and therefore produces the same bytes.
+
 With --cpc (decision 41) the charset comes from the Amstrad port's art instead
 and is written to chars-cpc.bin; a CPC character carries its own colours, so
 col_decode's colour bits are not consulted at all. tiles.bin, map.bin and
 col_decode.bin are NOT rewritten - the CPC uses the same tile numbers, the same
-map and the same collision table, so both builds share the one copy.
+map and the same collision table, so all three builds share the one copy, and
+repainting a character repaints every tile that uses it.
 
-Run from the project root: python tools/export_tiles.py [--cpc]
+Run from the project root: python tools/export_tiles.py [--cpc | --c64]
 """
 
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-import bbc  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "art"))
+import bbc          # noqa: E402
+import mechanical   # noqa: E402
+import pngart       # noqa: E402
 
 OUT = "src/data"
 C64_ASM = "source_c64/edge_grinder.asm"
 
 
-def char_colour(value, col_decode_entry):
-    if value == 0:
-        c64 = bbc.C64_BG
-    elif value == 1:
-        c64 = bbc.C64_MC1
-    elif value == 2:
-        c64 = bbc.C64_MC2
-    else:
-        c64 = col_decode_entry & 7
-    return bbc.C64_TO_BBC[c64]
-
-
-def char_pixels(char, cd):
-    """8 rows x 4 columns of BBC logical colours for one character."""
-    return [[char_colour(v, cd) for v in bbc.c64_pixels(row)] for row in char]
-
-
-def main(cpc=False):
+def main(cpc=False, c64=False):
     os.makedirs(OUT, exist_ok=True)
     if cpc:
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "cpc"))
-        import bbcart
-        pixels = bbcart.characters()
+        pixels = mechanical.characters(cpc=True)
+    elif c64:
+        pixels = mechanical.characters()
     else:
-        col_decode = bbc.parse_c64_table(C64_ASM, "col_decode", 256)
-        pixels = [char_pixels(c, col_decode[n])
-                  for n, c in enumerate(bbc.load_chars())]
+        pixels = pngart.characters(fallback=mechanical.characters())
 
     planes = bytearray(4 * 2048)
     for c, px in enumerate(pixels):
@@ -72,6 +64,8 @@ def main(cpc=False):
     if cpc:
         print(f"{name} {len(planes)} B (CPC art; tiles/map/col_decode unchanged)")
         return
+
+    col_decode = bbc.parse_c64_table(C64_ASM, "col_decode", 256)
 
     tiles = open("data/tiles.til.bin", "rb").read()
     open(f"{OUT}/tiles.bin", "wb").write(tiles)
@@ -88,4 +82,4 @@ def main(cpc=False):
 
 
 if __name__ == "__main__":
-    main(cpc="--cpc" in sys.argv[1:])
+    main(cpc="--cpc" in sys.argv[1:], c64="--c64" in sys.argv[1:])

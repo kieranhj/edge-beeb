@@ -33,6 +33,24 @@ colour, which is true of the C64 art (sprite_col_dcd never names blue or
 white as the per-sprite colour). Hand-drawn art with more colours needs
 per-colour tables instead: see docs/layer-3-sprites.md.
 
+The frames come from assets/art/sprites.png (Layer 8): the artist paints there
+and every pixel resolves through assets/art/palette.png. A frame he has not
+drawn yet falls back to the C64 mechanical conversion, so a partial drop still
+builds a complete game. --c64 bypasses the PNGs and takes the mechanical
+conversion outright, which is what the sheet was seeded from and therefore
+produces the same bytes.
+
+KEEP is DERIVED FROM THE ART, not from the flag (`derive_keep`). The C64's rule
+- a frame is transparent, blue, white and at most one free colour - is what the
+two flash LUTs need in order to recolour just that free colour, and hand-drawn
+art puts any colour anywhere, so it cannot be assumed. Art that satisfies the
+rule keeps blue and white through a flash exactly as the original does; art that
+does not gets KEEP = the transparency key alone, and the flash takes the whole
+sprite - which is what the GFX_CPC build has done since Layer 8a. So the seeded
+sheets reproduce the C64 build byte for byte and the fallback arrives by itself
+the first time a frame needs it. dp_dcd and lut_dcd stay the C64's under every
+source: which frames flash, and when, is game logic, not art.
+
 With --cpc (decision 41) the frames come from the Amstrad port's sprite bank
 instead and are written to sprites0-cpc.bin, sprites1-cpc.bin, compiled-cpc.bin
 and compiled_zp-cpc.asm. A CPC frame carries its own fifteen colours and there
@@ -53,8 +71,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-import bbc  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "art"))
+import bbc              # noqa: E402
 import compile_sprites  # noqa: E402
+import mechanical       # noqa: E402
+import pngart           # noqa: E402
 
 OUT = "src/data"
 C64_ASM = "source_c64/edge_grinder.asm"
@@ -68,7 +89,7 @@ DATA_START = 0x0900       # offset of the frame data within the bank
 TABLE_STRIDE = 0x80
 
 C64_KEEP = {0, bbc.C64_TO_BBC[bbc.C64_SPR_MC1], bbc.C64_TO_BBC[bbc.C64_SPR_MC2]}
-CPC_KEEP = {0}          # no shared colours to preserve: the flash takes it all
+FLASH_KEEP = {0}        # no shared colours to preserve: the flash takes it all
 LUT_PAGES = {None: 0x81, bbc.WHITE: 0x82, bbc.MAGENTA: 0x83}
 
 # Which animations get straight-line code in sideways slot 7 (decision 29).
@@ -89,17 +110,21 @@ COMPILE_DPS = [(0x12, 0x13)]      # the player bullet
 CPC_COMPILE_DPS = COMPILE_DPS
 
 
-def frame_pixels(raw, colour_c64):
-    """21 rows x 12 fat pixels of BBC logical colour (0 = transparent)."""
-    lut = {0: 0, 1: bbc.C64_TO_BBC[bbc.C64_SPR_MC1], 3: bbc.C64_TO_BBC[bbc.C64_SPR_MC2],
-           2: bbc.C64_TO_BBC[colour_c64]}
-    rows = []
-    for r in range(ROWS):
-        row = []
-        for b in raw[r * 3:r * 3 + 3]:
-            row += [lut[v] for v in bbc.c64_pixels(b)]
-        rows.append(row)
-    return rows
+def derive_keep(pixels):
+    """Which colours a hit flash must leave alone, from the art itself.
+
+    The C64's sprites are transparent, blue, white and one free colour per
+    frame, and the two flash LUTs exist to recolour that one. Art built the
+    same way keeps blue and white; anything else - the CPC's fifteen pens, a
+    hand-drawn frame that uses blue as a hull colour - cannot, because holding
+    two arbitrary colours back through a flash reads as a fault, not a flash.
+    """
+    shared = C64_KEEP - {0}
+    for rows in pixels:
+        free = {v for row in rows for v in row} - {0} - shared
+        if len(free) > 1:
+            return FLASH_KEEP
+    return C64_KEEP
 
 
 def shifted_bytes(rows, shift):
@@ -147,28 +172,21 @@ def table(values):
     return bytes(values) + bytes(TABLE_STRIDE - len(values))
 
 
-def main(cpc=False):
+def main(cpc=False, c64=False):
     os.makedirs(OUT, exist_ok=True)
     suffix = "-cpc" if cpc else ""
-    keep = CPC_KEEP if cpc else C64_KEEP
-    col_dcd = bbc.parse_c64_table(C64_ASM, "sprite_col_dcd", DP_ENTRIES)
-    dp_dcd = bbc.parse_c64_table(C64_ASM, "sprite_dp_dcd", DP_ENTRIES)
+    col_dcd, dp_dcd = mechanical.dp_tables()
 
     if cpc:
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "cpc"))
-        import bbcart
-        pixels = bbcart.sprites(FRAMES)
+        pixels = mechanical.sprites(cpc=True, count=FRAMES)
+    elif c64:
+        pixels = mechanical.sprites(count=FRAMES)
     else:
-        sprites = bbc.load_sprites(count=FRAMES)
-        # Frame colour: every dp that maps to a frame names the same colour for it.
-        frame_colour = {}
-        for dp in range(DP_ENTRIES):
-            f = dp_dcd[dp] - VIC_BASE
-            assert 0 <= f < FRAMES, (dp, dp_dcd[dp])
-            c = col_dcd[dp] & 15
-            assert frame_colour.setdefault(f, c) == c, f
-        assert len(frame_colour) == FRAMES
-        pixels = [frame_pixels(sprites[f], frame_colour[f]) for f in range(FRAMES)]
+        pixels = pngart.sprites(FRAMES, fallback=mechanical.sprites(count=FRAMES))
+    keep = derive_keep(pixels)
+    print("hit flash: " + ("blue and white are held back, as the C64 does"
+                           if keep == C64_KEEP else
+                           "the whole sprite recolours (this art has no shared colours)"))
 
     lut_dcd = []
     for dp in range(DP_ENTRIES):
@@ -241,4 +259,4 @@ def main(cpc=False):
 
 
 if __name__ == "__main__":
-    main(cpc="--cpc" in sys.argv[1:])
+    main(cpc="--cpc" in sys.argv[1:], c64="--c64" in sys.argv[1:])

@@ -1,0 +1,22 @@
+GIMP Palette
+Name: Edge Grinder
+Columns: 8
+#
+  0   0   0	logical 0
+255   0   0	logical 1
+  0 255   0	logical 2
+255 255   0	logical 3
+  0   0 255	logical 4
+255   0 255	logical 5
+  0 255 255	logical 6
+255 255 255	logical 7
+  0   0   0	logical 8
+255   0   0	logical 9
+  0 255   0	logical 10
+255 255   0	logical 11
+  0   0 255	logical 12
+255   0 255	logical 13
+  0 255 255	logical 14
+255 255 255	logical 15
+ 96  96  96	transparency key (NOT a colour)
+255 128   0	not-yet-drawn key (NOT a colour)

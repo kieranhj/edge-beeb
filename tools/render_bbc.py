@@ -29,8 +29,20 @@ SUFFIX = ""               # "-cpc" under --cpc; set by main()
 SCALE_X, SCALE_Y = 4, 2   # a fat pixel is 2 hires pixels wide; draw at 2x
 
 
+# The palette is a file now (Layer 8), so the render shows the colours the
+# machine will actually show rather than assuming logical = physical & 7. That
+# assumption is exactly what a NULA build breaks: sixteen free 12-bit entries,
+# no aliasing, and logical 8-15 stop being second copies of 0-7.
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "art"))
+    import palette as art_palette
+    PALETTE = art_palette.load()
+except Exception:
+    PALETTE = [bbc.BBC_RGB[n & 7] for n in range(16)]
+
+
 def palette_rgb(logical):
-    return bbc.BBC_RGB[logical & 7]
+    return PALETTE[logical & 15]
 
 
 def char_image_rows():

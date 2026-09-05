@@ -1372,6 +1372,9 @@ ENDIF
 
 INCLUDE "src/tables.asm"
 
+INCLUDE "src/data/palette.asm"      \\ the palette setup_display writes,
+                                    \\ generated from assets/art/palette.png
+
 \ ******************************************************************
 \ *	The loader - BOOT CODE, and therefore above code_end
 \ ******************************************************************

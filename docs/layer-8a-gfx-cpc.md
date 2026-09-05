@@ -15,7 +15,7 @@ the same files in both builds.
 The CPC port took the C64's data and reformatted it, so its frames, characters and tiles
 are the C64's, renumbered not at all. That is measured, not assumed:
 
-* **Sprites.** Every one of frames 0–118 was compared against `assets/sprite-sheet.png`'s
+* **Sprites.** Every one of frames 0–118 was compared against `reference/sprite-sheet.png`'s
   opaque/transparent mask at every offset from −8 to +19. Offset 0 scores 99.9%; the next
   best is 76%. Of the 119, 95 match exactly and 24 differ by one to five pixels, which is
   the CPC masking per byte where the C64 masks per pixel.

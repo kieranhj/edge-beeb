@@ -181,11 +181,40 @@ steps are pinned at the top of [`docs/layer-7-music-arkos.md`](docs/layer-7-musi
 ([`tools/akl/README.md`](tools/akl/README.md)); it should print `IDENTICAL on every frame` and
 `{'ch2 period': 11}`, and that 11 is the correct answer, not a defect.
 
-### Layer 8 — graphics pipeline B (the artist)
+### Layer 8 — graphics pipeline B (the artist) — built
 
-`PROPOSAL.md` §5.2. Palette file and templates out, `validate_art.py` in (exact palette, pair
-doubling, frame count, silhouette check against the mechanical tiles), partial-sheet fallback,
-gallery debug build, `publish-wip` links for testing.
+Decisions 58-60, [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md). `PROPOSAL.md`
+§5.2's Phase B: the characters, the sprites **and the palette** are read from PNGs in
+`assets/art/` now, seeded from the conversion the game already ran on, so the artist repaints a
+working game.
+
+**Two sheets, both at 2:1** — `chars.png` 128x128 (256 characters of 4x8 fat pixels) and
+`sprites.png` 192x336 (frames 0-118 of 12x21). Characters are the paintable surface and tiles
+are not: the tile definitions and the map are index tables shared verbatim with the C64 and CPC
+ports, and the charset is reused about thirteen times over them, so `render_bbc.py tiles` and
+`map` regenerate the assembled views instead of them being what he edits. Grey `96,96,96` is
+see-through (sprites only); orange `255,128,0` marks a cell **not drawn yet** and falls back to
+the mechanical conversion, so a partial drop still builds a complete game.
+
+**No new build symbol.** The PNGs feed the same `src/data/*.bin` the build already INCBINs;
+`--c64` and `--cpc` on the exporters still reach the two mechanical conversions, and all eight
+combinations of `RELEASE` x `MUSIC_AKL` x `GFX_CPC` assemble.
+
+**The palette is a file** (`assets/art/palette.png` -> `src/data/palette.asm`), which is what
+makes an eventual NULA cheap: the exported data already stores a full 4-bit logical per fat
+pixel, so sixteen colours cost no change to it at all. What a NULA would still need is the
+`&FE23` write and, genuinely, new **fades** — the memorial and the credit crossfade both walk
+MODE 2's eight-colour brightness ladder and sixteen free colours have no such ladder.
+
+The tools: `tools/seed_art.py` (write the sheets from either conversion), `tools/validate_art.py`
+(what a drop goes through on receipt — exact palette with coordinates, fat-pixel doubling,
+transparency rules, blank-character count for the starfield, and `--roundtrip`),
+`tools/export_palette.py`, and `tools/art/` behind them.
+
+Still to do: the panel, the HUD font, the title and credits fonts and the loading screen are all
+still generated from the C64 and CPC sources; a `-Gallery` debug build; and the transport
+question (`PROPOSAL.md` §5.2, decision 4) — a mirrored shared folder or the artist committing to
+`assets/` himself.
 
 ### Layer 8a — the CPC artwork, behind `GFX_CPC` — built
 
@@ -253,6 +282,7 @@ bitshifters.github.io for testing.
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, the whole 349 s tune in four regions |
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
+| 8 — the artist's PNGs | [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md) | **built 2026-09-05**, decisions 58-60. Characters, sprites and the palette come from `assets/art/*.png`; seeded from the C64 conversion, so the disc is unchanged until the artist starts work. NULA-ready by construction |
 | 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **built 2026-09-04**, behind `GFX_CPC`, and all eight flag combinations assemble; **recoloured 2026-09-05** to Rich's MODE 2 dither pairs (decision 55). Which artwork ships is KC's choice |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |

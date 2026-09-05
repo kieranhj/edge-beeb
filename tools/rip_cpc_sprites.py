@@ -1,8 +1,9 @@
 """rip_cpc_sprites.py - Amstrad CPC sprite bank -> a sheet in the C64 sheet's format.
 
-Writes assets/sprite-sheet-cpc.png: 192 x 315, an 8 x 15 grid of 24 x 21 cells,
+Writes reference/sprite-sheet-cpc.png: 192 x 315, an 8 x 15 grid of 24 x 21 cells,
 frames 0-118 in row-major order with cell 119 blank - byte for byte the layout
-of assets/sprite-sheet.png, so the two can be flicked between cell for cell.
+of reference/sprite-sheet.png, whose only difference is a sixteenth row of
+spare cells, so the two can be flicked between cell for cell.
 
 Source: SPRITES.BIN off Smila's work disc `source_cpc/Work Disks/edge_sprites2.dsk`
 (the "normal" sprite bank the CPC pages into &4000 as bank 3). 128 slots of 128
@@ -43,7 +44,7 @@ from dsk import Dsk  # noqa: E402
 
 DSK = os.path.join("source_cpc", "Work Disks", "edge_sprites2.dsk")
 BANK = "SPRITES.BIN"
-OUT = os.path.join("assets", "sprite-sheet-cpc.png")
+OUT = os.path.join("reference", "sprite-sheet-cpc.png")
 
 FRAMES = 119              # frames 0-118; slot 119 is blank in both sheets
 COLS, CELL_W, CELL_H = 8, 24, 21

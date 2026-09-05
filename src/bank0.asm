@@ -113,18 +113,18 @@ INCLUDE "src/timing.asm"
     CRTC 12, HI(screen_start/8)
     CRTC 13, LO(screen_start/8)
 
-    \\ Palette: logical n -> physical n for 0-7; 8-15 -> 0-7 again, not
-    \\ flashing, so logical 8 is a second black that sprites may use
-    \\ (transparent is 0). &FE21 takes (logical << 4) OR (physical EOR 7).
-    ldx #15
+    \\ Palette (Layer 8): sixteen bytes generated from assets/art/palette.png
+    \\ by tools/export_palette.py. The artist paints palette entries, so the
+    \\ sheets and the palette have to be one thing checked against itself
+    \\ rather than a rule the assembler works out. It seeds to exactly what
+    \\ the loop here used to compute - logical n -> physical n for 0-7, then
+    \\ 8-15 aliasing 0-7, so logical 8 is a second black that sprites may use
+    \\ (logical 0 being the engine's transparency key). &FE21 takes
+    \\ (logical << 4) OR (physical EOR 7); a NULA build writes &FE23 pairs
+    \\ from the same file and nothing else in the pipeline moves.
+    ldx #PAL_BYTES - 1
     .pal_loop
-    txa
-    and #7
-    eor #7
-    sta pal_tmp
-    txa
-    asl a : asl a : asl a : asl a
-    ora pal_tmp
+    lda pal_data, x
     sta VIDEO_ULA_PAL
     dex
     bpl pal_loop
@@ -154,8 +154,12 @@ INCLUDE "src/timing.asm"
     sta rupt_state
     rts
 
-    .pal_tmp EQUB 0
 }
+
+\\ pal_data is in MAIN RAM (src/main.asm, beside the loader), not here:
+\\ setup_display is boot code, main RAM is never paged out from under
+\\ bank 0, and bank 0 has single-figure bytes left while the boot-only
+\\ region above code_end has hundreds.
 
 \\ Clear the 16K play buffer in whichever bank the X bit selects. The MOS
 \\ only clears the main bank at the mode change; the shadow bank would show
