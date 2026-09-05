@@ -213,21 +213,58 @@ def main(cpc=False, c64=False, use_nula=False):
                            if keep != FLASH_KEEP else
                            "the whole sprite recolours (this art has no shared colours)"))
 
-    # lut_dcd - which frames flash, and to which of the two tables - is GAME
-    # LOGIC and comes out byte for byte the same in every build. It is judged
-    # on the C64 mapping in all of them, the CPC's and the NuLA ones included,
-    # for the same reason dp_dcd is: the original decides when a sprite
-    # flashes, not the artwork. Only what the two tables CONTAIN changes with
-    # the palette, and `order` says which is at &8200 and which at &8300 -
-    # named rather than derived from the set of targets, so that they keep
-    # their addresses when that set does not change.
-    slot = {bbc.WHITE: 0, bbc.MAGENTA: 1}
-    lut_dcd = []
+    # lut_dcd - which dp flashes, and to which of the two tables.
+    #
+    # THE TEST IS ON THE C64'S RAW COLOUR BYTES, not on what they map to. The
+    # original flashes by swapping sprite_col_dcd's low nibble for its high
+    # one, and that decision is the game's; whether the swap is VISIBLE is a
+    # property of the palette we happen to be drawing in, and is not the
+    # original's business.
+    #
+    # Getting that backwards cost the CPC builds their enemy hit flash. 28 of
+    # the 126 dps go from C64 15 (light grey) to C64 1 (white), which decision
+    # 11 collapses onto the same BBC white - so comparing after C64_TO_BBC made
+    # them identity and 25 enemy frames never flashed at all. Under the CPC art
+    # those colours mean nothing anyway (KEEP is the transparency key alone and
+    # the flash takes the whole sprite), and under NuLA light grey and white
+    # are two different colours, so in three of the four builds the flash was
+    # simply missing. KC found it playing the CPC build.
+    #
+    # The one case that genuinely cannot flash is the eight-colour C64 build,
+    # where the LUT is asked to recolour a sprite whose free colour already IS
+    # the flash colour: it would provably do nothing, so it stays identity and
+    # the picture is byte for byte what it always was. That is the second test
+    # below, and it applies only where the per-sprite colour is preserved.
+    #
+    # `order` says which flash table is at &8200 and which at &8300 - named
+    # rather than derived, so they keep their addresses.
+    raw_flash = nula.C64_FLASH              # (1, 4), measured
+    if use_nula:
+        order = nula.flash(cpc)
+        def colour_of(c):
+            return c
+    else:
+        order = tuple(bbc.C64_TO_BBC[c] for c in raw_flash)
+        def colour_of(c):
+            return bbc.C64_TO_BBC[c]
+
+    slot = {c: i for i, c in enumerate(raw_flash)}
+    lut_dcd, flashing = [], 0
     for dp in range(DP_ENTRIES):
-        normal = bbc.C64_TO_BBC[col_dcd[dp] & 15]
-        flash = bbc.C64_TO_BBC[col_dcd[dp] >> 4]
-        assert use_nula or normal not in keep - {0} or normal == flash, dp
-        lut_dcd.append(LUT_IDENT_PAGE if flash == normal else 0x82 + slot[flash])
+        lo, hi = col_dcd[dp] & 15, col_dcd[dp] >> 4
+        invisible = keep != FLASH_KEEP and colour_of(lo) == colour_of(hi)
+        if lo == hi or invisible:
+            lut_dcd.append(LUT_IDENT_PAGE)
+            continue
+        assert hi in slot, (
+            "dp $%02x flashes to C64 colour %d, which has no flash table" % (dp, hi))
+        assert colour_of(lo) not in keep - {0}, (
+            "dp $%02x flashes a sprite whose own colour is one the flash must "
+            "keep" % dp)
+        lut_dcd.append(0x82 + slot[hi])
+        flashing += 1
+    print(f"hit flash: {flashing}/{DP_ENTRIES} dps flash "
+          f"({DP_ENTRIES - flashing} identity)")
 
     # Everything both banks need, before either is laid out, because the
     # compiled bank is shared between them.

@@ -141,6 +141,37 @@ going to logical 15, because there logical 0 is the transparency key.
 The eight-colour `-Cpc` build never had this problem: `dither_pair` sends both
 black pens to logical 0 already.
 
+## The hit flash was decided the wrong way round
+
+Decision 65, found by KC playing the `-Cpc` build: the enemy hit flash was not
+recolouring the sprite. It was not flashing at all.
+
+Decision 63 computed `lut_dcd` by comparing `sprite_col_dcd`'s two nibbles
+*after* `C64_TO_BBC`, reasoning that which frames flash is game logic and ought
+to read the same in every build. Right about the principle, wrong about the
+test. The original flashes by swapping the low nibble for the high one into
+`$d027+n` — `xploder_2` in `source_c64/edge_grinder.asm`, and our
+`sprite_pls_tmr` path is a transcription of it. That decision is the game's.
+Whether the swap is *visible* depends on the palette we happen to be drawing
+in, and is none of the original's business.
+
+**28 of the 126 dps go from C64 15 (light grey) to C64 1 (white)**, and
+decision 11 collapses both onto BBC white. Comparing after the mapping made all
+28 identity, so 25 enemy frames never flashed — dps `$13-$1A`, `$2F-$34`,
+`$54-$5B`, `$72-$77`. Under the CPC art those C64 colours mean nothing at all
+(KEEP is the transparency key alone and the flash takes the whole sprite), and
+under NuLA light grey and white are two different colours. So the flash was
+missing in three of the four builds and only the one it was tested in was
+right.
+
+The test is now `lo != hi` on the raw bytes, with one exception that keeps the
+eight-colour C64 build byte for byte identical: where the build preserves the
+per-sprite colour **and** its palette renders normal and flash the same, the
+LUT would provably do nothing, so it stays identity. Flashing dps go 86 → 114
+in the CPC and both NuLA builds and stay at 86 in the C64 one, and the diff is
+exactly the 28 bytes of `lut_dcd` — frame data, box tables and compiled bodies
+all untouched.
+
 ## What these builds do NOT do
 
 **The fades are cuts.** `fade_pal` under `GFX_NULA` writes either the palette or
