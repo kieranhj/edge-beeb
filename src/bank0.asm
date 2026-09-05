@@ -130,20 +130,31 @@ INCLUDE "src/timing.asm"
     \\ transparency key).
     \\
     \\ GFX_NULA (decision 63): thirty-two bytes to &FE23 instead, sixteen
-    \\ 12-bit colours. &FE22 = &40 first, which resets NuLA state: the board
-    \\ can be left in an attribute or direct mode by whatever ran before us
-    \\ and nothing else here would put it back. Both the register pair and
-    \\ the byte order are lib/nula.asm's, from BEEB/Repos/bbc-nula, and the
-    \\ encoding is proved against its default table byte for byte - NOT
-    \\ recalled.
+    \\ 12-bit colours, preceded by two control writes to &FE22. Both the
+    \\ register pair and the encoding are the VideoNuLA User Guide's, and the
+    \\ encoder is proved against its own worked example.
     \\
-    \\ This build writes NO &FE21 at all under GFX_NULA, which is what that
-    \\ reference does. UNVERIFIED: jsbeeb has no NuLA, so it has not been
-    \\ run. If b2 shows only eight colours, the &FE21 identity write below
-    \\ is what to put back.
+    \\ &40 is control code 4, reset extended features: the board can be left
+    \\ in an attribute or direct mode by whatever ran before us and nothing
+    \\ else here would put it back.
+    \\
+    \\ &11 is control code 1 with parameter 1, LOGICAL COLOUR MAPPING, and it
+    \\ is the one that matters. NuLA's default is to MIMIC the Video ULA:
+    \\ logical -> physical through &FE21, then physical -> 12-bit through
+    \\ &FE23. Under that default this game breaks, because ttl_raster writes
+    \\ &FE21 every scanline of the titles to pulse logicals 14 and 15, and
+    \\ leaves logical 15 pointing at physical 7 - so the CPC art's background
+    \\ pen, which is 15, came back as NuLA entry 7, which in that palette is
+    \\ BLUE. That is the bug KC photographed. &11 makes &FE21 ignored
+    \\ outright and indexes the auxiliary palette by the LOGICAL colour, so
+    \\ all sixteen entries are reachable, the MOS default is not depended on,
+    \\ and ttl_raster's writes are harmless (its colour cycling simply does
+    \\ nothing under NuLA).
 IF GFX_NULA
     lda #&40
-    sta NULA_CTRL
+    sta NULA_CTRL               ; code 4: reset extended features
+    lda #&11
+    sta NULA_CTRL               ; code 1 param 1: logical colour mapping
 ENDIF
     ldx #0
     .pal_loop

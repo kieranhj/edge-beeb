@@ -23,7 +23,17 @@ Two constraints survive from the eight-colour build and are checked here:
     construction - its bit pair 00 IS the transparency and no sprite carries
     colour 0. The CPC is not: it masks per BYTE, so a pen 0 pixel beside a lit
     one is drawn black. Pen 15 is ALSO black in the in-game palette (measured -
-    see PEN_ALIASES), so a drawn black becomes logical 15 and looks identical.
+    see pen_aliases), so a drawn black becomes logical 15 and looks identical.
+  * **Logical 0 is also what "empty" means to the starfield**, which plots a
+    star only where the play buffer byte reads exactly zero (src/bank1.asm).
+    That cuts the opposite way for the BACKGROUND, and the Amstrad's charset
+    is the awkward case: it paints its empty space in pen **15**, not pen 0 -
+    2,196 uses against 64, measured - so a straight pen-to-logical identity
+    would fill the buffer with &FF where the C64's fills it with 0 and no star
+    would ever appear. So the opaque CPC art - characters, panel, HUD - sends
+    EVERY black pen to logical 0, which is the same colour and the right zero.
+    `_black_to_zero` is that rule. The title font already builds its own
+    background from literal 0 and needs nothing.
   * **Two flash targets, because there are two flash LUTs** (&8200 and &8300 of
     each sprite bank). Measured: sprite_col_dcd's high nibble takes only two
     values that ever differ from the low one, C64 1 and 4. Under GFX_CPC those
@@ -204,10 +214,20 @@ def _cpc():
     return bgdata, cpcscr, paneldata, Dsk
 
 
+def _black_to_zero(pal):
+    """pen -> logical for OPAQUE art: any black pen becomes logical 0. Both
+    pen 0 and pen 15 are black in the in-game palette and the Amstrad's
+    charset paints its empty space in 15, so this is what keeps an empty
+    background byte reading as zero - which is what the starfield tests."""
+    return {p: (0 if pal[p] == (0, 0, 0) else p) for p in range(ENTRIES)}
+
+
 def _cpc_chars():
     bgdata, cpcscr, _, _ = _cpc()
+    black = _black_to_zero(cpc_palette())
     chars = bgdata.read_defb(bgdata.CHARS)
-    return [[list(row) for row in bgdata.character(chars, n, cpcscr._decode)]
+    return [[[black[p] for p in row]
+             for row in bgdata.character(chars, n, cpcscr._decode)]
             for n in range(256)]
 
 
@@ -240,7 +260,8 @@ def _cpc_sprites(count):
 
 def _cpc_panel():
     _, cpcscr, paneldata, _ = _cpc()
-    rows = [[p for b in row for p in cpcscr._decode(b, 0)]
+    black = _black_to_zero(cpc_palette())
+    rows = [[black[p] for b in row for p in cpcscr._decode(b, 0)]
             for row in paneldata.panel()]
     out = []
     for row in range(mechanical.PANEL_ROWS):
@@ -256,8 +277,11 @@ def _cpc_panel():
 def _cpc_hud():
     _, cpcscr, paneldata, _ = _cpc()
 
+    black = _black_to_zero(cpc_palette())
+
     def cell(block):
-        return [[p for b in row for p in cpcscr._decode(b, 0)] for row in block]
+        return [[black[p] for b in row for p in cpcscr._decode(b, 0)]
+                for row in block]
 
     out = [[[0] * 4 for _ in range(8)]]
     for d in paneldata.digits():

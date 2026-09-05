@@ -86,12 +86,18 @@ python tools\make_disc.py build\EDGE-RAW.SSD build\EDGE.SSD build\EDGE-200K.SSD
 `GFX_NULA=1` (`.\build.ps1 -Nula`, decision 63) is a **VideoNuLA test build**: the source
 artwork at its OWN sixteen colours instead of MODE 2's eight, so decision 11's hue collapse and
 decision 55's dither both disappear. `-Nula` is the C64's palette, `-Nula -Cpc` the Amstrad's.
-`&FE22 = &40` then thirty-two bytes to `&FE23`, two per entry, `[index<<4|red]` then
-`[green<<4|blue]` - from `BEEB/Repos/bbc-nula/lib/nula.asm`, not recalled, and the encoder is
-proved against that library's own default table. **jsbeeb has no NuLA and cannot run these**;
+`&FE22 = &40` (reset), then **`&FE22 = &11`, which selects LOGICAL colour mapping and is
+load-bearing** (decision 64), then thirty-two bytes to `&FE23`, two per entry, `[index<<4|red]`
+then `[green<<4|blue]`. NuLA's DEFAULT is to mimic the Video ULA - logical -> physical through
+`&FE21`, then physical -> 12-bit through `&FE23` - so without `&11` the two tables compose and
+`ttl_raster`'s per-scanline `&FE21` writes on the titles wreck the game's colours. All of this
+is the VideoNuLA User Guide's (`BEEB/Manuals/VideoNuLA manual.pdf`), not recalled, and the
+encoder is proved against its worked example. **jsbeeb has no NuLA and cannot run these**;
 `tools/render_bbc.py --nula [--cpc]` is the only way to see one without the hardware. The fades
-are CUTS and the credit crossfade does not run - both written up in `docs/layer-8b-nula.md`
-along with the one inferred hardware fact (no `&FE21` write) and what to change if it is wrong.
+are CUTS and the credit crossfade does not run, both written up in `docs/layer-8b-nula.md`.
+**The Amstrad's charset paints its background in pen 15, not pen 0** - so the opaque CPC art
+sends every black pen to logical 0, without which the play buffer reads `&FF` where the C64's
+reads 0 and the starfield never plots (decision 64).
 
 `GFX_CPC=1` (`.\build.ps1 -Cpc`) draws the same game with the Amstrad CPC port's
 artwork - all 119 sprite frames and all 256 characters, from `source_cpc/` and its work discs -
