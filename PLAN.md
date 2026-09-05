@@ -255,6 +255,28 @@ interpreted path by simulating the emitted 6502.
 Still to do: real-hardware test, release build, publish. The starfield is 9c above, and is the
 CPC's rather than the C64's.
 
+### Layer 8b — two VideoNuLA test builds — built
+
+Decision 63, [`docs/layer-8b-nula.md`](docs/layer-8b-nula.md). `.\build.ps1 -Nula` is the C64
+artwork at the C64's own sixteen colours; `-Nula -Cpc` is the Amstrad's at its own sixteen pens.
+References rather than candidates: sixteen logical colours and sixteen source colours, so
+nothing is approximated, and decision 11's hue collapse and decision 55's dither both go away —
+the scenery is brown rather than blue and a CPC pen is one colour again.
+
+**KC tests these; they cannot be tested here.** jsbeeb has no VideoNuLA, so
+`tools/render_bbc.py --nula [--cpc]` is the only way to see either build short of the hardware.
+
+The register pair and byte order come from `BEEB/Repos/bbc-nula/lib/nula.asm` and the encoder
+reproduces that library's default table byte for byte. **One thing is inferred and not
+measured**: the build writes no `&FE21` under `GFX_NULA`, as the reference does. If b2 shows
+only eight colours, that identity write is what to put back, and `src/bank0.asm` says so where
+it would go.
+
+**The fades are cuts and the credit crossfade does not run** — a real NuLA fade wants 128–256
+bytes of ramp table against bank 2's 86 free, and the crossfade needs three spare palette
+entries that sixteen real colours do not leave. Both are written up, and the second is decision
+53's constraint biting harder rather than differently.
+
 ### Open: the win tune
 
 The CPC has **two** songs and we ship one. `source_cpc/Music/WON4.SKS` is its end-game tune, 66.2
@@ -297,6 +319,7 @@ bitshifters.github.io for testing.
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
 | 8 — the artist's PNGs | [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md) | **built 2026-09-05**, decisions 58-62. Characters, sprites, the status panel, the HUD font, the title font and the palette come from `assets/art/*.png`; seeded from the C64 conversion, so the disc is unchanged until the artist starts work. NULA-ready by construction |
+| 8b — the NuLA test builds | [`docs/layer-8b-nula.md`](docs/layer-8b-nula.md) | **built 2026-09-05**, decision 63. `-Nula` and `-Nula -Cpc`: the two sources at their own sixteen colours, nothing approximated. Untestable here - jsbeeb has no NuLA - so KC's hardware or b2 is the check |
 | 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **built 2026-09-04**, behind `GFX_CPC`, and all eight flag combinations assemble; **recoloured 2026-09-05** to Rich's MODE 2 dither pairs (decision 55). Which artwork ships is KC's choice |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |

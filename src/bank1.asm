@@ -16,7 +16,13 @@ GUARD &C000
 .bank1_start
 
 .sprite_bank_0
+IF GFX_NULA
 IF GFX_CPC
+INCBIN "src/data/sprites0-nula-cpc.bin"
+ELSE
+INCBIN "src/data/sprites0-nula.bin"
+ENDIF
+ELIF GFX_CPC
 INCBIN "src/data/sprites0-cpc.bin"
 ELSE
 INCBIN "src/data/sprites0.bin"

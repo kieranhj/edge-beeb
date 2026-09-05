@@ -29,7 +29,14 @@ col_decode.bin are NOT rewritten - the CPC uses the same tile numbers, the same
 map and the same collision table, so all three builds share the one copy, and
 repainting a character repaints every tile that uses it.
 
-Run from the project root: python tools/export_tiles.py [--cpc | --c64]
+--nula (decision 63) writes chars-nula.bin instead: the same characters at
+the SOURCE palette rather than MODE 2's eight, for the VideoNuLA test builds.
+It bypasses the PNG sheets entirely - a NuLA build is the original artwork at
+the colours it was drawn for, not the artist's work - and with --cpc it also
+drops decision 55's dither, a pen being one colour again.
+
+Run from the project root:
+    python tools/export_tiles.py [--cpc] [--c64 | --nula]
 """
 
 import os
@@ -39,15 +46,18 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "art"))
 import bbc          # noqa: E402
 import mechanical   # noqa: E402
+import nula         # noqa: E402
 import pngart       # noqa: E402
 
 OUT = "src/data"
 C64_ASM = "source_c64/edge_grinder.asm"
 
 
-def main(cpc=False, c64=False):
+def main(cpc=False, c64=False, use_nula=False):
     os.makedirs(OUT, exist_ok=True)
-    if cpc:
+    if use_nula:
+        pixels = nula.characters(cpc=cpc)
+    elif cpc:
         pixels = mechanical.characters(cpc=True)
     elif c64:
         pixels = mechanical.characters()
@@ -59,10 +69,12 @@ def main(cpc=False, c64=False):
         for row in range(8):
             for p in range(4):
                 planes[p * 2048 + c * 8 + row] = bbc.mode2_byte(0, px[row][p])
-    name = "chars-cpc.bin" if cpc else "chars.bin"
+    name = "chars%s%s.bin" % ("-nula" if use_nula else "",
+                              "-cpc" if cpc else "")
     open(f"{OUT}/{name}", "wb").write(planes)
-    if cpc:
-        print(f"{name} {len(planes)} B (CPC art; tiles/map/col_decode unchanged)")
+    if cpc or use_nula:
+        print(f"{name} {len(planes)} B "
+              "(tiles/map/col_decode unchanged - the same numbers in every build)")
         return
 
     col_decode = bbc.parse_c64_table(C64_ASM, "col_decode", 256)
@@ -82,4 +94,5 @@ def main(cpc=False, c64=False):
 
 
 if __name__ == "__main__":
-    main(cpc="--cpc" in sys.argv[1:], c64="--c64" in sys.argv[1:])
+    main(cpc="--cpc" in sys.argv[1:], c64="--c64" in sys.argv[1:],
+         use_nula="--nula" in sys.argv[1:])

@@ -28,10 +28,16 @@
 CLEAR 0, &FFFF
 ORG PANEL_ADDR
 .panel_file
+IF GFX_NULA
 IF GFX_CPC
+INCBIN "src/data/panel-nula-cpc.bin"     \ the Amstrad port's own panel, decision 56
+ELSE
+INCBIN "src/data/panel-nula.bin"     \ the Amstrad port's own panel, decision 56
+ENDIF
+ELIF GFX_CPC
 INCBIN "src/data/panel-cpc.bin"     \ the Amstrad port's own panel, decision 56
 ELSE
-INCBIN "src/data/panel.bin"
+INCBIN "src/data/panel.bin"     \ the Amstrad port's own panel, decision 56
 ENDIF
 .panel_image_end
 ASSERT panel_image_end - panel_file = PANEL_BYTES

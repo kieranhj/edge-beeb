@@ -4,9 +4,13 @@
 #   .\build.ps1 -Run       assemble and launch in b-em as a Master 128
 #   .\build.ps1 -Release   the build for other people: every DEBUG_ flag off
 #   .\build.ps1 -Cpc       the same game drawn with the Amstrad CPC's artwork
+#   .\build.ps1 -Nula      a VideoNuLA test build: the source artwork at its
+#                          OWN sixteen colours, no MODE 2 approximation and no
+#                          dither. Combine with -Cpc for the Amstrad's palette.
+#                          Needs NuLA hardware or b2 - jsbeeb has none.
 #
 # make.bat is a thin wrapper over this file (`make`, `make run`, `make -Release`).
-param([switch]$Run, [switch]$Release, [switch]$Akl, [switch]$Cpc)
+param([switch]$Run, [switch]$Release, [switch]$Akl, [switch]$Cpc, [switch]$Nula)
 
 $ErrorActionPreference = 'Stop'
 
@@ -16,16 +20,17 @@ $ErrorActionPreference = 'Stop'
 $relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
 $aklDef = if ($Akl) { 'MUSIC_AKL=1' } else { 'MUSIC_AKL=0' }
 $cpcDef = if ($Cpc) { 'GFX_CPC=1' } else { 'GFX_CPC=0' }
+$nulaDef = if ($Nula) { 'GFX_NULA=1' } else { 'GFX_NULA=0' }
 # The disc title says which build it is, so *CAT tells you without booting
 # it; !BOOT stamps the same thing where you cannot miss it. -Akl and -Cpc
 # are independent, so the title names both when both are asked for.
-$discTitle = 'EDGE' + $(if ($Akl) { 'A' } else { '' }) + $(if ($Cpc) { 'C' } else { '' })
+$discTitle = 'EDGE' + $(if ($Akl) { 'A' } else { '' }) + $(if ($Cpc) { 'C' } else { '' }) + $(if ($Nula) { 'N' } else { '' })
 
 $root    = $PSScriptRoot
 $build   = Join-Path $root 'build'
 # Each variant gets its own filenames so the discs can sit side by side and be
 # compared; without that -Akl or -Cpc would quietly overwrite the normal one.
-$stem    = 'EDGE' + $(if ($Akl) { '-AKL' } else { '' }) + $(if ($Cpc) { '-CPC' } else { '' })
+$stem    = 'EDGE' + $(if ($Akl) { '-AKL' } else { '' }) + $(if ($Cpc) { '-CPC' } else { '' }) + $(if ($Nula) { '-NULA' } else { '' })
 $raw     = Join-Path $build "$stem-RAW.SSD"
 $ssd     = Join-Path $build "$stem.SSD"
 $padded  = Join-Path $build "$stem-200K.SSD"
@@ -50,7 +55,7 @@ if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-N
 # !BOOT (with the build kind stamped in it) rather than using -boot.
 Push-Location $root
 try {
-    & $beebasm -i 'src\main.asm' -do $raw -opt 3 -title $discTitle -D $relDef -D $aklDef -D $cpcDef -v |
+    & $beebasm -i 'src\main.asm' -do $raw -opt 3 -title $discTitle -D $relDef -D $aklDef -D $cpcDef -D $nulaDef -v |
         Out-File -FilePath $listing -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE) - see $listing" }
 } finally { Pop-Location }

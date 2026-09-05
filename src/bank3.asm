@@ -21,7 +21,13 @@ GUARD &C000
 .bank3_start
 
 .compiled_data
+IF GFX_NULA
 IF GFX_CPC
+INCBIN "src/data/compiled-nula-cpc.bin"
+ELSE
+INCBIN "src/data/compiled-nula.bin"
+ENDIF
+ELIF GFX_CPC
 INCBIN "src/data/compiled-cpc.bin"
 ELSE
 INCBIN "src/data/compiled.bin"
@@ -293,10 +299,16 @@ HUD_GLYPH_BYTES = 16
 HUD_CELLS = 18                  ; 6 score + 6 high score + 6 lives
 
 .hud_glyphs
+IF GFX_NULA
 IF GFX_CPC
+INCBIN "src/data/hud-nula-cpc.bin"       \ the Amstrad port's own font, decision 56
+ELSE
+INCBIN "src/data/hud-nula.bin"       \ the Amstrad port's own font, decision 56
+ENDIF
+ELIF GFX_CPC
 INCBIN "src/data/hud-cpc.bin"       \ the Amstrad port's own font, decision 56
 ELSE
-INCBIN "src/data/hud.bin"
+INCBIN "src/data/hud.bin"       \ the Amstrad port's own font, decision 56
 ENDIF
 
 \ The C64's status_decode writes the score to buffer_1+$02e, the high score

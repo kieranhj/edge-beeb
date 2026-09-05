@@ -15,6 +15,11 @@ write to tools/output/*-cpc.png. tiles and map have no CPC copies of their own
 - they are the same numbers either way - so those read the CPC charset through
 the shared tile and map tables.
 
+Add --nula for a GFX_NULA build (src/data/*-nula.bin, or *-nula-cpc.bin with
+--cpc), rendered at that build's own sixteen-colour palette. This is the ONLY
+way to see a NuLA build without the hardware: jsbeeb has no VideoNuLA, so the
+emulator cannot show one at all.
+
 Reads src/data/*.bin, so run the exporters first. Run from the project root.
 """
 
@@ -34,14 +39,23 @@ SCALE_X, SCALE_Y = 4, 2   # a fat pixel is 2 hires pixels wide; draw at 2x
 
 # The palette is a file now (Layer 8), so the render shows the colours the
 # machine will actually show rather than assuming logical = physical & 7. That
-# assumption is exactly what a NULA build breaks: sixteen free 12-bit entries,
+# assumption is exactly what a NuLA build breaks: sixteen free 12-bit entries,
 # no aliasing, and logical 8-15 stop being second copies of 0-7.
-try:
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "art"))
-    import palette as art_palette
-    PALETTE = art_palette.load()
-except Exception:
-    PALETTE = [bbc.BBC_RGB[n & 7] for n in range(16)]
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "art"))
+PALETTE = [bbc.BBC_RGB[n & 7] for n in range(16)]
+
+
+def load_palette(use_nula, cpc):
+    global PALETTE
+    if use_nula:
+        import nula
+        PALETTE = nula.palette(cpc=cpc)
+        return
+    try:
+        import palette as art_palette
+        PALETTE = art_palette.load()
+    except Exception:
+        pass
 
 
 def palette_rgb(logical):
@@ -158,9 +172,11 @@ def render_cells(name, count, per_row, wide, high):
 def main():
     global SUFFIX
     os.makedirs(OUT, exist_ok=True)
-    argv = [a for a in sys.argv[1:] if a != "--cpc"]
-    if len(argv) != len(sys.argv) - 1:
-        SUFFIX = "-cpc"
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    argv = [a for a in sys.argv[1:] if not a.startswith("--")]
+    cpc, use_nula = "--cpc" in flags, "--nula" in flags
+    SUFFIX = ("-nula" if use_nula else "") + ("-cpc" if cpc else "")
+    load_palette(use_nula, cpc)
     what = argv[0] if argv else "map"
     if what == "chars":
         img = render_chars()

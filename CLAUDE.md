@@ -73,15 +73,25 @@ month and this is a Master.
 make                  # wrappers: make, make run, make -Release
 ```
 
-**`RELEASE`, `MUSIC_AKL` and `GFX_CPC` are beebasm command-line symbols and every build passes
-all three** (`-D RELEASE=0` or `1`, and so on for the other two). beebasm has no `IFDEF` and
+**`RELEASE`, `MUSIC_AKL`, `GFX_CPC` and `GFX_NULA` are beebasm command-line symbols and every
+build passes all four** (`-D RELEASE=0` or `1`, and so on for the other two). beebasm has no `IFDEF` and
 refuses a symbol defined twice, so `main.asm` cannot carry a default; a bare invocation must
 pass them too:
 
 ```
-..\..\Bin\beebasm.exe -i src\main.asm -do build\EDGE-RAW.SSD -opt 3 -D RELEASE=0 -D MUSIC_AKL=0 -D GFX_CPC=0 -v
+..\..\Bin\beebasm.exe -i src\main.asm -do build\EDGE-RAW.SSD -opt 3 -D RELEASE=0 -D MUSIC_AKL=0 -D GFX_CPC=0 -D GFX_NULA=0 -v
 python tools\make_disc.py build\EDGE-RAW.SSD build\EDGE.SSD build\EDGE-200K.SSD
 ```
+
+`GFX_NULA=1` (`.\build.ps1 -Nula`, decision 63) is a **VideoNuLA test build**: the source
+artwork at its OWN sixteen colours instead of MODE 2's eight, so decision 11's hue collapse and
+decision 55's dither both disappear. `-Nula` is the C64's palette, `-Nula -Cpc` the Amstrad's.
+`&FE22 = &40` then thirty-two bytes to `&FE23`, two per entry, `[index<<4|red]` then
+`[green<<4|blue]` - from `BEEB/Repos/bbc-nula/lib/nula.asm`, not recalled, and the encoder is
+proved against that library's own default table. **jsbeeb has no NuLA and cannot run these**;
+`tools/render_bbc.py --nula [--cpc]` is the only way to see one without the hardware. The fades
+are CUTS and the credit crossfade does not run - both written up in `docs/layer-8b-nula.md`
+along with the one inferred hardware fact (no `&FE21` write) and what to change if it is wrong.
 
 `GFX_CPC=1` (`.\build.ps1 -Cpc`) draws the same game with the Amstrad CPC port's
 artwork - all 119 sprite frames and all 256 characters, from `source_cpc/` and its work discs -

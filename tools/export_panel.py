@@ -87,6 +87,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, 'art'))
 import mechanical  # noqa: E402
+import nula        # noqa: E402
 import pngart      # noqa: E402
 import sheets      # noqa: E402
 
@@ -160,8 +161,12 @@ def check_hud_phase(panel_cells, hud_cells):
             'lives glyph phase, marker %d' % i
 
 
-def main(cpc=False, c64=False):
-    if cpc:
+def main(cpc=False, c64=False, use_nula=False):
+    if use_nula:
+        # No dither to prove the phase of, and the CPC's panel carries its own
+        # colours, so neither the paneldata verify nor check_hud_phase applies.
+        panel, hud = nula.panel(cpc=cpc), nula.hud(cpc=cpc)
+    elif cpc:
         sys.path.insert(0, os.path.join(HERE, 'cpc'))
         import paneldata
         print('paneldata: verified against the panel image -', paneldata.verify())
@@ -181,7 +186,7 @@ def main(cpc=False, c64=False):
 
     out, glyphs = pack(panel), pack(hud)
     assert len(out) == PANEL_ROWS * 640
-    suffix = '-cpc' if cpc else ''
+    suffix = ('-nula' if use_nula else '') + ('-cpc' if cpc else '')
     for path, data, what in (
             (os.path.join(ROOT, 'src', 'data', 'panel%s.bin' % suffix), out,
              '%d cells%s' % (PANEL_CELLS, ', CPC art, row 4 blank' if cpc else '')),
@@ -193,4 +198,5 @@ def main(cpc=False, c64=False):
 
 
 if __name__ == '__main__':
-    main(cpc='--cpc' in sys.argv[1:], c64='--c64' in sys.argv[1:])
+    main(cpc='--cpc' in sys.argv[1:], c64='--c64' in sys.argv[1:],
+         use_nula='--nula' in sys.argv[1:])

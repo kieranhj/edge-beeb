@@ -16,7 +16,13 @@ GUARD &C000
 \\ 256 chars x 8 rows x 4 planes = 8192 bytes.
 
 .char_data
+IF GFX_NULA
 IF GFX_CPC
+INCBIN "src/data/chars-nula-cpc.bin"
+ELSE
+INCBIN "src/data/chars-nula.bin"
+ENDIF
+ELIF GFX_CPC
 INCBIN "src/data/chars-cpc.bin"
 ELSE
 INCBIN "src/data/chars.bin"
@@ -113,21 +119,43 @@ INCLUDE "src/timing.asm"
     CRTC 12, HI(screen_start/8)
     CRTC 13, LO(screen_start/8)
 
-    \\ Palette (Layer 8): sixteen bytes generated from assets/art/palette.png
-    \\ by tools/export_palette.py. The artist paints palette entries, so the
-    \\ sheets and the palette have to be one thing checked against itself
-    \\ rather than a rule the assembler works out. It seeds to exactly what
-    \\ the loop here used to compute - logical n -> physical n for 0-7, then
-    \\ 8-15 aliasing 0-7, so logical 8 is a second black that sprites may use
-    \\ (logical 0 being the engine's transparency key). &FE21 takes
-    \\ (logical << 4) OR (physical EOR 7); a NULA build writes &FE23 pairs
-    \\ from the same file and nothing else in the pipeline moves.
-    ldx #PAL_BYTES - 1
+    \\ Palette (Layer 8): bytes generated from the palette file by
+    \\ tools/export_palette.py, ASCENDING, because VideoNuLA needs its two
+    \\ bytes an entry - [index|red] then [green|blue] - to arrive in that
+    \\ order, and the Video ULA does not care either way.
+    \\
+    \\ MODE 2: &FE21 takes (logical << 4) OR (physical EOR 7). Sixteen bytes,
+    \\ logical n -> physical n for 0-7 and 8-15 aliasing 0-7, so logical 8 is
+    \\ a second black that sprites may use (logical 0 being the engine's
+    \\ transparency key).
+    \\
+    \\ GFX_NULA (decision 63): thirty-two bytes to &FE23 instead, sixteen
+    \\ 12-bit colours. &FE22 = &40 first, which resets NuLA state: the board
+    \\ can be left in an attribute or direct mode by whatever ran before us
+    \\ and nothing else here would put it back. Both the register pair and
+    \\ the byte order are lib/nula.asm's, from BEEB/Repos/bbc-nula, and the
+    \\ encoding is proved against its default table byte for byte - NOT
+    \\ recalled.
+    \\
+    \\ This build writes NO &FE21 at all under GFX_NULA, which is what that
+    \\ reference does. UNVERIFIED: jsbeeb has no NuLA, so it has not been
+    \\ run. If b2 shows only eight colours, the &FE21 identity write below
+    \\ is what to put back.
+IF GFX_NULA
+    lda #&40
+    sta NULA_CTRL
+ENDIF
+    ldx #0
     .pal_loop
     lda pal_data, x
+IF GFX_NULA
+    sta NULA_PAL
+ELSE
     sta VIDEO_ULA_PAL
-    dex
-    bpl pal_loop
+ENDIF
+    inx
+    cpx #PAL_BYTES
+    bne pal_loop
 
     \\ The panel is in the shadow-switched region, so draw it into both
     \\ banks: X = 0 (main) then X = 1 (shadow). Leaves X = 1, which is the

@@ -12,7 +12,13 @@ GUARD &C000
 .bank2_start
 
 .sprite_bank_1
+IF GFX_NULA
 IF GFX_CPC
+INCBIN "src/data/sprites1-nula-cpc.bin"
+ELSE
+INCBIN "src/data/sprites1-nula.bin"
+ENDIF
+ELIF GFX_CPC
 INCBIN "src/data/sprites1-cpc.bin"
 ELSE
 INCBIN "src/data/sprites1.bin"
@@ -66,6 +72,15 @@ TTL_C_LOW  = 8                  ; the credits' own logical colours, 8-15
 \ ---- ttl_cred_step: one field of it ------------------------------
 .ttl_cred_step
 {
+IF GFX_NULA
+    \\ The crossfade does not run in a NuLA build (decision 63). It works by
+    \\ owning three palette entries nothing else on the page uses, and under
+    \\ NuLA there are no spare entries: all sixteen are real colours of the
+    \\ source palette and the panel uses several of the top eight. Fading
+    \\ 8-15 there would take parts of the status bar with it. So the C64's
+    \\ credit set stays up, unfaded, and the second set is not shown.
+    rts
+ENDIF
     lda ttl_c_tmr               ; a 16-bit countdown, because 250 fields
     ora ttl_c_tmr+1             ; does not fit a byte
     beq expired
@@ -177,9 +192,11 @@ ENDIF
 \ fade_idx its inverse. The MOS's MODE 2 palette is logical n ->
 \ physical n, which is what setup_display programs, so a logical
 \ colour's own rung is fade_idx of itself. Decision 52.
+IF NOT(GFX_NULA)
 .fade_ramp EQUB 0, 4, 1, 5, 2, 6, 3, 7
 .fade_idx  EQUB 0, 2, 4, 6, 1, 3, 5, 7
 .fade_tmp  EQUB 0
+ENDIF
 
 \ ******************************************************************
 \ *	fade_pal - one rung of the ladder, on the palette alone
@@ -201,6 +218,60 @@ ENDIF
 
 .fade_pal
 {
+IF GFX_NULA
+    \\ A CUT, not a fade (decision 63). A NuLA fade means scaling sixteen
+    \\ 12-bit colours towards black, which needs either a multiply or a
+    \\ ramp table of 8 x 32 bytes, and bank 2 has 86 free. So the palette
+    \\ goes to black or to itself, thresholded halfway through whatever
+    \\ fade asked for it.
+    \\ 
+    \\ That keeps the one property the sequences actually depend on: the
+    \\ screen is black while a redraw happens, so the memorial's message
+    \\ and the credit swap are still not seen being drawn. What is lost is
+    \\ the gradient. docs/layer-8b-nula.md has what a real one would cost.
+    \\ 
+    \\ fade_dir 0 = up, so brightness IS the step; &FF = down, so it is
+    \\ 7 - step. Four or more of seven counts as lit.
+    lda fade_step
+    bit fade_dir
+    bpl up
+    eor #7
+    .up
+    cmp #4
+    lda #0
+    bcc dark
+    lda #&ff
+    .dark
+    sta cut_lit
+
+    lda fade_low                ; entries are TWO bytes under NuLA
+    asl a
+    sta cut_low
+    ldy #30
+    .lp
+    lda cut_lit
+    beq black
+    lda pal_data, y             ; [index|red] then [green|blue], in
+    sta NULA_PAL                ; that order - the board requires it
+    lda pal_data + 1, y
+    sta NULA_PAL
+    jmp next
+    .black
+    tya                         ; Y = entry * 2, so Y * 8 = entry << 4
+    asl a : asl a : asl a
+    sta NULA_PAL
+    lda #0
+    sta NULA_PAL
+    .next
+    cpy cut_low
+    beq done
+    dey : dey
+    jmp lp
+    .done
+    rts
+    .cut_lit EQUB 0
+    .cut_low EQUB 0
+ELSE
     ldx #15
     .lp
     txa
@@ -233,6 +304,7 @@ ENDIF
     jmp lp
     .done
     rts
+ENDIF
 }
 
 .bank2_end

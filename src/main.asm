@@ -317,6 +317,8 @@ SPR_PHASE_MASK = 0
 CRTC_ADDR     = &FE00
 CRTC_DATA     = &FE01
 VIDEO_ULA_PAL = &FE21
+NULA_CTRL     = &FE22       ; VideoNuLA control; &40 resets its state
+NULA_PAL      = &FE23       ; VideoNuLA palette, TWO bytes an entry
 IRQ1V         = &0204
 SYS_VIA_T1CL  = &FE44
 SYS_VIA_T1CH  = &FE45
@@ -1265,7 +1267,13 @@ INCLUDE "src/player.asm"
 INCLUDE "src/enemy.asm"
 INCLUDE "src/keyboard.asm"
 INCLUDE "src/rupture.asm"
+IF GFX_NULA
 IF GFX_CPC
+    INCLUDE "src/data/compiled_zp-nula-cpc.asm"
+ELSE
+    INCLUDE "src/data/compiled_zp-nula.asm"
+ENDIF
+ELIF GFX_CPC
     INCLUDE "src/data/compiled_zp-cpc.asm"  \ what the compiled bodies assume
 ELSE
     INCLUDE "src/data/compiled_zp.asm"      \ what the compiled bodies assume
@@ -1372,8 +1380,16 @@ ENDIF
 
 INCLUDE "src/tables.asm"
 
+IF GFX_NULA
+IF GFX_CPC
+INCLUDE "src/data/palette-nula-cpc.asm"   \\ the Amstrad's own sixteen pens
+ELSE
+INCLUDE "src/data/palette-nula.asm"       \\ the C64's own sixteen colours
+ENDIF
+ELSE
 INCLUDE "src/data/palette.asm"      \\ the palette setup_display writes,
                                     \\ generated from assets/art/palette.png
+ENDIF
 
 \ ******************************************************************
 \ *	The loader - BOOT CODE, and therefore above code_end
@@ -1697,6 +1713,13 @@ ENDIF
 \ disc, so it is stamped outside the RELEASE test too.
 IF GFX_CPC
     EQUS "REM GFX_CPC: the Amstrad CPC artwork", 13
+ENDIF
+IF GFX_NULA
+IF GFX_CPC
+    EQUS "REM GFX_NULA: CPC 16 pens, needs NuLA", 13
+ELSE
+    EQUS "REM GFX_NULA: C64 16 cols, needs NuLA", 13
+ENDIF
 ENDIF
 EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
 EQUS "*RUN Edge", 13

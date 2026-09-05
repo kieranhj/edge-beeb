@@ -64,7 +64,14 @@ and unaltered: which frames flash, and when, is game logic, not art.
 tools/verify_compiled.py proves the compiled bodies of either build against the
 interpreted path, by simulating the emitted 6502 over a buffer of background.
 
-Run from the project root: python tools/export_sprites.py [--cpc]
+--nula (decision 63) writes sprites0-nula.bin and friends: the same frames at
+the SOURCE palette rather than MODE 2's eight, for the VideoNuLA test builds.
+KEEP and the two flash targets then come from the source palette too - the C64's
+own blue and white rather than the BBC colours they were mapped to - and with
+--cpc the dither of decision 55 is gone, a pen being one colour again.
+
+Run from the project root:
+    python tools/export_sprites.py [--cpc] [--c64 | --nula]
 """
 
 import os
@@ -75,6 +82,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "art"))
 import bbc              # noqa: E402
 import compile_sprites  # noqa: E402
 import mechanical       # noqa: E402
+import nula             # noqa: E402
 import pngart           # noqa: E402
 
 OUT = "src/data"
@@ -90,7 +98,13 @@ TABLE_STRIDE = 0x80
 
 C64_KEEP = {0, bbc.C64_TO_BBC[bbc.C64_SPR_MC1], bbc.C64_TO_BBC[bbc.C64_SPR_MC2]}
 FLASH_KEEP = {0}        # no shared colours to preserve: the flash takes it all
-LUT_PAGES = {None: 0x81, bbc.WHITE: 0x82, bbc.MAGENTA: 0x83}
+# Page of the LUT the hit flash uses. A sprite bank has exactly TWO flash
+# tables, at &8200 and &8300, so there may be at most two flash targets.
+# Measured: sprite_col_dcd's high nibble takes only two values that ever differ
+# from its low one - C64 white and the purple the grind flash uses - so that
+# ceiling has never been near.
+LUT_IDENT_PAGE = 0x81
+
 
 # Which animations get straight-line code in sideways slot 7 (decision 29).
 # By dp range, the same numbers anim_decode uses, so this reads against the
@@ -172,28 +186,48 @@ def table(values):
     return bytes(values) + bytes(TABLE_STRIDE - len(values))
 
 
-def main(cpc=False, c64=False):
+def main(cpc=False, c64=False, use_nula=False):
     os.makedirs(OUT, exist_ok=True)
-    suffix = "-cpc" if cpc else ""
+    suffix = ("-nula" if use_nula else "") + ("-cpc" if cpc else "")
     col_dcd, dp_dcd = mechanical.dp_tables()
 
-    if cpc:
+    if use_nula:
+        pixels = nula.sprites(cpc=cpc, count=FRAMES)
+    elif cpc:
         pixels = mechanical.sprites(cpc=True, count=FRAMES)
     elif c64:
         pixels = mechanical.sprites(count=FRAMES)
     else:
         pixels = pngart.sprites(FRAMES, fallback=mechanical.sprites(count=FRAMES))
-    keep = derive_keep(pixels)
+
+    if use_nula:
+        # Source colours, so the C64's shared pair is its OWN blue and white
+        # rather than the two BBC colours they were mapped to. The CPC has no
+        # shared pair at all, as ever.
+        keep = FLASH_KEEP if cpc else {0, bbc.C64_SPR_MC1, bbc.C64_SPR_MC2}
+        order = nula.flash(cpc)
+    else:
+        keep = derive_keep(pixels)
+        order = (bbc.WHITE, bbc.MAGENTA)
     print("hit flash: " + ("blue and white are held back, as the C64 does"
-                           if keep == C64_KEEP else
+                           if keep != FLASH_KEEP else
                            "the whole sprite recolours (this art has no shared colours)"))
 
+    # lut_dcd - which frames flash, and to which of the two tables - is GAME
+    # LOGIC and comes out byte for byte the same in every build. It is judged
+    # on the C64 mapping in all of them, the CPC's and the NuLA ones included,
+    # for the same reason dp_dcd is: the original decides when a sprite
+    # flashes, not the artwork. Only what the two tables CONTAIN changes with
+    # the palette, and `order` says which is at &8200 and which at &8300 -
+    # named rather than derived from the set of targets, so that they keep
+    # their addresses when that set does not change.
+    slot = {bbc.WHITE: 0, bbc.MAGENTA: 1}
     lut_dcd = []
     for dp in range(DP_ENTRIES):
         normal = bbc.C64_TO_BBC[col_dcd[dp] & 15]
         flash = bbc.C64_TO_BBC[col_dcd[dp] >> 4]
-        assert normal not in keep - {0} or normal == flash, dp
-        lut_dcd.append(LUT_PAGES[None if flash == normal else flash])
+        assert use_nula or normal not in keep - {0} or normal == flash, dp
+        lut_dcd.append(LUT_IDENT_PAGE if flash == normal else 0x82 + slot[flash])
 
     # Everything both banks need, before either is laid out, because the
     # compiled bank is shared between them.
@@ -213,7 +247,7 @@ def main(cpc=False, c64=False):
     for f in sorted(want):
         for dp in range(DP_ENTRIES):
             if dp_dcd[dp] - VIC_BASE == f:
-                assert lut_dcd[dp] == LUT_PAGES[None], (
+                assert lut_dcd[dp] == LUT_IDENT_PAGE, (
                     f"frame {f} is reached by dp ${dp:02x}, which hit-flashes: "
                     "its colours cannot be baked into compiled code")
     todo = {(shift, f): boxes[shift, f][4] for shift in (0, 1) for f in sorted(want)}
@@ -238,8 +272,8 @@ def main(cpc=False, c64=False):
         bank = bytearray()
         bank += mask_table()
         bank += recolour_table(None, keep)
-        bank += recolour_table(bbc.WHITE, keep)
-        bank += recolour_table(bbc.MAGENTA, keep)
+        for target in order:                  # &8200 then &8300
+            bank += recolour_table(target, keep)
         bank += table([a & 0xFF for a in addr])
         bank += table([a >> 8 for a in addr])
         bank += table(r0s)
@@ -259,4 +293,5 @@ def main(cpc=False, c64=False):
 
 
 if __name__ == "__main__":
-    main(cpc="--cpc" in sys.argv[1:], c64="--c64" in sys.argv[1:])
+    main(cpc="--cpc" in sys.argv[1:], c64="--c64" in sys.argv[1:],
+         use_nula="--nula" in sys.argv[1:])

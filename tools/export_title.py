@@ -37,6 +37,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, 'art'))
 import mechanical  # noqa: E402
+import nula        # noqa: E402
 import pngart      # noqa: E402
 import sheets      # noqa: E402
 
@@ -107,9 +108,13 @@ def screen_code(ch):
     return ord(ch)                 # punctuation is its ASCII code in this range
 
 
-def main(c64=False):
-    glyphs = (mechanical.title_font() if c64 else
-              pngart.title_font(fallback=mechanical.title_font()))
+def main(c64=False, use_nula=False, cpc=False):
+    if use_nula:
+        glyphs = nula.title_font(cpc=cpc)
+    elif c64:
+        glyphs = mechanical.title_font()
+    else:
+        glyphs = pngart.title_font(fallback=mechanical.title_font())
     out = bytearray(b''.join(sheets.pack_cell(g) for g in glyphs))
 
     dec = scroll_decode()
@@ -133,15 +138,18 @@ def main(c64=False):
     # the plotter are, has 45 bytes left in a -Cpc build and this is 190.
     extra = encode(CREDITS_BBC)
 
-    with open(OUT, 'wb') as f:
+    suffix = ('-nula' if use_nula else '') + ('-cpc' if cpc else '')
+    out_path = OUT.replace('title.bin', 'title%s.bin' % suffix)
+    with open(out_path, 'wb') as f:
         f.write(out)
     with open(OUT_EXTRA, 'wb') as f:
         f.write(extra)
     print('%s: %d bytes (%d glyphs, %d lines of %d)'
-          % (OUT, len(out), GLYPHS, len(CREDITS), LINE_LEN))
+          % (out_path, len(out), GLYPHS, len(CREDITS), LINE_LEN))
     print('%s: %d bytes (%d lines of %d)'
           % (OUT_EXTRA, len(extra), len(CREDITS_BBC), LINE_LEN))
 
 
 if __name__ == '__main__':
-    main(c64='--c64' in sys.argv[1:])
+    main(c64='--c64' in sys.argv[1:], use_nula='--nula' in sys.argv[1:],
+         cpc='--cpc' in sys.argv[1:])
