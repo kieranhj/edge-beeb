@@ -204,6 +204,11 @@ image, the score font and the life marker are the Amstrad's, out of `EG_Panel.as
 C64's five, so it sits in rows 0-3 with row 4 black; its HUD is in the same cells as ours, so
 nothing in `src/` changed but two `INCBIN`s.
 
+**The compiled bullet is back 2026-09-05 (decision 57).** The 13 bytes bank 3 was short of in
+Layer 8a were found by decisions 47 and 49; it assembles with 43 to spare, so both builds run
+the same code path. `python tools/verify_compiled.py [--cpc]` proves the bodies against the
+interpreted path by simulating the emitted 6502.
+
 Still to do: real-hardware test, release build, publish. The starfield is 9c above, and is the
 CPC's rather than the C64's.
 

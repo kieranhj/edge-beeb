@@ -97,9 +97,11 @@ the CPC's too** (decision 56, `tools/export_panel.py --cpc` through `tools/cpc/p
 the Amstrad's panel is four character rows to the C64's five, so it sits in rows 0-3 with row 4
 black, and its score, high score and lives land in the cells `hud_cell_lo/hi` already names,
 the CPC port having copied the C64's layout to the column. It writes `build/EDGE-CPC*.SSD` with disc
-title `EDGEC`, and composes with `-Akl`. **The compiled bullet is dropped in this build** - it
-needs 13 bytes bank 3 has not got - so do not compare frame meters across the two.
-`docs/layer-8a-gfx-cpc.md`. It used not to assemble at all without `-Akl`; decisions 47-49 gave
+title `EDGEC`, and composes with `-Akl`. **The compiled bullet is in this build too** since
+decision 57 - it needed 13 bytes bank 3 had not got until decisions 47 and 49 made the room -
+so the two builds run the same code path and their frame meters compare.
+`tools/verify_compiled.py` proves either build's compiled bodies against the interpreted path
+by simulating the emitted 6502. `docs/layer-8a-gfx-cpc.md`. It used not to assemble at all without `-Akl`; decisions 47-49 gave
 bank 3 and main RAM the room, and **all six flag combinations build now**.
 
 `MUSIC_AKL=1` (`.\build.ps1 -Akl`) swaps the whole music subsystem: `src/aklplayer.asm` replays

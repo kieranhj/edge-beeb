@@ -183,23 +183,34 @@ the C64 digits' body to white because dark grey and blue both collapsed to blue 
 four-pixel digit almost invisible; the CPC draws its digits bright cyan on blue, which needs no
 help. It costs 135 packed bytes on `PANEL` and 15 on `BANK3`.
 
-## What this build gives up: the compiled bullet
+## The compiled bullet, which this build used to give up
 
-**Nothing is compiled under `GFX_CPC`, and the reason is 13 bytes.** A compiled body
-(decision 29) costs code per *opaque* byte of the box, and the CPC's bullet — masked per
-byte, so it has fewer see-through bytes — compiles to 2,860 against the C64's 2,652. Bank 3
-has 195 bytes free below `music_lo`, so it lands 13 over, and the only other way to make
-room is to cut the tune again (decision 37). `CPC_COMPILE_DPS` is therefore empty and the
-bullet takes the interpreted path that 117 of the 119 frames already take.
+**It fits now, and the two builds run the same code path.** A compiled body (decision 29)
+costs code per *opaque* byte of the box, and the CPC's bullet - masked per byte on the
+Amstrad, so it has fewer see-through bytes - compiles to 2,860 against the C64's 2,652. When
+this layer was built that was 13 bytes more than bank 3 had, `CPC_COMPILE_DPS` was left empty
+and the bullet took the interpreted path that 117 of the 119 frames take.
 
-It means the CPC build is a shade slower than the default one, so **do not compare frame
-meters across the two**. It is a comparison of how the game looks. If the CPC art is ever
-chosen for real, the 13 bytes are worth going after.
+The 13 bytes were found by other work rather than gone after. Decision 47 moved the panel
+image out of bank 3 into the `PANEL` disc file and decision 49 moved `!BOOT` out of the code
+image; with the bullet compiled, bank 3 now assembles with **43 bytes of slack below
+`music_lo`** and the disc grows 256 bytes. Frame meters compare across the two builds again
+(decision 57).
 
-`-Akl -Cpc` is the exception and is not exploited: `MUSIC_AKL` takes `music_lo` out of bank 3
-altogether and leaves 8,960 bytes free there, so the compiled bullet fits easily. Putting
-`(0x12, 0x13)` back into `CPC_COMPILE_DPS` would do it, but the exporter has no idea which
-music build it is being run for, so it stays off in both.
+**`tools/verify_compiled.py` is the check that the bodies are right**, and it did not exist
+before. Nothing at build time compares a compiled body against the frame it came from — it
+either draws the sprite or it draws rubbish, and the only place that shows is the screen. The
+tool runs the emitted bytes on a simulator of exactly the sixteen opcodes
+`compile_sprites.py` emits, over a buffer of pseudo-random background, and checks that every
+opaque byte became `(background AND mask) OR data` at the address `sprite.asm`'s own pointer
+walk reaches — 16K wrap and character-row crossings included — that the save area holds the
+background those bytes covered, and that the restore body puts the buffer back byte for byte.
+Both builds pass; flipping one baked immediate fails it.
+
+It was worth writing rather than diffing play buffers between the two builds in the emulator,
+which is what was tried first: the buffers differ by a sprite's worth of bytes whatever you
+do, because the dump reads whichever bank ACCCON has selected and the faster build need not
+be in the same bank phase.
 
 ## Building it
 

@@ -38,10 +38,13 @@ instead and are written to sprites0-cpc.bin, sprites1-cpc.bin, compiled-cpc.bin
 and compiled_zp-cpc.asm. A CPC frame carries its own fifteen colours and there
 is no per-sprite colour, so KEEP shrinks to the transparency key alone and the
 hit flash recolours the WHOLE sprite rather than just its one colour - the
-nearest thing the CPC art can be given. Nothing is compiled either, for want of
-13 bytes in bank 3: see CPC_COMPILE_DPS. Everything else, dp_dcd and lut_dcd
-included, is the C64's and unaltered: which frames flash, and when, is game
-logic, not art.
+nearest thing the CPC art can be given. The bullet is compiled in both builds
+(decision 57; it was not, for want of 13 bytes in bank 3, until decisions 47 and
+49 made the room). Everything else, dp_dcd and lut_dcd included, is the C64's
+and unaltered: which frames flash, and when, is game logic, not art.
+
+tools/verify_compiled.py proves the compiled bodies of either build against the
+interpreted path, by simulating the emitted 6502 over a buffer of background.
 
 Run from the project root: python tools/export_sprites.py [--cpc]
 """
@@ -75,15 +78,15 @@ LUT_PAGES = {None: 0x81, bbc.WHITE: 0x82, bbc.MAGENTA: 0x83}
 # that hit-flashes cannot have any.
 COMPILE_DPS = [(0x12, 0x13)]      # the player bullet
 
-# Nothing is compiled in the CPC build, and the reason is 13 bytes. A compiled
-# body costs code per OPAQUE byte of the box, and the CPC's bullet - masked per
-# byte on the Amstrad, so it has fewer see-through bytes - compiles to 2,860
-# rather than 2,652. Bank 3 has 195 free below music_lo, so it lands 13 over,
-# and the only other way to make room is to cut the tune again. The frames fall
-# back to the interpreted path 117 of the 119 already take. MUSIC_AKL takes
-# music_lo out of bank 3 and would leave room, but the exporter has no idea
-# which music build it is being run for, so it stays off in both.
-CPC_COMPILE_DPS = []
+# The CPC build compiles the same bullet, and did not always. A compiled body
+# costs code per OPAQUE byte of the box, and the CPC's bullet - masked per byte
+# on the Amstrad, so it has fewer see-through bytes - compiles to 2,860 against
+# the C64's 2,652. When Layer 8a was built that was 13 bytes more than bank 3
+# had, and the frames fell back to the interpreted path. Decisions 47 and 49
+# then moved the panel image and !BOOT out of the way; bank 3 has 43 bytes of
+# slack below music_lo with the bullet compiled now (decision 57), so the two
+# builds run the same code path and their frame meters compare.
+CPC_COMPILE_DPS = COMPILE_DPS
 
 
 def frame_pixels(raw, colour_c64):
