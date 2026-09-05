@@ -15,8 +15,8 @@ approximated*: sixteen logical colours and sixteen source colours, so logical
 colour n **is** source colour n and there is no mapping to argue about. What
 they show is what the original showed, and any difference from the eight-colour
 build is ours rather than the machine's. KC judges them on real hardware or in
-b2; jsbeeb has no NuLA and cannot run them at all, which is why the one thing
-this layer got wrong was found by him and not here.
+b2 — but they are testable here too, jsbeeb emulating the NuLA palette
+(decision 67), and everything below is verified in it.
 
 Two things go away that the eight-colour builds cannot avoid:
 
@@ -40,8 +40,8 @@ the artist's work — so `assets/art/` is untouched by any of this.
 The exporters gained `--nula` (composing with `--cpc`) and write `-nula` and
 `-nula-cpc` copies beside the others; `src/` picks between the four with a 2×2
 `IF GFX_NULA` / `IF GFX_CPC` at each of the eight INCBIN sites.
-`tools/render_bbc.py --nula [--cpc]` renders them at the right palette, which
-is the only way to look at either build without the hardware.
+`tools/render_bbc.py --nula [--cpc]` renders them at the right palette without
+booting anything.
 
 ## The hardware, which is the part that is not ours
 
@@ -220,9 +220,10 @@ tighter rather than looser.
 * `tools/verify_compiled.py` passes on both eight-colour builds.
 * The eight-colour build is unchanged in jsbeeb after the palette loop turned
   round — memorial, titles, crossfade and a game in play all correct.
-* **KC ran the CPC build on hardware**, which is what found the `&FE21`
-  composition; the fix is verified by the manual and by reasoning that accounts
-  for every part of the symptom, but **not yet re-run**.
+* **Both builds run correctly in jsbeeb**, C64 and CPC, panel and scenery and
+  sprites, after the `&FE22 = &11` fix — so decision 64 is verified in
+  emulation and not only argued. KC found the bug on hardware first only
+  because this layer wrongly believed jsbeeb could not run it (decision 67).
 
 ## Sizes
 

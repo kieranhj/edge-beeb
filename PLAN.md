@@ -284,8 +284,10 @@ References rather than candidates: sixteen logical colours and sixteen source co
 nothing is approximated, and decision 11's hue collapse and decision 55's dither both go away —
 the scenery is brown rather than blue and a CPC pen is one colour again.
 
-**KC tests these; they cannot be tested here.** jsbeeb has no VideoNuLA, so
-`tools/render_bbc.py --nula [--cpc]` is the only way to see either build short of the hardware.
+**jsbeeb emulates the NuLA palette and both builds are verified in it** (decision 67). That
+was not believed when the layer was written, and believing otherwise is what let decision 63's
+`&FE21` mistake reach KC's hardware — see the layer doc. `tools/render_bbc.py --nula [--cpc]`
+renders the data without booting anything.
 
 The register pair and byte order come from the VideoNuLA User Guide and the encoder reproduces
 its worked example. **Decision 64 corrected the one thing decision 63 inferred rather than

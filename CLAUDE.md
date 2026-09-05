@@ -92,8 +92,11 @@ then `[green<<4|blue]`. NuLA's DEFAULT is to mimic the Video ULA - logical -> ph
 `&FE21`, then physical -> 12-bit through `&FE23` - so without `&11` the two tables compose and
 `ttl_raster`'s per-scanline `&FE21` writes on the titles wreck the game's colours. All of this
 is the VideoNuLA User Guide's (`BEEB/Manuals/VideoNuLA manual.pdf`), not recalled, and the
-encoder is proved against its worked example. **jsbeeb has no NuLA and cannot run these**;
-`tools/render_bbc.py --nula [--cpc]` is the only way to see one without the hardware. The fades
+encoder is proved against its worked example. **jsbeeb DOES emulate the NuLA palette** (measured 2026-09-05, decision 67 -
+the manual's own `?&FE23=&78 : ?&FE23=&88` gives mid grey, and sixteen distinct entries come
+back under logical mapping), so both builds run under the MCP and must be tested there like
+everything else. Its scrolling and attribute modes are not emulated; we use neither.
+`tools/render_bbc.py --nula [--cpc]` renders the data without booting anything. The fades
 are CUTS and the credit crossfade does not run, both written up in `docs/layer-8b-nula.md`.
 **The Amstrad's charset paints its background in pen 15, not pen 0** - so the opaque CPC art
 sends every black pen to logical 0, without which the play buffer reads `&FF` where the C64's
@@ -203,6 +206,11 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
   it; R6 and R12/R13 inside the previous cycle; R7 can stay constant if only one cycle reaches it.
 - VSync handler → fire 1 = 53 scanlines with `T1_I1 = 56*SL - 4*SL - 2`; fire 1 → fire 2 =
   40.0 scanlines with `T1_I2 = 40*SL - 2`. T1 ticks at 1 MHz, SL = 64. Measured 2026-09-02.
+- **jsbeeb emulates the VideoNuLA palette** - measured 2026-09-05, decision 67. `?&FE23=&78`
+  then `?&FE23=&88` turns colour 7 mid grey, and sixteen distinct 12-bit entries come back under
+  logical colour mapping (`&FE22 = &11`). Its NuLA scrolling and attribute modes are NOT
+  emulated; we use neither. **So a `-Nula` build is tested here like any other**, and the belief
+  that it could not be is what let decision 63's `&FE21` mistake reach real hardware.
 - OSFILE writes a file's catalogue addresses back into its parameter block after a load.
 - **ANDY is 4K at `&8000-&8FFF`, selected by ROMSEL bit 7, and it overlays ONLY that 4K** - measured
   in jsbeeb 2026-09-04, from 6502 in main RAM. Writing `&AA` to `&8000` with bank 4 selected and
