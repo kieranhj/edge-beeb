@@ -17,7 +17,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0 to 5, 6a-6e, 7, 9a-9b, the starfield of 9c, 9d and 9e are done (2026-09-04).** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
+**Layers 0 to 5, 6a-6e, 7, 9a-9b, 9c, 9d, 9e and 9f are done (2026-09-05); 9g is open.** The game assembles from `src/` through `build.ps1` - beebasm, then `tools/make_disc.py` - into `build/EDGE.SSD` and boots in jsbeeb and b-em as a Master. What runs: a 1-pixel-per-frame 25 Hz
 horizontal scroller in MODE 2 under a 5-row status panel held by a two-cycle CRTC rupture, with
 IRQ1V owned and the bank flip done by the VSync handler on a two-field lock; eight software sprites
 over it, clipped and redrawn every frame in both shadow banks; a player on Z/X/K/M/L with the C64's
@@ -45,6 +45,16 @@ as well as fire, and the zoom scroller's message is `assets/scrolltext.txt` now 
 seeded with the C64's own text, with 237 characters of room to grow (decision 54). **The whole 349-second tune
 ships**, spread over four separate regions of memory, because a `.vgi` is eleven independent
 register streams and only each stream has to be contiguous (decision 48).
+
+**Two things were built and taken out again**, and both are worth not rediscovering. **ESCAPE at
+any time**, rather than only from inside the pause: it is polled every frame, so holding it
+re-entered `life_lost` and rebuilt the player's explosion pieces on the spot. It would want a
+debounce; abort stays a pause-only key (decision 54). And **timing the rupture switch to the five
+rows after VSync**, which is `BUGS.md` #14 and the one open defect: the switch between the game's
+two-cycle rupture and the titles' four-cycle one costs one malformed field - 272 lines against
+312, measured - and two placements were tried and both were worse. It has to be made inside
+`rupt_vsync`, which is the only place that owns the registers and the T1 fire schedule at the
+same instant.
 
 **The frame budget** is 79,872 cycles at 25 Hz. Measured with the frame meter (`src/timing.asm`,
 `DEBUG_TIMING`) rather than estimated: **100 seconds of play peaks at 72,106, 90%, with no missed
@@ -74,28 +84,53 @@ crossing into a third field and catching one more music interrupt; the added wor
 nothing else. The lever, if 19 is too many, is the star count - the cost is linear and the ten are
 the CPC's, not the C64's.
 
-**Main RAM** (Layer 9c build, DEV): code, tables and the ZX0 depacker `&0E00-&2159`, **`&A7`
-free** below `LOAD_STREAM` = `&2200` - but that is not the number that matters. **The real ceiling
-for anything read in play is `SPR_SAVE` = `&2000`, and `code_end` is `&1FF9`: seven bytes under it in
-a DEV build, 36 in a RELEASE one.** Nothing was checking, `explosion_dirs` drifted over the line into
-the blitter's save area, and the player's explosion pieces stopped flying (`BUGS.md` #13, fixed: the
-table is in bank 1 and `main.asm` now asserts the ceiling). The next thing that wants main-RAM code
-will have to move the boot loader above `&2000`, where `!BOOT` and the depacker already are. The ceiling moved up in 9a: the depacker is boot code and is
-allowed to sit above `SPR_SAVE`'s base at `&2000`, because nothing reads there until the game
-starts and it is dead by then. That is with `DEBUG_TIMING` on; `game_init` moved to bank 0 in Layer
-7 to make room for the HAZEL loader and the IRQ's music call. Bank 0 has `&B2` left; **bank 3 is
-full** - its code and data end at `&9C3D` and the tune's low half runs `&9D00-&BFFF` - and
-**HAZEL** (`&C000-&DFFF`) holds the tune's high half, the player at `&D200` and its ring workspace
-at `&D500`, with `&DF` free;
-`pause_check`, `comp_mess` and `finale_tick` are up in bank 0 because main RAM ran out mid-layer,
-alongside the frame meter, `coll_row_lo/hi` and the boot-time display setup; the multiply tables are
-gone entirely, and the titles' font and text, the panel image and the HUD are in bank 3. **All four
-sideways RAM banks are now in use**: 4 data, 5 and 6 sprites, 7 compiled bodies plus the titles and
-the panel (9.1K free; the per-bank figures are in
-[`docs/memory-map.md`](docs/memory-map.md)). Game state `&0800-&08E9`; collision character map
-`&04A0-&07BF`; sprite save area `&2000-&2FFF`; panel `&3000-&3C7F` in both banks. **Bank 0** (chars,
-tiles, map, col_decode, waves) high water `&BEEE`; **banks 1 and 2** (sprites, one per pixel shift)
-`&B253` and `&B88B`. Take live figures from the build listing, not from here.
+**Main RAM** (Layer 9f build, DEV, C64 artwork; take live figures from the listing, not from
+here). Code, boot-only data, the boot loader, the memorial's own half and the ZX0 depacker run
+`&0E00-&2222`, with **478 bytes** free below `LOAD_STREAM` = `&2400` - but that is not the number
+that matters. **The ceiling for anything read in play is `SPR_SAVE` = `&2000`, and `code_end` is
+`&1FD3`: 45 bytes under it in a DEV build, 74 in a RELEASE one.** Nothing was checking once, and
+`explosion_dirs` drifted over the line into the blitter's save area and the player's explosion
+pieces stopped flying (`BUGS.md` #13, fixed; `main.asm` asserts the ceiling now and the listing
+prints CODE CEILING beside it).
+
+**Layer 9d is where the boot loader moved out**, which is what this file and the memory map both
+said the next thing to want main-RAM code would have to do: `load_stream`, `unpack_to`,
+`panel_init`, `load_bank`, `unpack_andy` and `load_hazel` are dead before the first sprite is drawn
+and sit above `code_end` now, with `!BOOT` and the depacker. That took the ceiling from 7 bytes
+free to 153, and 9d, 9e and 9f have since spent 108 of them. `LOAD_STREAM` went from `&2200` to
+`&2400` with it, which costs the loading screen headroom: `LOADSC2`'s stream has 252 bytes to
+`&3000` rather than 764, and `tools/make_disc.py` refuses an image that overruns it.
+
+**Where the room is now**, largest first, and the CPC-artwork figure where it differs:
+
+| | DEV, C64 art | `-Cpc` |
+|---|---|---|
+| `&3C80-&3FFF`, in each bank (decision 53, proved by sentinel) | **706** | 706 |
+| the `&0800` game-state block | ~610 | ~610 |
+| bank 1, the hole below the tune | **475** | 469 |
+| bank 2, the hole below the tune | 220 | **38** |
+| bank 3, below the tune | 251 | **43** |
+| `&0C00`, the MOS user-font page | 160 | 160 |
+| bank 2, the tail above the tune | 106 | 106 |
+| ANDY | 98 | 98 |
+| bank 1, the tail above the tune | 86 | 86 |
+| **main RAM below `SPR_SAVE`** | **45** | 45 |
+| HAZEL, above the music player | 38 | 38 |
+| region A of the tune | 32 | 32 |
+| **bank 0** | **9** (175 in RELEASE) | 9 |
+
+**The three tight ones are bank 0's 9 bytes, main RAM's 45, and - in a `-Cpc` build - bank 2's 38
+and bank 3's 43.** That is what the next layer will hit first, and it is why 9e's fade went to bank
+2 and 9f's scrolltext to `&3C80` rather than staying where they naturally belonged. `&3C80` is the
+one big piece left: 706 bytes in each bank, proved by reading the credits back byte for byte after
+a full game, and reached by putting data on the end of the `PANEL` file. Per-bank detail is in
+[`docs/memory-map.md`](docs/memory-map.md); `&0D00` is still unproved.
+
+Game state `&0800-&0985`; collision character map `&04A0-&07BF`; sprite save area `&2000-&2FFF`;
+panel `&3000-&3C7F` in both banks, with the titles' second credit set and the scrolltext just above
+it. **All four sideways RAM banks are in use**: 4 data, 5 sprites/zoom scroller/starfield, 6
+sprites plus the palette fade and the credit crossfade, 7 compiled bodies plus the titles' font and
+the HUD - and all four carry a piece of the tune.
 
 ## What is left
 
@@ -531,6 +566,6 @@ CPC's rather than the C64's.
 | 9d — the memorial | [`docs/layer-9d-memorial.md`](docs/layer-9d-memorial.md) | done 2026-09-04, decision 52 |
 | 9e — the credits crossfade | [`docs/layer-9e-credits.md`](docs/layer-9e-credits.md) | done 2026-09-04, decision 53 |
 | 9f — SPACE starts, and an editable scrolltext | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04, decision 54 |
-| 9g — the titles switch flicker | [`BUGS.md`](BUGS.md) #14 | **open 2026-09-04**: measured and diagnosed, not fixed. One malformed field, 272 lines against 312, every time the rupture shape changes. The switch has to be made inside `rupt_vsync`, which is the only place that owns the registers and the T1 schedule at once; two placements in `title_page` were tried and both were worse |
+| 9g — the titles switch flicker | [`BUGS.md`](BUGS.md) #14 | **open 2026-09-05**: measured and diagnosed, not fixed. One malformed field, 272 lines against 312, every time the rupture shape changes. The switch has to be made inside `rupt_vsync`, which is the only place that owns the registers and the T1 schedule at once; two placements in `title_page` were tried and both were worse |
 | 9c — the rest of the outstanding features | | **open 2026-09-04**: the win tune, redefinable keys |
 | 9 — polish and release | | |
