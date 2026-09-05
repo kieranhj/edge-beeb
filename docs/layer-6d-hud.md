@@ -144,3 +144,38 @@ number.
   colour-RAM effect on a machine with per-character colour, and it belongs with 6e's zoom scroller.
 - `sprite_idx`, `x_count` and `y_count` in zero page were the placeholder's and `sprite_plot`'s; all
   three are now unused. Zero page is not the constraint, so they are left declared.
+
+## Corrected 2026-09-05: the bar is cyan, green and yellow (decision 66)
+
+KC, playing the NuLA build beside a C64 emulator: *"the C64 NULA top panel
+doesn't have all the colours that I can see."* He was right, and the error was
+decision 34's, in every build rather than just that one.
+
+`rout1` sets `$d016 = $17`, and bit 4 is MCM — the panel raster is **multicolour
+text mode**. In that mode colour RAM bit 3 *selects the mode*, not the colour:
+set means multicolour with bit pair 11 taking `colour RAM AND 7`, clear means
+the cell is drawn hires instead. Decision 34 read the whole nibble as a C64
+colour index, so it believed `$0b`, `$0d` and `$0f` were dark grey, light green
+and light grey — three colours MODE 2 has not got. That is where its "the two
+greys go to blue and white" mapping came from, and where `HUD_PAIR_3`'s white
+digit body came from after that.
+
+They are **cyan (3), green (5) and yellow (7)**, and MODE 2 has all three
+exactly. So `C64_TO_MODE2` is gone in favour of the ordinary `C64_TO_BBC`,
+`HUD_PAIR_3` is gone with it — a cyan digit on black needs no rescuing — and
+nothing about the bar is approximated any more. 120 cells go blue → cyan and 20
+go white → yellow.
+
+The 48 cells whose colour RAM is `$00` are the hires ones, colour 0 on a black
+`$d021`, and every one of them is a blank character — measured — so reading them
+as multicolour like the rest costs nothing and no hires path is needed.
+
+The port had this right everywhere else: `col_decode` is documented as "low 3
+bits colour, bit 4 fatal" and `char_colour` masks with 7. The panel exporter was
+the one place that did not.
+
+One Layer 8 consequence worth remembering: the default build takes its panel
+from `assets/art/panel.png`, so fixing a *conversion* now needs a re-seed as
+well as an exporter change. The sheets were still unedited, so re-running
+`tools/seed_art.py` was safe; once the artist has work in them it would not be,
+and the fix would have to be applied to the PNGs instead.

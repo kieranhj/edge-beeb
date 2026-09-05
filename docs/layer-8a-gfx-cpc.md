@@ -235,3 +235,18 @@ way it does the C64 build's.
 Booted in jsbeeb as a Master 128 from `build/EDGE-CPC-200K.SSD`: `!BOOT` reports
 `REM GFX_CPC: the Amstrad CPC artwork`, the titles come up, and play shows the CPC scenery
 and CPC enemies scrolling. 2026-09-04.
+
+## Not done: the Amstrad's grind sparks
+
+The `GFX_CPC` build takes the Amstrad's *artwork*; it does not take its
+behaviour, and there is one place where that shows. When the player grinds the
+scenery the C64 flashes the ship — cyan to purple, dps `$0B-$11`, which we
+transcribe — and the Amstrad instead swaps in seven dedicated sparking frames
+through a second frame list (`PlayerFrameGrindList`, selected by `GrindState`).
+KC spotted it playing the build on 2026-09-05.
+
+`tools/rip_cpc_compiled.py` reads those frames back out of the compiled Z80 and
+proves itself against the player frames SPRITES.BIN already holds;
+`reference/grind-sparks-cpc.png` is the result. They cost 636 bytes in sprite
+bank 1 and 742 in bank 2, which have 21 and 86 free, so it is **parked** — see
+PLAN.md, and note that a `-Akl` build is the one place the room exists.

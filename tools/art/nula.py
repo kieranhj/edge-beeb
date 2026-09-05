@@ -172,14 +172,15 @@ def panel(cpc=False):
     for cell in range(mechanical.PANEL_CELLS):
         row, col = divmod(cell, mechanical.PANEL_COLS)
         n = row * mechanical.PANEL_COLS + (col - mechanical.PANEL_SHIFT) % mechanical.PANEL_COLS
-        out.append(_c64_cell(chars, screen[n], cols[n] & 0x0f))
+        out.append(_c64_cell(chars, screen[n], cols[n]))
     return out
 
 
 def hud(cpc=False):
-    """The thirteen HUD glyphs. No HUD_PAIR_3 brightening: that existed only
-    because MODE 2 collapsed the C64's dark grey onto blue and left a digit
-    four pixels of near-invisibility. The grey is a real colour here."""
+    """The thirteen HUD glyphs, in colour RAM $0b - which is CYAN, the low three
+    bits, multicolour text mode (decision 66). HUD_PAIR_3's white body is gone
+    from every build: it existed to rescue a digit that decision 34's misreading
+    had painted blue on black, and a cyan digit needs no rescuing."""
     if cpc:
         return _cpc_hud()
     chars = mechanical._status_charset()
@@ -198,6 +199,12 @@ def title_font(cpc=False):
 
 
 def _c64_cell(chars, code, colour_ram):
+    # The low THREE bits: the panel raster is multicolour text mode and bit 3
+    # of colour RAM selects the mode, not the colour (decision 66). So the bar
+    # is cyan, green and yellow - not the dark grey, light green and light grey
+    # decision 34 believed, which is what KC could see in a C64 emulator and
+    # not in our build.
+    colour_ram &= mechanical.COLOUR_RAM_MASK
     pair = [bbc.C64_BG, 0x06, 0x01, colour_ram]      # $d021, $d022, $d023, RAM
     return [[pair[(chars[code * 8 + y] >> (6 - 2 * p)) & 3] for p in range(4)]
             for y in range(8)]

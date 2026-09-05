@@ -281,7 +281,10 @@ resets load/exec before every call; without that the second file lands wherever 
 exporters run with `--cpc`; `tools/cpc/` holds the CPC readers (Extended DSK and AMSDOS, mode 0
 screens and palettes, the background bank's indexing) and `tools/rip_cpc_sprites.py` and
 `tools/rip_cpc_background.py` write that art out as sheets in the format of the C64 ones in
-`assets/` and `reference/`.
+`reference/`. **`tools/rip_cpc_compiled.py` reads the sprites that are COMPILED Z80 and have
+no data copy** - the player, the laser and the player's grind frames - and proves the reader
+on the way past against the player frames SPRITES.BIN does hold. The Amstrad's grind sparks
+are parked, not built (PLAN.md).
 
 **`tools/export_tiles.py`, `tools/export_sprites.py`, `tools/export_panel.py` and `tools/export_title.py` read `assets/art/*.png` by default** (Layer 8); `--c64` and `--cpc` reach the two mechanical conversions, which live in `tools/art/mechanical.py` now. A drop from the artist goes through `python tools/validate_art.py` first - it reports an off-palette colour, a half-width pixel or misplaced transparency with sheet, cell and pixel, and refuses rather than guessing - and `--roundtrip` re-proves that the PNG path adds and loses nothing.
 

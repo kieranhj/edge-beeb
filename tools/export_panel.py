@@ -101,9 +101,12 @@ PANEL_COLS = mechanical.PANEL_COLS
 PANEL_CELLS = mechanical.PANEL_CELLS
 PANEL_SHIFT = mechanical.PANEL_SHIFT     # columns right, to centre the bar
 
-# The colour and glyph decisions above are mechanical.py's now: C64_TO_MODE2
-# (decision 34), HUD_CHARS, HUD_COLOUR and HUD_PAIR_3, the white body that
-# makes a four-pixel digit legible where the ornament's dark grey would not be.
+# The colour and glyph decisions are mechanical.py's now. NOTE that decision 66
+# replaced decision 34's colour table: the panel raster is MULTICOLOUR text
+# mode ($d016 = $17), so colour RAM bit 3 selects the mode and only the low
+# three bits are the colour. The bar is cyan, green and yellow - not the dark
+# grey, light green and light grey this file used to describe - and MODE 2 has
+# all three exactly, so nothing is approximated and HUD_PAIR_3 is gone.
 
 
 def pack(cells):

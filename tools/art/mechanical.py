@@ -119,21 +119,27 @@ PANEL_SHIFT = 1           # columns right, to centre the bar; bank3's HUD_COL_SH
 # $d021, $d022, $d023 as rout1 sets them for the panel's raster.
 D021, D022, D023 = 0x00, 0x06, 0x01
 
-# C64 colour -> our MODE 2 logical colour. Decision 34.
-C64_TO_MODE2 = {
-    0x00: 0,        # black
-    0x01: 7,        # white
-    0x06: 4,        # blue
-    0x0b: 4,        # dark grey   -> blue
-    0x0d: 2,        # light green -> green
-    0x0f: 7,        # light grey  -> white
-}
+# THE PANEL RASTER IS MULTICOLOUR TEXT MODE - rout1 sets $d016 = $17, and bit 4
+# is MCM. In that mode colour RAM bit 3 SELECTS THE MODE and only the low three
+# bits are the colour: bit 3 set means multicolour with bit pair 11 taking
+# colour RAM AND 7, bit 3 clear means the cell is plain hires instead.
+#
+# Decision 34 read the whole nibble as a C64 colour index and so believed the
+# bar was painted in dark grey, light green and light grey - three colours MODE
+# 2 has not got, which is where its "the two greys go to blue and white" fudge
+# came from, and where HUD_PAIR_3 came from after that. It is none of those.
+# status_cols holds only $00, $0b, $0d and $0f, so the bar is CYAN, GREEN and
+# YELLOW, all three of which MODE 2 has exactly. Decision 66.
+#
+# The 48 cells whose colour RAM is $00 are the hires ones, colour 0 on a black
+# $d021 - and every one of them is a blank character, measured, so reading them
+# as multicolour like the rest costs nothing.
+COLOUR_RAM_MASK = 7       # multicolour text mode: the colour is the low 3 bits
 
 # The characters the HUD writes, in the order the runtime indexes them:
 # blank, digits 0-9, then the life marker's two cells.
 HUD_CHARS = [0x00] + list(range(0x21, 0x2b)) + [0x8f, 0x90]
 HUD_COLOUR = 0x0b         # every cell status_decode writes into carries this
-HUD_PAIR_3 = 7            # white body for the glyphs; see export_panel.py
 
 
 def _byte_list(text, want):
@@ -163,10 +169,10 @@ def _block_after(source, marker, count):
     return got[:count]
 
 
-def _c64_cell(chars, code, colour_ram, body=None):
+def _c64_cell(chars, code, colour_ram):
     """One C64 character as 8 rows of 4 BBC logical colours."""
-    pair = [C64_TO_MODE2[D021], C64_TO_MODE2[D022], C64_TO_MODE2[D023],
-            C64_TO_MODE2[colour_ram & 0x0f] if body is None else body]
+    pair = [bbc.C64_TO_BBC[D021], bbc.C64_TO_BBC[D022], bbc.C64_TO_BBC[D023],
+            bbc.C64_TO_BBC[colour_ram & COLOUR_RAM_MASK]]
     return [[pair[(chars[code * 8 + y] >> (6 - 2 * p)) & 3] for p in range(4)]
             for y in range(8)]
 
@@ -208,8 +214,7 @@ def hud(cpc=False):
     if cpc:
         return _cpc().hud()
     chars = _status_charset()
-    return [_c64_cell(chars, code, HUD_COLOUR, body=HUD_PAIR_3)
-            for code in HUD_CHARS]
+    return [_c64_cell(chars, code, HUD_COLOUR) for code in HUD_CHARS]
 
 
 # --- the title page's font -----------------------------------------------

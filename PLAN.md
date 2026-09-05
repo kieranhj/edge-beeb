@@ -217,6 +217,27 @@ The tools: `tools/seed_art.py` (write the sheets from either conversion), `tools
 transparency rules, blank-character count for the starfield, the HUD-cell warning, and
 `--roundtrip`), `tools/export_palette.py`, and `tools/art/` behind them.
 
+**Still to do on the NuLA builds** (KC, 2026-09-05), none of them started:
+
+1. **Fade the loading screen out.** `fade_pal` is a cut under `GFX_NULA` (see the layer doc):
+   the memorial's fade down from the loading picture, its fade up, and the fade back out are all
+   thresholded rather than walked. A real one means scaling sixteen 12-bit colours towards
+   black, which wants 128-256 bytes of ramp table against bank 2's 86 free — so it is a memory
+   map job first and a code job second.
+2. **Correct the title screen palette for both NuLA builds, rasters included.** Two halves.
+   The credits' three inks are logicals 12/14/15 by decision 53, which the eight-colour build
+   needs and NuLA does not; and `ttl_raster` writes `&FE21` every scanline to cycle the zoom
+   bands, which under logical colour mapping (decision 64) is simply ignored, so the bands do
+   not pulse at all. Both want the title page to program its own NuLA entries instead — which
+   is also the shape of the answer to decision 53's three-colour limit
+   ([`docs/layer-9e-credits.md`](docs/layer-9e-credits.md)), so the two should be done together.
+3. **The C64's and the CPC's own intro screens, at their own palettes.** The loading picture is
+   `assets/TitlescreenBig.png`, hand-drawn in the BBC's eight, and it is the same picture in
+   every build. A NuLA build could show the original's instead, matching its artwork — the C64's
+   for `-Nula` and the Amstrad's for `-Nula -Cpc`. Neither has been located or ripped yet, so
+   that is the first step, and the loader's two-halves-and-a-ZX0-stream constraint (decision 38)
+   applies to whatever comes back.
+
 The zoom scroller's font and the loading screen stay as they are, KC explicitly; `mega.bin` is
 not a font either. Still to do: a `-Gallery` debug build, and the transport question
 (`PROPOSAL.md` §5.2, decision 4) — a mirrored shared folder or the artist committing to
@@ -277,6 +298,39 @@ is what this game wants. Found by KC on hardware, from `reference/cpc-nula-bug1.
 bytes of ramp table against bank 2's 86 free, and the crossfade needs three spare palette
 entries that sixteen real colours do not leave. Both are written up, and the second is decision
 53's constraint biting harder rather than differently.
+
+### Polish, parked: the CPC's grind sparks
+
+**KC, 2026-09-05, playing the `-Cpc` build**, alongside the hit-flash bug of decision 65: *"the
+player has a custom spark effect when grinding the walls - it doesn't turn to a solid colour as
+we have it today."* Correct, and it is a real difference between the two originals.
+
+The C64 flashes the ship: `sprite_pls_tmr` is set, `xploder_2` swaps `sprite_col_dcd`'s low
+nibble for its high one, and the player's dps `$0B-$11` go cyan → purple. We transcribe that
+and every build does it. **The Amstrad draws a different ship instead.**
+`PlayerFrameGrindList` is a second seven-entry frame list indexed by the same `PlayerFrame`
+0-6, and `PrintSprites` picks it whenever `GrindState` is non-zero — set to **2** on contact,
+not 1, because the top and bottom edges are tested on alternate frames and the state has to
+outlive one of them. The ship is replaced, never recoloured, and it sparks.
+
+**The frames rip cleanly and the ripper is committed**: `tools/rip_cpc_compiled.py`, which
+reads them back out of the compiled Z80 in `EG_Sprites_Player_Grind.asm` and **proves itself**
+on the way past — run over `EG_Sprites_Player.asm` it must reproduce SPRITES.BIN's frames 11-17,
+the player's own dp range, at 126 bytes of 126, all seven. `reference/grind-sparks-cpc.png` is
+what they look like.
+
+**It does not fit, which is why it is parked.** Boxed at both shifts they want **636 bytes in
+sprite bank 1 and 742 in bank 2**, and a `-Cpc` build has **21 and 86** free. The frame tables
+have room (seven more sit under the 128 stride) and no new `dp_dcd` entries are needed — it is
+purely pixels. The only room that exists anywhere near those two banks is the VGI tune streams
+they carry, 1,273 bytes in bank 1 and 1,351 in bank 2, which **a `-Akl` build removes
+entirely**. So this joins the win tune as a reason to prefer `MUSIC_AKL`, and it is gated on
+the same pending decision — KC's ear.
+
+What it would need beyond the bytes: seven frames appended to the CPC sprite banks, and one
+test in the draw path — slot 0 with its pulse timer running takes `frame + offset` and the
+identity LUT instead of the flash LUT. The `sprite_pls_tmr` the grind already sets is exactly
+the CPC's `GrindState`, including the 2, so no new state is needed.
 
 ### Open: the win tune
 
