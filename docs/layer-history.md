@@ -379,3 +379,119 @@ transparency is per byte, and the hit flash takes the whole sprite because there
 per-sprite colour to single out. **The compiled bullet is dropped in this build**, 13 bytes
 short of fitting in bank 3, so frame meters do not compare across the two. Decision 41,
 [`layer-8a-gfx-cpc.md`](layer-8a-gfx-cpc.md).
+
+**Three things changed on 2026-09-05, after KC played it.** *Recoloured* (decision 55): a pen is
+a **dither pair** now, not one BBC colour — Rich Talbot-Watkins's scheme approximates each of the
+CPC's 27 colours with two MODE 2 colours checkerboarded a pixel at a time, in the art's own
+coordinates so the pattern travels with the scenery. `reference/cpc-palette-map-to-bbc-mode2.png`
+is the chart and `bbc.dither_pair` the rule. *Panel and HUD* (decision 56): the switch reaches the
+status bar, out of `EG_Panel.asm` and `EG_GameFont.ASM` through `tools/cpc/paneldata.py`; its
+panel is four character rows to the C64's five, so it sits in rows 0–3 with row 4 black, and its
+HUD lands in the cells `hud_cell_lo/hi` already named. *The compiled bullet is back* (decision
+57): the 13 bytes bank 3 was short of were found by decisions 47 and 49, so both builds run the
+same code path and their frame meters compare again.
+
+## Layer 7b — the Arkos replay, behind `MUSIC_AKL`
+
+*Moved out of PLAN.md 2026-09-05. Live state — that it is parked on KC's ear, and the next
+steps in order — is in [`layer-7-music-arkos.md`](layer-7-music-arkos.md), which is where they
+were always pinned.*
+
+`.\build.ps1 -Akl` builds a second disc in which `src/aklplayer.asm` replays the **Arkos tracker
+data itself** and `src/ay2sn.asm` converts to the SN76489 every frame, in place of the VGI player
+decoding a pre-converted register log. The whole 349-second tune is 4,741 bytes that way, so
+player, converter and tune together are 7,640 and **fit in HAZEL alone** — the tune leaves bank 3
+and takes 12,288 bytes of it with it. It costs +854 µs on the worst frame and nine missed flips
+against seven, on the same brutal test.
+
+**Its size advantage is gone**: decision 48 got the whole tune into the VGI build too, so what is
+left to choose between them is purely how they sound. The replay itself is not in doubt —
+byte-exact against Arkos's own player over all 17,446 frames, and twelve fields captured out of
+the running game match the simulation uniquely. What is open is the *voicing*: `ym2sn.py` does
+whole-song analysis a per-frame converter cannot (a priority bass channel synthesised with
+periodic noise, the hardware envelope averaged across each frame), so the `-Akl` build is the tune
+re-voiced, not the same tune smaller. Decision 40,
+[`layer-7-music-arkos.md`](layer-7-music-arkos.md).
+
+## Layer 8 — the artist's PNGs — done
+
+Decisions 58–62 and 68, [`layer-8-art-pipeline.md`](layer-8-art-pipeline.md). `PROPOSAL.md`
+§5.2's Phase B: the characters, the sprites, the status panel, the HUD font, the title page's
+font and the palette are read from PNGs in `assets/art/`, seeded from the conversion the game
+already ran on, so the artist repaints a working game rather than starting from nothing.
+
+**Five sheets, all at 2:1** — `chars-bbc.png` 128×128 (256 characters of 4×8 fat pixels),
+`sprites-bbc.png` 192×336 (frames 0–118 of 12×21), `panel-bbc.png` 320×40 (the bar as a picture,
+at the size it appears), `hud-bbc.png` 128×8 and `titlefont-bbc.png` 128×16. The last three cost
+almost nothing to add: a panel cell, a HUD glyph, a title glyph and a character are all the same
+4×8 shape, so one reader does all five. **A sheet carries the logical colours it may use**, which
+is what keeps the title font on entries 12/14/15 where the credit crossfade needs it — they are
+the same RGB as 4/6/7, so the obvious rule would have looked right and faded the panel too.
+Grey `96,96,96` is see-through (sprites only); orange `255,128,0` marks a cell not drawn yet and
+falls back to the mechanical conversion, so a partial drop still builds a complete game.
+
+**No new build symbol**: the PNGs feed the same `src/data/*.bin` the build already INCBINs, and
+`--c64`/`--cpc` on the exporters still reach the two mechanical conversions. **The palette is a
+file** (`assets/art/palette.png` → `src/data/palette.asm`), which is what makes an eventual NuLA
+cheap — the exported data already stores a full 4-bit logical per fat pixel.
+
+**The level itself can be painted, decision 68.** `tools/paint_map.py` exports the assembled
+level as one PNG at 2:1, any range of tile columns, and reconciles it back into the charset by
+vote: an unchanged instance abstains, one changed instance wins, two changed differently is
+refused. Character bitmaps only — the tile table, the map and the character numbers do not move,
+so the 256-character budget cannot be overrun. `--c64`/`--cpc` draw the same level with the
+originals' charsets at their own colours, and the C64 one comes out byte for byte identical to
+`reference/map-c64.png`. `--grid` and `tools/art_grid.py` write transparent guide layers.
+
+The tools: `seed_art.py`, `validate_art.py` (what a drop goes through on receipt),
+`export_palette.py`, `paint_map.py`, `art_grid.py`, and `tools/art/` behind them.
+
+## Layer 8b — the two VideoNuLA test builds — done
+
+Decisions 63, 64 and 67, [`layer-8b-nula.md`](layer-8b-nula.md). `.\build.ps1 -Nula` is the C64
+artwork at the C64's own sixteen colours; `-Nula -Cpc` is the Amstrad's at its own sixteen pens.
+References rather than candidates: sixteen logical colours and sixteen source colours, so nothing
+is approximated, and decision 11's hue collapse and decision 55's dither both go away.
+`tools/art/nula.py` bypasses the PNG sheets deliberately — a NuLA build is the *original* artwork
+at its own colours, not the artist's work.
+
+The register pair and byte order come from the VideoNuLA User Guide and the encoder reproduces
+its worked example. **Decision 64 corrected the one thing decision 63 inferred rather than
+measured**: NuLA's default is to MIMIC the Video ULA, composing `&FE21` in front of `&FE23`, so
+the titles' `ttl_raster` was leaving logical 15 on physical 7 and the CPC art's background pen came
+back blue. `&FE22 = &11` selects logical colour mapping and makes `&FE21` ignored. Found by KC on
+hardware, from `reference/cpc-nula-bug1.png`. **Decision 67 then found that jsbeeb emulates the
+NuLA palette after all**, which decisions 63 and 64 had both denied — and that belief is exactly
+what let the `&FE21` mistake reach hardware.
+
+**The fades are cuts and the credit crossfade does not run** in these builds: a real NuLA fade
+wants 128–256 bytes of ramp table against bank 2's 86 free, and the crossfade needs three spare
+palette entries that sixteen real colours do not leave — decision 53's constraint biting harder
+rather than differently. Both are outstanding and are listed in PLAN.md.
+
+## Main RAM's ceiling, and how it moved
+
+**The ceiling for anything read in play is `SPR_SAVE` = `&2000`, not `LOAD_STREAM`.** `&2000-&2FFF`
+is the blitter's saved-background area and is rewritten every frame from the first sprite onwards.
+Nothing was checking, and `explosion_dirs` drifted over the line and the player's explosion pieces
+stopped flying (`BUGS.md` #13, fixed). `main.asm` asserts the ceiling now and the listing prints
+CODE CEILING beside it.
+
+**Layer 9d is where the boot loader moved out**, which is what PLAN.md and the memory map both said
+the next thing wanting main-RAM code would have to do: `load_stream`, `unpack_to`, `panel_init`,
+`load_bank`, `unpack_andy` and `load_hazel` are dead before the first sprite is drawn and sit above
+`code_end` now, with `!BOOT` and the depacker. That took the ceiling from 7 bytes free to 153, and
+9d, 9e and 9f have since spent 108 of them. `LOAD_STREAM` went from `&2200` to `&2400` with it,
+which costs the loading screen headroom: `LOADSC2`'s stream has 252 bytes to `&3000` rather than
+764, and `tools/make_disc.py` refuses an image that overruns it.
+
+## Two things built and taken out again
+
+Both are worth not rediscovering.
+
+**ESCAPE at any time**, rather than only from inside the pause: it is polled every frame, so
+holding it re-entered `life_lost` and rebuilt the player's explosion pieces on the spot. It would
+want a debounce; abort stays a pause-only key (decision 54).
+
+**Timing the rupture switch to the five rows after VSync** — `BUGS.md` #14. Two placements in
+`title_page` were tried and both were worse than doing nothing.
