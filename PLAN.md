@@ -193,6 +193,11 @@ Decision 41, [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md), described i
 [`docs/layer-history.md`](docs/layer-history.md). A comparison build like `MUSIC_AKL`, and the
 choice between it, the C64 conversion and the hand-authored redraw of Layer 8 is KC's.
 
+**Recoloured 2026-09-05 (decision 55).** A pen is a *dither pair* now, not one BBC colour:
+Rich Talbot-Watkins's scheme approximates each of the CPC's 27 colours with two MODE 2
+colours checkerboarded a pixel at a time. `reference/cpc-palette-map-to-bbc-mode2.png` is the
+chart, `bbc.dither_pair` the rule, and the flat nearest-hue table it replaces is gone.
+
 Still to do: real-hardware test, release build, publish. The starfield is 9c above, and is the
 CPC's rather than the C64's.
 
@@ -219,7 +224,7 @@ bitshifters.github.io for testing.
 | 7 — music | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04, the whole 349 s tune in four regions |
 | 7b — the Arkos replay | [`docs/layer-7-music-arkos.md`](docs/layer-7-music-arkos.md) | **parked 2026-09-04**, behind `MUSIC_AKL`. Works; next steps pinned in the doc |
 | 8 — graphics pipeline B | | |
-| 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **built 2026-09-04**, behind `GFX_CPC`, and all eight flag combinations assemble. Which artwork ships is KC's choice |
+| 8a — the CPC artwork | [`docs/layer-8a-gfx-cpc.md`](docs/layer-8a-gfx-cpc.md) | **built 2026-09-04**, behind `GFX_CPC`, and all eight flag combinations assemble; **recoloured 2026-09-05** to Rich's MODE 2 dither pairs (decision 55). Which artwork ships is KC's choice |
 | 9a — loading screen, ZX0 disc | [`docs/layer-9-loader.md`](docs/layer-9-loader.md) | done 2026-09-04 |
 | 9b — Q mutes the tune | [`docs/layer-7-music.md`](docs/layer-7-music.md) | done 2026-09-04 |
 | 9c.1 — the parallax starfield | [`docs/layer-9c-starfield.md`](docs/layer-9c-starfield.md) | done 2026-09-04, decisions 50 and 51 |

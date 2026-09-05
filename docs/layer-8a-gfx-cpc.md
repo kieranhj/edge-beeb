@@ -66,11 +66,59 @@ says so, and reversing is what makes 13 of the 16 pens agree with the art disc. 
 that differ are 13, 14 and 15, and 13 and 14 are both used, so the choice is visible: the
 art disc would draw those explosions orange where the game draws them blue and magenta.
 
-Mode 0 gives fifteen colours against MODE 2's eight, so `bbc.CPC_TO_BBC` collapses pairs.
-It is **by hue, not by RGB distance**: nearest-RGB sends pastel yellow, pink, pastel blue
-and bright white all to white and flattens the art. The light blues all go to cyan, which
-is what decision 11 does with the C64's own light blue. That table is the one dial to turn
-if the result wants tuning.
+### A pen is a dither pair (decision 55)
+
+Mode 0 gives sixteen pens out of 27 possible colours against MODE 2's eight. The first
+attempt at this build sent each pen to one BBC colour through a hand-written
+`bbc.CPC_TO_BBC` table, by hue rather than by RGB distance, and it flattened the art: pens
+8, 10, 12 and 13 all landed on cyan, pens 2 and 11 both on yellow, pens 1 and 5 both on
+red. Half-brightness disappeared entirely — the CPC's dark red, dark green, dark blue and
+dark yellow came back at full saturation — and Smila's shading with them.
+
+**Rich Talbot-Watkins's scheme replaces it.** Each CPC colour becomes *two* MODE 2 colours
+checkerboarded a pixel at a time, so MODE 2's eight corners of the RGB cube reach the
+middle levels the CPC has and this machine has not. `reference/cpc-palette-map-to-bbc-mode2.png`
+is Rich's chart of all 27, and `bbc.dither_pair` is the rule that generates it — verified
+cell for cell against the chart, all 27, no exceptions:
+
+> of the 36 unordered pairs of the eight MODE 2 colours, take those whose per-channel
+> average is nearest the target; among those, choose **the two closest in brightness**;
+> then order the pair **darkest first**.
+
+Both tie-breaks matter. Nearest-average alone is ambiguous over most of the middle of the
+cube — mid grey (128,128,128) is red+cyan as readily as magenta+green, and (255,128,128)
+is red+white as readily as yellow+magenta — and in every such case the pair closer in
+brightness is the one that reads as a colour rather than as two colours flickering.
+Brightness is Rec.601 luma; nothing in the 27 ties on it. "Darkest first" then fixes the
+phase, which is what stops two adjacent colours dithering in antiphase and cancelling.
+
+Nine of the game's sixteen pens dither and seven are colours MODE 2 already has:
+
+| pen | CPC | BBC | | pen | CPC | BBC |
+|---|---|---|---|---|---|---|
+| 0 | black | black | | 8 | pastel blue | magenta + cyan |
+| 1 | dark red | black + red | | 9 | bright white | white |
+| 2 | pastel yellow | yellow + white | | 10 | bright cyan | cyan |
+| 3 | dark blue | black + blue | | 11 | dark yellow | red + green |
+| 4 | dark green | black + green | | 12 | bright cyan | cyan |
+| 5 | bright red | red | | 13 | sky blue | blue + cyan |
+| 6 | pink | magenta + yellow | | 14 | mauve | blue + magenta |
+| 7 | bright blue | blue | | 15 | black (unused) | black |
+
+The checkerboard is `(x + y) & 1` in the **art's own** coordinates — the character's, the
+sprite frame's — not the screen's, and it is baked into the exported bitmaps. That is the
+only phase the hardware will hold: the background scrolls a pixel a frame and a sprite
+moves where it likes, so a screen-aligned dither would crawl over both. Art-aligned, the
+texture travels with the scenery. A character is 4 pixels by 8 and both are even, so every
+character in a tile and every tile on the map share one continuous checkerboard; a sprite
+carries its own, and its two pixel-shift banks carry the same one shifted with it.
+
+The cost is compression, and only in the sprite banks: the dither is noise to ZX0, so
+`BANK1` goes from 7,137 packed bytes to 7,606 and `BANK2` from 6,793 to 7,301. The
+charset is unmoved — `BANK0` 5,756 to 5,708, marginally *better*, the checkerboard being a
+regular pattern where the sprites' is broken up by transparency — and `BANK3` is unchanged
+at 8,680, holding no art. The disc image grows 1,024 bytes to 48,384; every stream keeps
+several kilobytes of headroom and nothing else in the build moves.
 
 Two things fall out of the CPC art being sixteen-colour rather than four:
 

@@ -50,34 +50,37 @@ C64_TO_BBC = {
 
 # --- CPC ------------------------------------------------------------------
 
-# The CPC pens, in Mode0Pal order, as BBC physical colours (decision 41, the
-# GFX_CPC build). Mode 0 gives Smila fifteen colours against MODE 2's eight,
-# so this table collapses pairs; it is by hue, not by RGB distance, because
-# nearest-RGB sends pastel yellow, pink, pastel blue and white all to white
-# and flattens the art. Pen 15 is black and unused; pen 12 is the same colour
-# as pen 10 (&53 and &59 are both firmware bright cyan).
+# Mode 0 gives Smila 27 possible colours against MODE 2's eight, so a CPC
+# colour becomes a PAIR of BBC colours checkerboarded together (decision 55).
+# The rule is Rich Talbot-Watkins's, and reference/cpc-palette-map-to-bbc-mode2.png
+# is his chart of all 27; `dither_pair` reproduces every cell of it exactly:
 #
-# The light blues all go to cyan, which is what decision 11 does with the
-# C64's own light blue.
+#   of the 36 unordered pairs of the eight MODE 2 colours, take those whose
+#   per-channel average is nearest the target, and among those choose the two
+#   closest in brightness; then order the pair darkest first.
 #
-CPC_TO_BBC = {
-    0: BLACK,       # &54 black
-    1: RED,         # &5C red
-    2: YELLOW,      # &43 pastel yellow
-    3: BLUE,        # &44 blue
-    4: GREEN,       # &56 green
-    5: RED,         # &4C bright red
-    6: MAGENTA,     # &47 pink - as C64_TO_BBC sends the C64's light red
-    7: BLUE,        # &58 bright blue
-    8: CYAN,        # &5F pastel blue
-    9: WHITE,       # &4B bright white
-    10: CYAN,       # &59 bright cyan
-    11: YELLOW,     # &5E dark yellow
-    12: CYAN,       # &53 bright cyan
-    13: CYAN,       # &57 sky blue
-    14: MAGENTA,    # &5D mauve
-    15: BLACK,      # &54 black, unused
-}
+# The two tie-breaks are what stop the flat mapping's damage. Nearest-average
+# alone leaves ties everywhere on the middle levels - mid grey is red+cyan as
+# readily as magenta+green - and the closest-in-brightness pair is the one that
+# reads as a colour rather than as two colours. Brightness is Rec.601 luma.
+
+BBC_LUMA = [0.299 * r + 0.587 * g + 0.114 * b for r, g, b in BBC_RGB]
+
+
+def dither_pair(rgb):
+    """One RGB triple as (dark, light), two BBC physical colours to checkerboard.
+    A colour MODE 2 has exactly returns that colour twice."""
+    best = None
+    for a in range(8):
+        for b in range(a, 8):
+            err = sum(((BBC_RGB[a][k] + BBC_RGB[b][k]) / 2 - rgb[k]) ** 2
+                      for k in range(3))
+            key = (err, abs(BBC_LUMA[a] - BBC_LUMA[b]))
+            if best is None or key < best[0]:
+                best = (key, (a, b))
+    a, b = best[1]
+    return (a, b) if BBC_LUMA[a] <= BBC_LUMA[b] else (b, a)
+
 
 # Sprites cannot use logical 0 (it is the transparency key for the mask
 # table), so black inside a sprite is written as logical 8, which the

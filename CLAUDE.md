@@ -83,7 +83,13 @@ python tools\make_disc.py build\EDGE-RAW.SSD build\EDGE.SSD build\EDGE-200K.SSD
 
 `GFX_CPC=1` (`.\build.ps1 -Cpc`) draws the same game with the Amstrad CPC port's
 artwork - all 119 sprite frames and all 256 characters, from `source_cpc/` and its work discs -
-instead of the C64's (decision 41). **The CPC port renumbered nothing**, so the tile table, the
+instead of the C64's (decision 41). **A CPC pen is a DITHER PAIR of MODE 2 colours**
+(decision 55, Rich Talbot-Watkins's scheme): mode 0 has 27 colours to MODE 2's eight, so each
+one is approximated by two checkerboarded a pixel at a time - nearest per-channel average,
+tie-broken by closest brightness, ordered darkest first, and `bbc.dither_pair` reproduces
+`reference/cpc-palette-map-to-bbc-mode2.png` cell for cell. The checkerboard is `(x + y) & 1`
+in the **art's** coordinates, baked into the bitmaps, so it travels with the scenery as it
+scrolls instead of crawling over it. **The CPC port renumbered nothing**, so the tile table, the
 map, `col_decode`, the waves, `dp_dcd`, the panel and the titles are shared and only the
 `INCBIN` changes; `tools/export_tiles.py --cpc` and `tools/export_sprites.py --cpc` write the
 data and `tools/render_bbc.py --cpc` renders it back. It writes `build/EDGE-CPC*.SSD` with disc
