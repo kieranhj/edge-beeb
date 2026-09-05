@@ -2,7 +2,7 @@
 
 Writes reference/sprite-sheet-cpc.png: 192 x 315, an 8 x 15 grid of 24 x 21 cells,
 frames 0-118 in row-major order with cell 119 blank - byte for byte the layout
-of reference/sprite-sheet.png, whose only difference is a sixteenth row of
+of reference/sprite-sheet-c64.png, whose only difference is a sixteenth row of
 spare cells, so the two can be flicked between cell for cell.
 
 Source: SPRITES.BIN off Smila's work disc `source_cpc/Work Disks/edge_sprites2.dsk`

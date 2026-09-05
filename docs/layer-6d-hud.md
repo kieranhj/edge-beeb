@@ -175,7 +175,7 @@ bits colour, bit 4 fatal" and `char_colour` masks with 7. The panel exporter was
 the one place that did not.
 
 One Layer 8 consequence worth remembering: the default build takes its panel
-from `assets/art/panel.png`, so fixing a *conversion* now needs a re-seed as
+from `assets/art/panel-bbc.png`, so fixing a *conversion* now needs a re-seed as
 well as an exporter change. The sheets were still unedited, so re-running
 `tools/seed_art.py` was safe; once the artist has work in them it would not be,
 and the fix would have to be applied to the PNGs instead.

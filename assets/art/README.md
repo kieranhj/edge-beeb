@@ -8,6 +8,11 @@ these files.
 All five sheets are seeded with the current conversion of the C64 original, so
 you are always painting over a working game rather than starting from nothing.
 
+They are the ones ending **`-bbc`** — `chars-bbc.png`, `sprites-bbc.png` and so
+on. That suffix means "the BBC's own artwork", as against the two originals we
+can send you to work from, which are marked `-c64` and `-cpc`. A `-grid` file is
+a guide layer, not artwork; see below.
+
 ## The palette — eight colours, and that is all there is
 
 `palette.png` is the palette: sixteen pixels, one per colour slot. There is no
@@ -48,7 +53,7 @@ roughly the way they will look on a TV. **Always paint in 2×1 blocks** — a
 1-pixel-wide mark is half a pixel and we cannot use it. In Aseprite, set the
 brush to 2×1 and it takes care of itself.
 
-## `chars.png` — the scenery, 128 × 128
+## `chars-bbc.png` — the scenery, 128 × 128
 
 256 characters, 16 to a row. Each is one cell of 8 × 8 image pixels — **4
 screen pixels wide, 8 rows tall**.
@@ -56,8 +61,10 @@ screen pixels wide, 8 rows tall**.
 The level is built out of these: 211 tiles of 4 × 4 characters, laid out in a
 map 302 tiles long. The tile definitions and the map are the original's and
 stay as they are, so **repainting a character repaints every tile that uses
-it** — the charset is reused about thirteen times over. That is the whole
-reason you paint characters and not the level.
+it** — each character is used in about nine of the 211 tiles, and lands about
+forty times over the level as it is laid out. That is the whole reason you
+paint characters rather than the level, and if you would rather paint the level
+anyway, see below: we can do that too.
 
 To see what your characters look like assembled, ask for a fresh render — we
 regenerate `tiles.png` (all 211 tiles) and `map.png` (the whole level, end to
@@ -75,7 +82,7 @@ Three things to keep in mind:
 3. **No transparency here.** The scenery is opaque; the grey key is a sprite
    thing only.
 
-## `sprites.png` — the ships and everything that moves, 192 × 336
+## `sprites-bbc.png` — the ships and everything that moves, 192 × 336
 
 128 cells, 8 to a row. Frames **0–118** are the game's; 119–127 are spare and
 ignored. Each cell is 24 × 21 image pixels — **12 screen pixels wide, 21 rows
@@ -96,7 +103,7 @@ you get exactly that. If you use colour more freely — which you are welcome to
 — the flash recolours the whole sprite instead. Both look fine; we just check
 which one your sheet is going to get and tell you.
 
-## `panel.png` — the status bar, 320 × 40
+## `panel-bbc.png` — the status bar, 320 × 40
 
 This one is not a sheet of cells, it is a **picture**: the status bar exactly as
 it appears across the top of the screen, at the size it appears. 40 characters
@@ -120,7 +127,7 @@ replaced. The C64's bar leaves them empty and lets the digits sit on black; the
 Amstrad's paints a background into them and lets the digits sit on that. Either
 works — we just tell you which you have done, so it is never a surprise.
 
-## `hud.png` — the digits and the life marker, 128 × 8
+## `hud-bbc.png` — the digits and the life marker, 128 × 8
 
 Thirteen small cells in a row, each 8 × 8 image pixels (4 screen pixels by 8) —
 the same size as one character:
@@ -132,14 +139,14 @@ the same size as one character:
 ```
 
 These are stamped into the cells listed above whenever the score or the lives
-change, so they have to read against whatever background `panel.png` puts
+change, so they have to read against whatever background `panel-bbc.png` puts
 behind them. Four pixels is not much width for a digit — the current ones use a
 bright body with a darker shadow pixel, which is what makes them legible on
 eight colours, and that is worth keeping in mind rather than copying.
 
 Cells 13–15 are spare and ignored.
 
-## `titlefont.png` — the credits lettering, 128 × 16
+## `titlefont-bbc.png` — the credits lettering, 128 × 16
 
 32 cells, 16 to a row, each 8 × 8 image pixels (4 screen pixels by 8) — the same
 size as a character. In order: blank, then **A–Z**, then `!` `.` `,` `-` `?`.
@@ -160,6 +167,48 @@ screen a palette of its own — so if three colours is really cramping the
 lettering, say so and we will look at it rather than you working around it.)*
 
 The credit **text** is not in this file; if you want wording changed, just say.
+
+## Guide layers — turn them on to look, off to paint
+
+Ask us for the **guide layers** and you get one PNG per sheet, exactly the same
+size, transparent except for lines: `chars-grid.png`, `sprites-grid.png` and so
+on. Open one as a layer on top of the sheet.
+
+Each shows the cell boundaries, with **every fourth one brighter** so you can
+count along four at a time, and the 2 × 1 pixel pairs inside them dotted, so a
+half-width mark shows up before it becomes an error.
+
+`sprites-bbc.png` has cells big enough to carry their own frame numbers, so its
+guide has them written in. The others do not — a character cell is only 8
+pixels across and a number that size covers the character — so on those the
+every-fourth lines are the ruler. When we write to you about "character 137",
+count 8 rows of 16 down and 9 across.
+
+They are guides and not art. Never paint on one, never flatten one into a
+sheet, and don't send them back — if a sheet arrives with a grid baked into it
+we will bounce it, and our tools refuse anything with transparency in it for
+exactly that reason.
+
+## Painting the level itself
+
+If you would rather paint the scenery in place than character by character, we
+can send you **the level as one picture** — any stretch of it, or all 302 tile
+columns at 9664 × 160 — with its own guide layer showing where each tile and
+each character begins. Paint on it, send it back, and we read it into
+`chars-bbc.png` for you.
+
+One thing to know before you do, and it is the whole catch: **a character you
+change changes everywhere it is used.** Each one appears in about nine of the
+211 tiles and about forty times over the level, so an edit will land in places
+that are not on the piece you are painting. That is not a problem to avoid —
+it is how the level fits in memory at all — but it is why the tile boundaries
+on the guide layer matter: an edit stops travelling at the edge of a tile.
+
+If you paint the same character two different ways in two places, we get told
+about it with both locations and we come back to you rather than picking one.
+
+We can also send you the same level drawn in the **C64's** original colours or
+the **Amstrad's**, at the same size, to work from side by side.
 
 ## Sending work back
 

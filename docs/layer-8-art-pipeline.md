@@ -24,8 +24,8 @@ and five tools beside it:
 | `tools/seed_art.py` | writes the sheets and the palette from the conversion the game runs on today (`--cpc` for the Amstrad's, `--blank` for a redraw from nothing) |
 | `tools/validate_art.py` | what a drop from the artist goes through on receipt |
 | `tools/export_palette.py` | `palette.png` → `src/data/palette.asm`, the bytes `setup_display` writes |
-| `tools/export_panel.py` | `panel.png` and `hud.png` → `panel.bin` and `hud.bin`; the C64 reading it used to do is `mechanical.py`'s now |
-| `tools/export_title.py` | `titlefont.png` → the glyph half of `title.bin`. The credit *text* stays in the tool: it is not art |
+| `tools/export_panel.py` | `panel-bbc.png` and `hud-bbc.png` → `panel.bin` and `hud.bin`; the C64 reading it used to do is `mechanical.py`'s now |
+| `tools/export_title.py` | `titlefont-bbc.png` → the glyph half of `title.bin`. The credit *text* stays in the tool: it is not art |
 | `tools/render_bbc.py` | unchanged in purpose, but reads the palette file now instead of assuming logical = physical `AND 7` |
 
 `export_tiles.py` and `export_sprites.py` take their art from the PNGs by
@@ -37,18 +37,18 @@ INCBINs.
 ## The five sheets
 
 Both at 2:1 — a screen fat pixel is 2 image pixels across and 1 down, which is
-the aspect the Beeb shows and the scale `reference/sprite-sheet.png` already
+the aspect the Beeb shows and the scale `reference/sprite-sheet-c64.png` already
 used. `sheets.Sheet` carries the geometry and `validate_art.py` proves every fat
 pixel is a solid block, so a stray half-pixel is an error with coordinates
 rather than whichever half the reader happened to sample.
 
 ```
-assets/art/chars.png    128 x 128   256 characters, 16 a row, cell 8 x 8
-assets/art/sprites.png  192 x 336   128 slots,  8 a row, cell 24 x 21
+assets/art/chars-bbc.png    128 x 128   256 characters, 16 a row, cell 8 x 8
+assets/art/sprites-bbc.png  192 x 336   128 slots,  8 a row, cell 24 x 21
                                     frames 0-118 are the game's
-assets/art/panel.png    320 x 40    the status bar as a picture
-assets/art/hud.png      128 x 8     16 slots, 13 used, cell 8 x 8
-assets/art/titlefont.png
+assets/art/panel-bbc.png    320 x 40    the status bar as a picture
+assets/art/hud-bbc.png      128 x 8     16 slots, 13 used, cell 8 x 8
+assets/art/titlefont-bbc.png
                         128 x 16    32 glyphs, 16 a row, cell 8 x 8
 ```
 
@@ -229,6 +229,187 @@ transparency key alone on its own, which is what `CPC_KEEP` said by hand.
 * **beebasm will not `INCLUDE` inside a braced block.** `setup_display` is one,
   which is the mechanical reason `palette.asm` is included outside it; the
   reason it is in main RAM at all is the space argument above.
+
+## Painting the level itself
+
+Decision 68, and `tools/paint_map.py`. `chars-bbc.png` is 256 characters on a grid:
+the right thing to hand the machine, a poor thing to paint on, because a
+character is 4 fat pixels by 8 rows and means nothing on its own.
+
+```
+python tools/paint_map.py export            the whole level, 302 tile columns
+python tools/paint_map.py export 40 60      tile columns 40-59 only
+python tools/paint_map.py import assets/art/map/map_c040-c059.png
+```
+
+`export` assembles the level from `chars-bbc.png`, the tile table and the map and
+writes it to `assets/art/map/map_cAAA-cBBB.png` at 2:1 - the whole level is
+9664 x 160, twenty tile columns is 640 x 160. The range is in the filename
+because `import` reads it back from there. The directory is gitignored: the
+canvas is derived from `chars-bbc.png` and is the artist's working file, not a
+source.
+
+**The tile table, the map and the character numbers do not move.** This tool
+only ever writes the 8K of character bitmaps, which is what makes it safe:
+there is nowhere for a 257th character to go, and the importer never tries to
+make one. Decision 3 and decision 58 are untouched; the picture stays buildable
+by construction.
+
+### The reuse is the whole problem
+
+232 non-blank characters are placed 9,356 times, a reuse factor of **forty**.
+One edit lands in about forty places, most of them off whatever canvas is being
+painted. So the importer's real work is not reading pixels but deciding what
+the artist meant when a character appears twenty times in front of him. Every
+instance is a vote:
+
+* an instance identical to what the character already was **abstains** - which
+  is what lets one edited arch outvote its untouched twin without the tool
+  having to guess;
+* **one** changed instance wins, however many unchanged ones sit beside it.
+  That is the normal way to work;
+* **two** instances changed to two different things is a conflict and is
+  refused, naming both map columns and printing a hex sketch of each variant so
+  they can be told apart without opening anything. `--vote` takes the majority
+  instead, and names any character that had no majority and was decided by
+  reading order.
+
+A cell painted entirely in the not-yet-drawn key resets that character to
+undrawn, exactly as it means on the sheets.
+
+### The two originals, at their own colours
+
+```
+python tools/paint_map.py export --c64      the C64's charset, Pepto palette
+python tools/paint_map.py export --cpc      the Amstrad's, at its own pens
+```
+
+The same level, from the same tile table and the same map, drawn with the
+originals' charsets at the originals' *own* colours - so without decision 11's
+hue collapse and without decision 55's dither. Same size, same 2:1 aspect, any
+range of tile columns, so what the artist is copying lies beside what he is
+painting.
+
+They go to `tools/output/` rather than `assets/art/map/`, and `import` will not
+read them back. Sixteen colours are not eight; a reference is not a canvas, and
+keeping them in different directories is what says so.
+
+The source colours come from `tools/art/nula.py` - the NuLA builds needed
+exactly this and already had it - so this is one call, not a second conversion
+to keep in step. **The C64 render comes out byte for byte identical to
+`reference/map-c64.png`**, which is worth knowing twice over: it says the whole
+level render agrees with the one that has been in the repo since Layer 0, and
+it proves the character grid, the tile reader and the map reader that the
+paintable canvas is built on with a diff rather than an argument.
+
+### The guide layer
+
+```
+python tools/paint_map.py export --grid     and a guide beside the picture
+```
+
+A second file, `..._c040-c059-grid.png`, the same size as the picture and
+transparent everywhere it is not a line: the **character** grid dotted, the
+**tile** grid solid, and the **tile column number** every four columns, each
+digit carrying a dark halo because the top of the level is as often bright
+scenery as it is sky.
+
+It is a **layer**, dropped over the canvas in the paint program and turned off
+to paint. It is not drawn into the picture, because anything drawn into the
+picture would be read straight back as art - and `import` refuses a file with
+any transparency in it outright, before it even looks at the name, since the
+guide's own filename is the likeliest way to arrive there by mistake. An
+opaque RGBA save from the paint program still imports; only actual transparency
+is refused.
+
+`--grid` works with `--c64` and `--cpc` too, the overlay being the same size
+whichever picture it is for.
+
+**The five sheets get the same treatment**, from `tools/art_grid.py`:
+
+```
+python tools/art_grid.py            all five
+python tools/art_grid.py chars      just that one
+```
+
+`assets/art/<sheet>-grid.png`, same size, transparent: cell boundaries solid,
+**every fourth one brighter**, and the **2 x 1 fat pixel pairs** inside them
+dotted - which is the rule `validate_art.py` enforces and the artist otherwise
+has to hold to by eye.
+
+**Numbers only where the cell has room to spare for them**, which the test puts
+at half the cell's width: the sprite sheet, at 24 pixels across, and nothing
+else. Two earlier versions got this wrong in opposite directions and both were
+built and looked at, which is the only way this kind of thing gets settled:
+
+* the first let a label overrun into its neighbour (`$FF` in an 8-pixel cell)
+  and every row of the charset came out as one unreadable stripe;
+* the second made it fit exactly (`FF`, 7 pixels of 8) and buried the character
+  underneath it - KC: *"it's just too dense"*. A label that fits is not the
+  same as a label that belongs.
+
+So the small sheets get the every-fourth rule instead, which is a ruler that
+costs no pixels at all: counting four at a time to the cell you want beats
+reading a numeral drawn over the thing you are trying to see. The `$` and the
+hex path went with it - nothing needs them once only the sprite sheet is
+numbered.
+
+`tools/art/guide.py` is the shared half - the 3 x 5 font, the halo, the rules -
+because the level canvas and the sheets want the same thing at two scales.
+
+It exists because the tile grid is the one thing the artist cannot see and
+needs constantly. Reuse follows the tile boundaries: where a tile begins is
+where an edit stops travelling, and a character straddling one is a character
+that will turn up somewhere he was not looking.
+
+### Two warnings the canvas can give and the sheet cannot
+
+Both are mechanics that live in the art, and both are named per character
+rather than counted:
+
+* **the starfield.** `src/bank1.asm` plots a star only where the play buffer
+  byte reads exactly zero, so ink added to an all-black character puts scenery
+  where stars used to be - and taking a character all-black adds stars.
+* **collision.** It is bit 4 of `col_decode` per character number and cannot be
+  painted either way, so a fatal character repainted to look like open sky is
+  just as fatal, and a harmless one repainted to look solid is still flown
+  through.
+
+Colour rules are the sheets' rules, unrelaxed: exact palette match, solid 2 x 1
+fat pixels, an unknown colour an error with coordinates. The round trip is the
+check that the path is transparent - `export` then `import` on an untouched
+canvas rewrites `chars-bbc.png` byte for byte, at any range and over the whole
+level.
+
+### Why not let him repaint freely
+
+The version that was asked for first is a free-form repaint with the charset,
+the tile table and the map all re-derived from the picture. That is a
+constrained fit, not a conversion, and the constraint is hard: 256 characters
+in 8K, 211 tiles, the map fixed at 302 x 5, and **bank 0 has nine free bytes**
+in a DEV build so none of them can grow.
+
+`reference/beeb-artwork-example.jpg` is what that would have to survive. It is
+a 48 x 40 character picture in the target style - measured, not assumed: its
+pixel pairs match on phase 0 (mean pair difference 3.4 against 19.2 off-phase)
+and it quantises cleanly onto the eight logical colours. It needs **529 unique
+characters** for 717 non-blank cells. Some of that is the JPEG, so the
+inflation was calibrated by re-compressing real map crops to the same
+quantisation residual: genuine tile art goes from a unique-per-non-blank ratio
+of 0.22-0.26 clean to 0.38-0.57 damaged. That puts the example's true cost at
+**300-380 characters for one 48 x 40 window**, against a whole-level budget of
+256 of which the level spends 232. A 48 x 20 window of the real map uses 95.
+
+So free-form repainting costs about twice what the C64 art costs per unit area,
+and would need a clustering pass to merge near-identical cells down to 256 - a
+lossy optimiser deciding what the art looks like. Painting on the map with the
+tile boundaries kept gives the artist the same canvas and keeps that decision
+his.
+
+The example, incidentally, is **not** a repaint of anywhere in the level: its
+ink mask and its per-column silhouette were slid over all 302 tile columns at
+every offset and the best agreement is 0.67 against an ink fraction of 0.29,
+which is noise. It is an original mock-up of the look.
 
 ## Left for later
 

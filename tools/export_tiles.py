@@ -15,7 +15,7 @@ Writes to src/data/:
 Colours: bit pair 00 -> black, 01 -> brown ($d022), 10 -> white ($d023),
 11 -> col_decode low 3 bits; each then through C64_TO_BBC (decision 11).
 
-The charset comes from assets/art/chars.png (Layer 8): the artist paints there
+The charset comes from assets/art/chars-bbc.png (Layer 8): the artist paints there
 and the exporter resolves every pixel through assets/art/palette.png. A
 character he has not drawn yet falls back to the C64 mechanical conversion, so
 a partial drop still builds a complete game. --c64 bypasses the PNGs and takes

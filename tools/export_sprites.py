@@ -33,7 +33,7 @@ colour, which is true of the C64 art (sprite_col_dcd never names blue or
 white as the per-sprite colour). Hand-drawn art with more colours needs
 per-colour tables instead: see docs/layer-3-sprites.md.
 
-The frames come from assets/art/sprites.png (Layer 8): the artist paints there
+The frames come from assets/art/sprites-bbc.png (Layer 8): the artist paints there
 and every pixel resolves through assets/art/palette.png. A frame he has not
 drawn yet falls back to the C64 mechanical conversion, so a partial drop still
 builds a complete game. --c64 bypasses the PNGs and takes the mechanical

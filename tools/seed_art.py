@@ -4,8 +4,8 @@ game runs on today, so he starts from a working picture rather than blank.
   python tools/seed_art.py           the C64 conversion (the default build)
   python tools/seed_art.py --cpc     the Amstrad port's art instead
 
-Writes assets/art/palette.png, chars.png, sprites.png, panel.png, hud.png and
-titlefont.png, plus palette.gpl and palette.act for Aseprite and GIMP.
+Writes assets/art/palette.png, chars-bbc.png, sprites-bbc.png, panel-bbc.png, hud-bbc.png and
+titlefont-bbc.png, plus palette.gpl and palette.act for Aseprite and GIMP.
 
 --cpc seeds the four sheets the Amstrad port has its own art for; the title
 font is not one of them, the two ports sharing the title page, so it is always

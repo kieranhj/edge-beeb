@@ -52,7 +52,7 @@ PALETTE_PNG = os.path.join("assets", "art", "palette.png")
 ENTRIES = 16
 
 # Not colours. The grey is the sheets' transparency key and is already what
-# reference/sprite-sheet.png uses; the orange marks a cell the artist has not
+# reference/sprite-sheet-c64.png uses; the orange marks a cell the artist has not
 # done yet, which falls back to the mechanical conversion (partial drops).
 KEY_TRANSPARENT = (96, 96, 96)
 KEY_FALLBACK = (255, 128, 0)

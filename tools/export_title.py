@@ -11,7 +11,7 @@ Glyphs $00-$1f are all the title needs: $00 blank, $01-$1a A-Z, then ! . , - ?
 The mapping is the original's own `scroll_decode`, which turns a C64 screen
 code into one of those.
 
-The GLYPHS come from assets/art/titlefont.png (Layer 8, decision 62); the
+The GLYPHS come from assets/art/titlefont-bbc.png (Layer 8, decision 62); the
 credit TEXT below does not, because it is not art - it is five lines that have
 to be 38 characters and to say true things, and it lives here where the
 assertion that checks both can see it. --c64 bypasses the PNG and takes the

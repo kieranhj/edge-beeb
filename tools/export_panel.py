@@ -51,7 +51,7 @@ src/data/hud.bin, 208 bytes
         1-10    digits '0' to '9'   (C64 characters $21-$2a)
         11, 12  the lives bar pair  (C64 characters $8f, $90)
 
-The panel and the HUD come from assets/art/panel.png and hud.png (Layer 8,
+The panel and the HUD come from assets/art/panel-bbc.png and hud-bbc.png (Layer 8,
 decision 61): the artist paints the status bar as a picture at the size it
 appears on screen, and the exporter cuts it into the 200 cells the runtime
 copies. A cell he has not drawn yet falls back to the mechanical conversion.
@@ -144,7 +144,7 @@ def check_hud_cells(panel_cells):
            and any(v for row in panel_cells[n] for v in row)]
     if not ink:
         return None
-    return ('%d of the 18 cells the HUD writes into carry ink in panel.png '
+    return ('%d of the 18 cells the HUD writes into carry ink in panel-bbc.png '
             '(cells %s); they are overwritten the first time the score or the '
             'lives are drawn' % (len(ink), ', '.join(str(n) for n in ink[:6])
                                  + (', ...' if len(ink) > 6 else '')))

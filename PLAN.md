@@ -188,10 +188,10 @@ Decisions 58-62, [`docs/layer-8-art-pipeline.md`](docs/layer-8-art-pipeline.md).
 page's font** and **the palette** are read from PNGs in `assets/art/` now, seeded from the conversion the game already
 ran on, so the artist repaints a working game.
 
-**Five sheets, all at 2:1** — `chars.png` 128x128 (256 characters of 4x8 fat pixels),
-`sprites.png` 192x336 (frames 0-118 of 12x21), `panel.png` 320x40 (the status bar as a picture,
-at the size it appears), `hud.png` 128x8 (blank, the digits 0-9, the life marker's two halves)
-and `titlefont.png` 128x16 (blank, A-Z, `! . , - ?`). The last three cost almost nothing to add:
+**Five sheets, all at 2:1** — `chars-bbc.png` 128x128 (256 characters of 4x8 fat pixels),
+`sprites-bbc.png` 192x336 (frames 0-118 of 12x21), `panel-bbc.png` 320x40 (the status bar as a picture,
+at the size it appears), `hud-bbc.png` 128x8 (blank, the digits 0-9, the life marker's two halves)
+and `titlefont-bbc.png` 128x16 (blank, A-Z, `! . , - ?`). The last three cost almost nothing to add:
 a panel cell, a HUD glyph, a title glyph and a character are all the same 4x8 shape, so one
 reader does all five (decisions 61, 62). **A sheet carries the logical colours it may use**, which
 is what keeps the title font on entries 12/14/15 where the credit crossfade needs it - they are

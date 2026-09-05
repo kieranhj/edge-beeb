@@ -14,7 +14,7 @@ are indexed and the two twists in the character data.
 
 The numbering is the C64's, checked rather than assumed: the CPC tile table is
 the C64's transposed, character number for character number, and rendering the
-tile sheet puts every shape in the cell reference/tiles.png puts it in.
+tile sheet puts every shape in the cell reference/tiles-c64.png puts it in.
 
 Palette: Mode0Pal from Compiled_Main3.asm, the in-game one - see
 tools/cpc/cpcscr.py. The CPC has no colour RAM, so unlike the C64 sheets every
@@ -38,7 +38,7 @@ TILE_OUT = os.path.join("reference", "tiles-cpc.png")
 CHARS = 256
 TILES = 211               # the C64 tile table's length; the bank has 256 slots
 PER_ROW = 16
-SPARE = (68, 68, 68)      # reference/tiles.png's colour for a cell with no tile
+SPARE = (68, 68, 68)      # reference/tiles-c64.png's colour for a cell with no tile
 
 
 def characters(chars, rgb):

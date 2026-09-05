@@ -3,22 +3,22 @@ logical colours (and back).
 
 Both sheets are drawn at 2:1, one screen fat pixel being 2 image pixels across
 and 1 down, which is the aspect the Beeb shows in MODE 2 and the scale
-reference/sprite-sheet.png already uses. Every fat pixel must therefore be a
+reference/sprite-sheet-c64.png already uses. Every fat pixel must therefore be a
 uniform 2x1 block; validate_art.py is what says so, with coordinates.
 
-  assets/art/chars.png    128 x 128   256 characters, 16 a row.
+  assets/art/chars-bbc.png    128 x 128   256 characters, 16 a row.
                           A cell is 8 x 8 image pixels: 4 fat pixels by 8 rows.
                           Fully opaque - the transparency key is illegal here.
-  assets/art/sprites.png  192 x 336   128 slots, 8 a row; frames 0-118 are the
+  assets/art/sprites-bbc.png  192 x 336   128 slots, 8 a row; frames 0-118 are the
                           game's and 119-127 are blank. A cell is 24 x 21:
                           12 fat pixels by 21 rows. The grey key is see-through.
-  assets/art/panel.png    320 x 40    the status bar as a PICTURE, 5 character
+  assets/art/panel-bbc.png    320 x 40    the status bar as a PICTURE, 5 character
                           rows of 40 - which is what it is on screen, at the
                           size it appears. Cut into 200 cells on export.
-  assets/art/hud.png      128 x 8     16 slots, 13 used: blank, the digits 0-9,
+  assets/art/hud-bbc.png      128 x 8     16 slots, 13 used: blank, the digits 0-9,
                           then the life marker's two halves. A cell is 8 x 8,
                           the same 4 x 8 fat pixels a character is.
-  assets/art/titlefont.png
+  assets/art/titlefont-bbc.png
                           128 x 16    32 glyphs, 16 a row, cell 8 x 8: blank,
                           A-Z, then ! . , - ? - which is all the credits need.
                           Three ink colours only, and they must be palette
@@ -52,11 +52,11 @@ import palette  # noqa: E402
 ART = os.path.join("assets", "art")
 SX, SY = 2, 1                     # image pixels per fat pixel
 
-CHARS_PNG = os.path.join(ART, "chars.png")
-SPRITES_PNG = os.path.join(ART, "sprites.png")
-PANEL_PNG = os.path.join(ART, "panel.png")
-HUD_PNG = os.path.join(ART, "hud.png")
-TITLE_PNG = os.path.join(ART, "titlefont.png")
+CHARS_PNG = os.path.join(ART, "chars-bbc.png")
+SPRITES_PNG = os.path.join(ART, "sprites-bbc.png")
+PANEL_PNG = os.path.join(ART, "panel-bbc.png")
+HUD_PNG = os.path.join(ART, "hud-bbc.png")
+TITLE_PNG = os.path.join(ART, "titlefont-bbc.png")
 
 
 class Sheet:

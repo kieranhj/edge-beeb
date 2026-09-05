@@ -230,7 +230,7 @@ What the artist needs to know about the canvas:
   transparency colour (keep the sheet's grey `96,96,96`). 119 frames in the existing 8 × 15 sheet layout,
   so animation counts and frame order stay as the C64 wave data expects them.
 - Tiles: 256 characters of 4 × 8 fat pixels, 211 tiles of 4 × 4 characters, a 302-tile-wide map. The
-  simplest brief is "repaint `reference/tiles.png` and `reference/characters.png` in the eight colours";
+  simplest brief is "repaint `reference/tiles-c64.png` and `reference/characters-c64.png` in the eight colours";
   the map and tile definitions stay the C64's. Redrawing tiles freely (new tile definitions) is possible
   but changes the map tooling — offer it as a later option.
 - Also on the table: the title screen (`assets/TitlescreenBig.png` exists), the panel font, and the
@@ -240,7 +240,7 @@ The exchange loop:
 
 1. **Kit out**: a zip (or shared folder) with an Aseprite/GIMP palette file of the eight colours plus the
    transparency key, the template PNGs, the current mechanical conversion of every sheet as a starting
-   point, `reference/map.png` for context, and a short README of the rules above.
+   point, `reference/map-c64.png` for context, and a short README of the rules above.
 2. **Validation on receipt**: `tools/validate_art.py` checks dimensions, exact palette membership, pair
    doubling and frame count, and writes a rendered PNG of what the Beeb will show. Unknown colours are
    errors with coordinates, not silent nearest-matches.
