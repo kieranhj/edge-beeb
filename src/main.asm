@@ -171,6 +171,34 @@ TTL_AUTO_SHOW = MUSIC_AKL OR (1 - GFX_CPC)
 \ and read by title_auto in bank 3, for which 0 means "draw the blank line".
 TTL_AUTO_HOLD = 150
 
+\ ---- and what af_latch holds, which is what fire_bullet writes into --------
+\ fire_latch. AF_OFF is NEGATIVE and is the C64's latch exactly: only seeing
+\ the button released clears it. AF_ON is a COUNTDOWN in game ticks, decremented
+\ once a tick while the button is held, so auto-fire has a floor on how often
+\ it can shoot and a tap still gets the next shot the moment the bullet slot
+\ is free (decision 74).
+\
+\ TWENTY TICKS IS 0.4 SECONDS - a tick is 1/50 s, game_tick running twice per
+\ 25 Hz frame. The numbers it is chosen against are MEASURED in jsbeeb,
+\ 2026-09-06: the bullet moves 12 a tick and dies at ENEMY_X_KILL = &d0, so
+\ from the drop-in x = &28 its flight is 14 ticks and a held button used to
+\ shoot every 15 - but at the right-hand edge, or against an enemy the bullet
+\ kills where it hits, as often as every 6. THAT is what made the game too
+\ easy (KC), the rate climbing the closer you got.
+\
+\ THE USEFUL RANGE IS 17 TO ABOUT 30 and this is the one number to turn.
+\ Below 17 it binds nowhere - 16 ticks is the LONGEST flight, from PLY_X_MIN,
+\ and the ASSERT below says so. Thirty is half the rate a tap gets at normal
+\ range and was tried first; KC's word for it was "a bit long". At twenty a
+\ held button is 2.5 shots a second everywhere, against 3.3 for a tap at
+\ normal range and up to 8 point blank - so holding is a convenience and
+\ tapping is still worth the effort, which is the whole point of it.
+AF_OFF  = &80
+AF_ON   = 20
+AF_FLIP = AF_OFF EOR AF_ON   ; what ttl_auto_key toggles af_latch with
+ASSERT AF_ON > 0 AND AF_ON < &80    ; positive, so the held path can tell it
+ASSERT AF_ON > 16                   ; longer than the longest bullet flight
+
 KEY_AUTO = IKN_a            ; decision 73. CTRL+A on the TITLES, not in play:
                             ; ttl_frame_titles in bank 1 already tests CTRL
                             ; once a field for R, so the test is free of both
@@ -710,15 +738,17 @@ GUARD &9F
 \\ return to the titles for nothing. key_init fills it, after the wipe.
 .joy_keys       skip JOY_COUNT
 
-\\ Auto-fire (Layer 9i, decision 73), and it is IN ZERO PAGE FOR THE SAME
-\\ REASON joy_keys is: this byte is what fire_bullet writes into fire_latch,
-\\ so `lda af_latch` stands where `lda #1` stood at the same two bytes and
-\\ the same two cycles. 1 = auto-fire OFF, the latch set and a release
-\\ needed before the next shot, which is the C64's behaviour exactly; 0 =
-\\ ON, the latch never set, so holding fire shoots as fast as the single
-\\ bullet slot comes free - which is the maximum rate the game has.
-\\ key_init sets it to 1, and zero page is wiped once at boot and never
-\\ again, so the choice survives a game, the finale and the titles.
+\\ Auto-fire (Layer 9i, decisions 73 and 74), and it is IN ZERO PAGE FOR THE
+\\ SAME REASON joy_keys is: this byte is what fire_bullet writes into
+\\ fire_latch, so `lda af_latch` stands where the C64's `lda #1` stood at the
+\\ same two bytes and the same two cycles.
+\\
+\\ AF_OFF is the C64's own latch: negative, and only a release clears it.
+\\ AF_ON is a countdown that the held path decrements once a game tick, so
+\\ holding fire has a floor on its rate while a TAP still gets the next shot
+\\ as early as the bullet slot allows (decision 74). key_init sets AF_OFF,
+\\ and zero page is wiped once at boot and never again, so the choice
+\\ survives a game, the finale and the titles.
 .af_latch       skip 1
 
 \\ And auto-fire's other two bytes, HERE rather than in the &0800 block
@@ -728,6 +758,11 @@ GUARD &9F
 \\ each `sta`, `eor` and `dec` being a byte shorter here is what made the
 \\ routine fit. Both are wiped to 0 at boot, which is the right start for
 \\ each: no key held, and no message on the clock.
+.fire_latch     skip 1      ; set while fire is held, so it does not repeat: AF_OFF
+                            ; until a release, or AF_ON counting down. IN ZERO PAGE
+                            ; and not in the &0800 block with the rest of the C64's
+                            ; $0340 (decision 74) - six references in player_manage,
+                            ; a byte each, which is most of what the held path cost
 .auto_was       skip 1      ; CTRL+A's edge state: &80 both down, else 0
 .ttl_auto_tmr   skip 1      ; fields the message has left, TTL_AUTO_HOLD down
                             ; to 0; bank 3's title_auto reads 0 as "blank"
@@ -1662,9 +1697,10 @@ ENDIF
     dex
     bpl copy
 
-    \\ Auto-fire defaults OFF (KC, decision 73): 1 is what fire_bullet
-    \\ writes into fire_latch, which is the C64's own `lda #1`.
-    lda #1
+    \\ Auto-fire defaults OFF (KC, decision 73). AF_OFF is what fire_bullet
+    \\ then writes into fire_latch, and it behaves as the C64's own `lda #1`
+    \\ did: a latch that only seeing the button released will clear.
+    lda #AF_OFF
     sta af_latch
     rts
 }
@@ -2064,7 +2100,6 @@ ORG GAME_STATE
 
 .scroll_x       skip 1              ; the C64's 16-step fine-scroll counter
 .wave_tmr       skip 1              ; ticks until the next wave is spawned
-.fire_latch     skip 1              ; set while fire is held, so it does not repeat
 .coll_flag      skip 1              ; a fatal hit; doubles as the game-over
                                     ; countdown once the player is gone
 .comp_flag      skip 1              ; the wave table ran out; Layer 6c reads it

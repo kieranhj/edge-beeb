@@ -295,10 +295,10 @@ IF TTL_AUTO_SHOW
     ldy #HI(title_auto_blank)   ; blank line, which is also the erase
     lda ttl_auto_tmr
     beq pick
-    ldx #LO(title_auto_off)     ; af_latch is 1 with auto-fire OFF
-    ldy #HI(title_auto_off)
+    ldx #LO(title_auto_off)     ; af_latch is AF_OFF, which is negative, with
+    ldy #HI(title_auto_off)     ; auto-fire off and AF_ON, positive, with it on
     lda af_latch
-    bne pick
+    bmi pick
     ldx #LO(title_auto_on)
     ldy #HI(title_auto_on)
     .pick

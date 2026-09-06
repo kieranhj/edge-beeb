@@ -30,7 +30,7 @@ game over and the completion sequence; the HUD; the whole 349-second tune on the
 parallax starfield; a loading screen with every data file ZX0-compressed; a memorial to T.M.R.
 between the two; and a titles page with the zoom scroller running across it twice over, the
 credits cross-fading, CTRL+R to redefine the five play keys onto any of thirty-five, and CTRL+A
-for auto-fire, which says which way it went for three seconds and goes again. Four artwork builds exist behind flags, and the artist can repaint any of
+for auto-fire at a floored rate, which says which way it went for three seconds and goes again. Four artwork builds exist behind flags, and the artist can repaint any of
 it — including the level itself — through `assets/art/`.
 
 **What each finished layer did, and what it cost, is in**
@@ -42,9 +42,9 @@ Anything that deviates from the C64 original is a numbered decision agreed with 
 
 ### The numbers to watch before the next layer starts
 
-**Bank 2's tail has 3 bytes in a DEV VGI `-Nula` build and 16 elsewhere, bank 1's hole has 23 (17
-with the CPC artwork), bank 3 has 21 below the tune (24 with it), and main RAM below `SPR_SAVE`
-has 14 in a DEV `-Akl` one.**
+**Main RAM below `SPR_SAVE` has 9 bytes in a DEV `-Akl` build, bank 2's tail has 3 in a DEV VGI
+`-Nula` one and 16 elsewhere, bank 1's hole has 23 (17 with the CPC artwork), and bank 3 has 21
+below the tune (24 with it).**
 Those are the walls Layers 9h and 9i hit, and 9h hit two of them by surprise: **a change can
 assemble cleanly in the four C64-artwork builds and fail only in the `-Akl` ones**, where the
 Arkos player's own zero page and code leave the least main RAM. Layer 9i then hit the opposite
@@ -251,7 +251,7 @@ HUD — and all four carry a piece of the tune, which is what a `-Akl` build wou
 | 9f — SPACE starts, an editable scrolltext | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04, decision 54 |
 | 9g — the titles switch flicker | [`BUGS.md`](BUGS.md) #14 | **open 2026-09-05**: measured and diagnosed, not fixed |
 | 9h — CTRL+R redefines the keys | [`docs/layer-9h-keyredef.md`](docs/layer-9h-keyredef.md) | done 2026-09-06, decisions 71 and 72. Pause and mute became CTRL+P and CTRL+Q with it |
-| 9i — CTRL+A auto-fire | [`docs/layer-9i-autofire.md`](docs/layer-9i-autofire.md) | done 2026-09-06, decision 73. The message is not in a VGI `-Cpc` build; the toggle is in every build |
+| 9i — CTRL+A auto-fire | [`docs/layer-9i-autofire.md`](docs/layer-9i-autofire.md) | done 2026-09-06, decisions 73 and 74. Held fire is floored at `AF_ON` = 20 game ticks and a tap is not slowed; the message is not in a VGI `-Cpc` build, the toggle is in every build |
 | 9 — polish and release | | real-hardware test, a `-Release` build, publish |
 
 *9c.5 and 9c.6 were built as 9d and 9e. The 2026-09-04 survey that found the seven 9c features is

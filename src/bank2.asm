@@ -266,9 +266,9 @@ ENDIF
     stx auto_was
     txa
     beq out                     ; the release edge, not the press
-    lda af_latch                ; 1 off, 0 on - it is the value fire_bullet
-    eor #1                      ; writes into fire_latch, not a flag
-    sta af_latch
+    lda af_latch                ; AF_OFF or AF_ON - it is the value fire_bullet
+    eor #AF_FLIP                ; writes into fire_latch, not a flag, so the
+    sta af_latch                ; toggle is an EOR of the two (decision 74)
 IF TTL_AUTO_SHOW
     lda #TTL_AUTO_HOLD          ; the message goes up and starts its clock
     sta ttl_auto_tmr

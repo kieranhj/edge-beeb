@@ -1,8 +1,8 @@
 # Layer 9i — CTRL+A on the titles: auto-fire
 
-2026-09-06. Decision 73. Hold fire and the ship shoots as fast as it can instead of needing a
-press per shot. Off by default, toggled with **CTRL+A on the titles**, and the page says which way
-it went for three seconds.
+2026-09-06. Decisions 73 and 74. Hold fire and the ship shoots on its own instead of needing a
+press per shot — at a floored rate, so a player who taps is still faster. Off by default, toggled
+with **CTRL+A on the titles**, and the page says which way it went for three seconds.
 
 KC's ask: *"my friend stew is lazy. would it be feasible to implement an auto-fire option? say
 CTRL-A ... the player only has to hold the fire key down, not press it repeatedly, to fire at the
@@ -10,6 +10,12 @@ maximum rate. default is OFF"*, then *"do it in titles then with some indicator"
 standing label was built and seen — *"change that title screen line so it just says auto fire
 on/off in the centre for a few seconds when toggled. it doesn't need to fade, it can just pop
 on/off"*.
+
+Then, once it was playable: *"the auto fire is great but makes the game a bit too easy. let's
+reduce the rate of fire when auto fire is held (maybe half maximum?) but the player can still
+repeatedly press the fire button to shoot faster manually"*, and — the diagnosis that named the
+mechanism — *"i guess there just needs to be a minimum number of ticks if you're holding down fire.
+this explains why the fire rate increases as you go closer to enemies"*. That is decision 74, below.
 
 The C64 has nothing of the kind, so all of it is the port's own.
 
@@ -42,7 +48,7 @@ scrolltext (`assets/scrolltext.txt`) is the place and is KC's to write.
 
 ---
 
-## The firing half is free
+## `af_latch` is the shape of the latch, not a flag
 
 `player_manage` is the C64's, transcribed, and its fire latch is what stops autorepeat:
 
@@ -61,21 +67,65 @@ lda #1                  ; <- the whole of auto-fire is this instruction
 sta fire_latch
 ```
 
-The `#1` becomes `lda af_latch`, a byte holding **the value to write**: 1 with auto-fire off, 0
-with it on. `af_latch` is in **zero page**, so the replacement is the same two bytes and the same
-two cycles as the immediate, and the original's LSR/BCS chain is untouched.
+The `#1` becomes `lda af_latch`, a byte holding **the value to write**. `af_latch` is in **zero
+page**, so the replacement is the same two bytes and the same two cycles as the immediate, and the
+original's LSR/BCS chain is untouched. What that byte holds is the whole design:
 
-**There is no rate cap to add.** With the latch left clear the test above falls straight through to
-`fire_bullet` on the next frame, and `fire_bullet` already refuses unless `sprite_pos+3` is 0 —
-the single bullet slot is free. So "the maximum rate" is the bullet's flight time, which is the
-fastest the game has ever been able to shoot.
+| | | |
+|---|---|---|
+| `AF_OFF` | `&80` | **negative**, and the C64's latch exactly: only seeing the button released clears it |
+| `AF_ON` | 20 | **positive**, and a countdown the held path decrements once a game tick |
 
-Zero page is wiped once at boot and never again, so `key_init` setting `af_latch` to 1 is the whole
-of the default and the choice then survives a game, the finale and the return to the titles for
-nothing. That is `joy_keys`' trick from Layer 9h, for the same reason.
+So auto-fire on is not "never latch" — it is "latch, but let it time out".
 
-`sprite_reset` clears `fire_latch` to 0 on each new life, as it always did; that is correct either
-way round.
+### Why it needed a floor (decision 74)
+
+The first cut had `AF_ON` = 0: the latch never set, so a held button fired the moment the bullet
+slot came free, and **that is not a constant rate**. Measured in jsbeeb: the bullet moves 12 a tick
+and dies at `ENEMY_X_KILL` = `&d0`, so
+
+- from the drop-in x = `&28`, the flight is **14 ticks** and a held button shot every **15**
+- at the right-hand edge, x = `&9b`, every **6**
+- and **a bullet that hits something dies where it hit**, so point blank it was faster still
+
+which is exactly what KC noticed from playing it — *"the fire rate increases as you go closer to
+enemies"* — and why the game got easy. A rate multiplier would not have fixed it; a **minimum
+interval** does, and it is what KC asked for.
+
+`AF_ON` = 20 ticks is 0.4 s, a tick being 1/50 s with `game_tick` running twice per 25 Hz frame:
+**2.5 shots a second held**, against 3.3 for a tap at normal range and up to 8 point blank. 30 was
+tried first and KC's word for it was *"a bit long"*.
+
+**The useful range is 17 to about 30, and an `ASSERT` says why**: 16 ticks is the longest flight
+there is, from `PLY_X_MIN`, so anything below 17 binds nowhere. It is one constant in `main.asm`
+and it is the number to turn if the feel is wrong.
+
+### And a tap is not slowed at all
+
+The release path clears the latch **outright**, countdown and all, so the next press fires as early
+as the bullet slot allows. Measured: with a bullet already gone, a press after a release reaches
+`fire_bullet` inside the same field. That is the trade — the convenience costs you half the rate,
+and mashing the button is still worth the effort.
+
+The whole of the new behaviour is three instructions on the held branch:
+
+```
+.af_held
+lda fire_latch
+bmi fire_out            ; AF_OFF: the C64's latch, and nothing ticks
+dec fire_latch          ; AF_ON: one tick off auto-fire's floor
+```
+
+Zero page is wiped once at boot and never again, so `key_init` setting `af_latch` to `AF_OFF` is
+the whole of the default and the choice then survives a game, the finale and the return to the
+titles for nothing. That is `joy_keys`' trick from Layer 9h, for the same reason.
+
+`sprite_reset` clears `fire_latch` to 0 on each new life, as it always did; that is correct
+whichever value `af_latch` holds.
+
+**`fire_latch` moved to zero page with it** (decision 74), out of the `&0800` block that is
+otherwise the C64's `$0340`. Six references in `player_manage`, a byte each, which is most of what
+the held path cost.
 
 ---
 
@@ -172,8 +222,9 @@ back.
 
 | Region | Before | After | Note |
 |---|---|---|---|
-| Main RAM under `SPR_SAVE` | 14 (`-Akl`) | **14** | nothing; `af_latch` is zero page and `key_init` is boot-only |
-| Zero page | 66 free | 63 free | `af_latch`, `auto_was`, `ttl_auto_tmr` |
+| Main RAM under `SPR_SAVE` | 14 (`-Akl`) | **9** | decision 73 cost nothing; decision 74's held path cost 11 and `fire_latch` in zero page gave 6 back |
+| Zero page | 66 free | 62 free | `af_latch`, `auto_was`, `ttl_auto_tmr`, and `fire_latch` moved in |
+| `&0800` block | 418 | 419 | `fire_latch` moved out |
 | Bank 0 | 19 (`-Akl`) | **19** | nothing |
 | Bank 1 | — | — | nothing |
 | Bank 2 tail | 56 / 43 (`-Nula`) | **16 / 3** | `ttl_auto_key`, 42 bytes. **3 bytes left in a DEV VGI `-Nula` build — the tightest region in the machine now** |
@@ -205,9 +256,12 @@ jsbeeb, Master 128, 2026-09-06, `-Akl` and `-Akl -Cpc`:
   toggle a second time
 - `af_latch` (`&31`) reads 0 with it on and 1 with it off; `ttl_auto_tmr` (`&33`) counts down and
   stops at 0; `joy_keys` at `&2C-&30` is 70, 101, 97, 66, 86 as expected
-- in play with fire held and a bullet in flight, `fire_latch` (`&863`) reads **0** — the latch is
-  never set. Poking `af_latch` back to 1 with fire still held puts `fire_latch` at **1** on the next
-  frame, which is the C64's behaviour exactly
+- with auto-fire on and the button **held**, a breakpoint on `fire_bullet` fires every **19, 22 and
+  20 fields** — the 20-tick floor, against 13-14 before decision 74 at the same position
+- **releasing and pressing again reaches `fire_bullet` inside the same field**, so a tap is not
+  slowed at all
+- with auto-fire off, `af_latch` is `AF_OFF` and a held button never fires twice, which is the
+  C64's behaviour exactly
 - CTRL+R still gives a clean redefine screen with LEFT on row 1 and no message over it; ESCAPE
   brings the credits back with row 1 blank even though a message was on the clock when it was
   pressed

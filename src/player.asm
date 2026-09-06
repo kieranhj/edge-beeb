@@ -343,21 +343,36 @@ ENDIF
     \\ out and only cleared when the button is seen released.
     \\
     \\ AUTO-FIRE IS THE VALUE THAT GOES INTO IT (Layer 9i, decision 73).
-    \\ The C64 writes `lda #1` below; we write af_latch, which is 1 with
-    \\ auto-fire off and 0 with it on. A latch left clear means the test
-    \\ above falls straight through to fire_bullet on the next frame, and
-    \\ the rate cap is then the one the game already has - fire_bullet
-    \\ fires only when sprite_pos+3 is 0, i.e. when the single bullet
-    \\ slot is free. af_latch is in ZERO PAGE, so this costs nothing at
-    \\ all: the same two bytes and the same two cycles as the immediate
-    \\ it replaces, and player_manage stays the original's LSR/BCS chain.
+    \\ The C64 writes `lda #1` below; we write af_latch, which is AF_OFF
+    \\ with auto-fire off and AF_ON with it on.
+    \\
+    \\ AF_OFF IS NEGATIVE AND IS THE ORIGINAL, unaltered: the held path
+    \\ below leaves it alone, so only seeing the button released clears
+    \\ the latch. AF_ON is POSITIVE and is a COUNTDOWN in game ticks,
+    \\ which the held path decrements - so auto-fire gets a shot every
+    \\ AF_ON ticks and no faster (decision 74).
+    \\
+    \\ THE FLOOR IS WHY: without it, the rate is whatever the bullet's
+    \\ flight happens to be, and a bullet that hits something dies where
+    \\ it hit - so holding fire against an enemy's face shot as fast as
+    \\ every six ticks against fifteen at normal range, and the game got
+    \\ too easy (KC). A RELEASE STILL CLEARS THE LATCH OUTRIGHT, so a
+    \\ player who taps is not slowed at all and gets the whole of the
+    \\ rate the bullet slot allows. That is the trade: the convenience
+    \\ costs half the rate, and the skill is still worth something.
     .player_fire
     ldy fire_latch
     beq fire_bullet
     lsr a
-    bcc fire_out
-    lda #0
-    sta fire_latch
+    bcc af_held                 ; still held: the countdown, if there is one
+    lda #0                      ; released: cleared outright, so the next press
+    sta fire_latch              ; fires as early as the bullet slot allows
+    jmp player_colls
+
+    .af_held
+    lda fire_latch
+    bmi fire_out                ; AF_OFF: the C64's latch, and nothing ticks
+    dec fire_latch              ; AF_ON: one tick off auto-fire's floor
     .fire_out
     jmp player_colls
 
@@ -375,8 +390,8 @@ ENDIF
     sta enemy_spds+2
     lda #0
     sta enemy_spds+3
-    lda af_latch                ; the C64's `lda #1`, made a variable
-    sta fire_latch
+    lda af_latch                ; the C64's `lda #1`, made a variable: AF_OFF
+    sta fire_latch              ; until released, or AF_ON ticks of cooldown
     lda #BUL_ANIM_START
     sta sprite_dp+1
     sta anim_starts+1
