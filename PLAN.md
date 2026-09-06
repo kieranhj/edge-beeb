@@ -251,7 +251,7 @@ HUD — and all four carry a piece of the tune, which is what a `-Akl` build wou
 | 9f — SPACE starts, an editable scrolltext | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04, decision 54 |
 | 9g — the titles switch flicker | [`BUGS.md`](BUGS.md) #14 | **open 2026-09-05**: measured and diagnosed, not fixed |
 | 9h — CTRL+R redefines the keys | [`docs/layer-9h-keyredef.md`](docs/layer-9h-keyredef.md) | done 2026-09-06, decisions 71 and 72. Pause and mute became CTRL+P and CTRL+Q with it |
-| 9i — CTRL+A auto-fire | [`docs/layer-9i-autofire.md`](docs/layer-9i-autofire.md) | done 2026-09-06, decisions 73 and 74. Held fire is floored at `AF_ON` = 20 game ticks and a tap is not slowed; the message is not in a VGI `-Cpc` build, the toggle is in every build |
+| 9i — CTRL+A auto-fire | [`docs/layer-9i-autofire.md`](docs/layer-9i-autofire.md) | done 2026-09-06, decisions 73 and 74. Held fire is floored at `AF_ON` = 10 game ticks and a tap is not slowed; the message is not in a VGI `-Cpc` build, the toggle is in every build |
 | 9 — polish and release | | real-hardware test, a `-Release` build, publish |
 
 *9c.5 and 9c.6 were built as 9d and 9e. The 2026-09-04 survey that found the seven 9c features is

@@ -74,7 +74,7 @@ original's LSR/BCS chain is untouched. What that byte holds is the whole design:
 | | | |
 |---|---|---|
 | `AF_OFF` | `&80` | **negative**, and the C64's latch exactly: only seeing the button released clears it |
-| `AF_ON` | 20 | **positive**, and a countdown the held path decrements once a game tick |
+| `AF_ON` | 10 | **positive**, and a countdown the held path decrements once a game tick |
 
 So auto-fire on is not "never latch" — it is "latch, but let it time out".
 
@@ -92,13 +92,20 @@ which is exactly what KC noticed from playing it — *"the fire rate increases a
 enemies"* — and why the game got easy. A rate multiplier would not have fixed it; a **minimum
 interval** does, and it is what KC asked for.
 
-`AF_ON` = 20 ticks is 0.4 s, a tick being 1/50 s with `game_tick` running twice per 25 Hz frame:
-**2.5 shots a second held**, against 3.3 for a tap at normal range and up to 8 point blank. 30 was
-tried first and KC's word for it was *"a bit long"*.
+`AF_ON` = **10** ticks is 0.2 s, a tick being 1/50 s with `game_tick` running twice per 25 Hz
+frame. It is KC's number, played rather than calculated: 30 was *"a bit long"*, 20 was tried, and
+10 *"feels better"*.
 
-**The useful range is 17 to about 30, and an `ASSERT` says why**: 16 ticks is the longest flight
-there is, from `PLY_X_MIN`, so anything below 17 binds nowhere. It is one constant in `main.asm`
-and it is the number to turn if the feel is wrong.
+**It binds where the flight is short and nowhere else, and that is the point of it.** At normal
+range the flight is 14 ticks, longer than the floor, so nothing changes and a held button is the
+3.3 shots a second it always was. Close in — the right-hand edge, or an enemy's face, where the
+bullet dies on impact — it caps at 5 a second instead of running away.
+
+An earlier `ASSERT` here demanded `AF_ON` > 16, the longest flight there is, on the reasoning that
+a floor which does not bind everywhere does not bind at all. Playing it says otherwise: the
+close-range case was the whole complaint, and a floor that leaves normal range alone is a better
+game than one that slows every shot. KC removed the assert; it is not coming back. **This is the
+one constant to turn**, and turning it up slows normal range too.
 
 ### And a tap is not slowed at all
 

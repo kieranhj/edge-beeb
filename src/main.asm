@@ -178,26 +178,30 @@ TTL_AUTO_HOLD = 150
 \ it can shoot and a tap still gets the next shot the moment the bullet slot
 \ is free (decision 74).
 \
-\ TWENTY TICKS IS 0.4 SECONDS - a tick is 1/50 s, game_tick running twice per
-\ 25 Hz frame. The numbers it is chosen against are MEASURED in jsbeeb,
-\ 2026-09-06: the bullet moves 12 a tick and dies at ENEMY_X_KILL = &d0, so
-\ from the drop-in x = &28 its flight is 14 ticks and a held button used to
-\ shoot every 15 - but at the right-hand edge, or against an enemy the bullet
-\ kills where it hits, as often as every 6. THAT is what made the game too
-\ easy (KC), the rate climbing the closer you got.
+\ TEN TICKS IS 0.2 SECONDS - a tick is 1/50 s, game_tick running twice per
+\ 25 Hz frame - and it is KC's number, played rather than calculated: 30 was
+\ "a bit long", 20 was tried, and 10 "feels better".
 \
-\ THE USEFUL RANGE IS 17 TO ABOUT 30 and this is the one number to turn.
-\ Below 17 it binds nowhere - 16 ticks is the LONGEST flight, from PLY_X_MIN,
-\ and the ASSERT below says so. Thirty is half the rate a tap gets at normal
-\ range and was tried first; KC's word for it was "a bit long". At twenty a
-\ held button is 2.5 shots a second everywhere, against 3.3 for a tap at
-\ normal range and up to 8 point blank - so holding is a convenience and
-\ tapping is still worth the effort, which is the whole point of it.
+\ WHAT THE FLOOR IS AGAINST, all MEASURED in jsbeeb 2026-09-06: the bullet
+\ moves 12 a tick and dies at ENEMY_X_KILL = &d0, so from the drop-in x = &28
+\ its flight is 14 ticks and a held button shot every 15 - but at the
+\ right-hand edge every 6, and a bullet that HITS something dies where it hit,
+\ so point blank it was faster still. The rate climbing the closer you got is
+\ what made the game too easy (KC).
+\
+\ SO TEN BINDS WHERE THE FLIGHT IS SHORT AND NOWHERE ELSE, which is the point
+\ of it: at normal range the flight is longer than the floor and nothing
+\ changes, while close in - the right-hand edge, or an enemy's face - a held
+\ button is capped at five shots a second instead of running away with it.
+\ An earlier ASSERT here demanded AF_ON > 16, the LONGEST flight, on the
+\ reasoning that a floor which does not bind everywhere does not bind at all;
+\ KC's ear says otherwise and the assert is gone. THIS IS THE ONE NUMBER TO
+\ TURN, and turning it up slows normal range too.
 AF_OFF  = &80
-AF_ON   = 20
+AF_ON   = 10
 AF_FLIP = AF_OFF EOR AF_ON   ; what ttl_auto_key toggles af_latch with
 ASSERT AF_ON > 0 AND AF_ON < &80    ; positive, so the held path can tell it
-ASSERT AF_ON > 16                   ; longer than the longest bullet flight
+                                    ; from AF_OFF by its sign
 
 KEY_AUTO = IKN_a            ; decision 73. CTRL+A on the TITLES, not in play:
                             ; ttl_frame_titles in bank 1 already tests CTRL
