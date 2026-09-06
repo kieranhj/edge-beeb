@@ -141,6 +141,41 @@
     \ music_pause takes the same path, for the same reason: the tune has to
     \ stop WHERE IT IS and carry on from there when play resumes, which is
     \ exactly what skipping the update does. Q's mechanism, reused whole.
+IF MUSIC_AKL
+    \\ The tune changes HERE, and only here, because this is the one place
+    \\ that has HAZEL and bank 3 both paged - the player's code is in the
+    \\ first and the finale's tune in the second, and akl_init reads the
+    \\ song's header. It is the CPC's ChangeMusic exactly: the game writes
+    \\ a number and the interrupt acts on it (EG_Interrupts2.asm, IR2_*).
+    \\
+    \\ WIN_TRANSP* is not an ornament. AKL's linker encodes a transposition
+    \\ only when it CHANGES and the player starts at zero, and AT2's
+    \\ exporter left WON4's position 0 out - so without these three stores
+    \\ the finale plays in the wrong key. akl_init clears t_transp and does
+    \\ not read the linker, so straight after it is the right place.
+    lda music_change
+    beq no_change
+    cmp #2
+    beq win_music
+    lda #LO(MUSIC_AKL_SONG)     ; 1: back to the in-game tune
+    ldx #HI(MUSIC_AKL_SONG)
+    ldy #0
+    jsr akl_init
+    jmp changed
+    .win_music
+    lda #LO(MUSIC_AKL_WIN)      ; 2: the finale's
+    ldx #HI(MUSIC_AKL_WIN)
+    ldy #0
+    jsr akl_init
+    lda #(WIN_TRANSP0 AND &FF) : sta t_transp+0
+    lda #(WIN_TRANSP1 AND &FF) : sta t_transp+1
+    lda #(WIN_TRANSP2 AND &FF) : sta t_transp+2
+    .changed
+    lda #0
+    sta music_change
+    .no_change
+ENDIF
+
     lda music_mute
     ora music_pause
     bne muted

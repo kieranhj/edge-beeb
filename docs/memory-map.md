@@ -255,6 +255,28 @@ reproduce) at roughly forty times the bytes per second — 2,889 against 695 for
 That trade was affordable for one tune and is not for two. If the VGI build has to have a win tune,
 it has to be about twenty seconds of one.
 
+### What it actually cost, now it is built
+
+**It did not go in HAZEL.** 379 bytes are free there once the player, the converter and the whole
+in-game tune are in, and the win tune is 695. It went into **sideways bank 3 at `MUSIC_AKL_WIN` =
+`&9100`**, above that bank's code, which ends at `&9008`:
+
+| | |
+|---|--:|
+| bank 3 code/data ends | `&9008` |
+| the win tune at `&9100` | 695 bytes |
+| bank 3 still free above it | **11,337 bytes** |
+| HAZEL | untouched |
+
+Bank 3 costs nothing to reach: `rupt_vsync` already pages it in for the music **every field**, in
+this build as in the VGI one, so the replay reads the tune there exactly as it reads HAZEL. Nothing
+about the paging changed, and the in-game arrangement is byte for byte what it was.
+
+The switch is the CPC's, whole: `music_change` at `&086A` is written by the game and acted on in
+`rupt_vsync`, which is the one place with HAZEL and bank 3 both paged - `comp_mess` sets 2 as the
+end sequence begins (the CPC's `GCPCPauseDone`) and `finale_tick` sets 1 when fire ends it (its
+`CWFWaitOver`). See [`layer-7-music-arkos.md`](layer-7-music-arkos.md).
+
 ## See also
 
 - `CLAUDE.md` — the standing memory table, which says what each region is *for*; this page says how

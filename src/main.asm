@@ -286,6 +286,32 @@ MUSIC_AKL_SONG = &CC00      ; the tracker data; tools/export_music_akl.py
 ASSERT MUSIC_AKL_SONG > HAZEL_BASE
 ASSERT MUSIC_AKL_SONG < &E000
 
+\ THE SECOND TUNE. The CPC has two - EDGEA in game and WON4 for the finale -
+\ and re-inits the replay with the other address when the end sequence starts
+\ (`ld (ChangeMusic),a` in Compiled_Main3.asm, acted on in EG_Interrupts2).
+\ This port does the same thing with music_change, acted on in rupt_vsync.
+\
+\ It does NOT go in HAZEL: 379 bytes are left there and the tune is 695. It
+\ goes in sideways bank 3, which has 11,337 bytes free in this build and
+\ which rupt_vsync already pages in for the music every single field - so
+\ the replay reads it with no paging change at all. The address is absolute
+\ because AKL data is: tools/export_music_akl.py exports it there.
+MUSIC_AKL_WIN = &9100       ; the finale's tune, in bank 3 above its code
+ASSERT MUSIC_AKL_WIN >= &8000
+ASSERT MUSIC_AKL_WIN < &C000
+
+\ AKL's linker encodes a transposition only when it CHANGES and the player
+\ starts at zero, so a song whose FIRST position is transposed depends on
+\ AT2's exporter writing it there - and for WON4 it does not. Without these
+\ the finale plays 216 frames in the wrong key, in tune with itself, with
+\ nothing to say so. akl_init clears t_transp and does not read the linker,
+\ so setting them straight after it is the whole fix. export_music_akl.py
+\ --check reads the true triple out of Arkos's own AKM export and fails if
+\ this disagrees. See ../arkos-player-bbc/docs/format-akl.md.
+WIN_TRANSP0 = 0
+WIN_TRANSP1 = -3
+WIN_TRANSP2 = -7
+
 \ GFX_CPC builds the game from the Amstrad CPC port's artwork instead of the
 \ C64's - every sprite frame, every character - for the comparison decision 41
 \ left open. Smila redrew the lot in mode 0's sixteen colours, and the CPC's
@@ -1809,6 +1835,12 @@ ORG GAME_STATE
                                     ; the C64's loops the tick is standing in for
 .to_titles      skip 1              ; game over or completion has finished:
                                     ; the loop drops back to master_loop
+.music_change   skip 1              ; MUSIC_AKL: 0 = play on, 1 = restart the
+                                    ; in-game tune, 2 = start the finale's.
+                                    ; Written by comp_mess and finale_tick,
+                                    ; acted on in rupt_vsync where HAZEL and
+                                    ; bank 3 are already paged - the CPC's
+                                    ; ChangeMusic, whole
 .finale_slot    skip 1              ; which slot the next bang takes, 0-7
 .finale_tmr     skip 1              ; ticks until it goes off
 .coll_grind     skip 2              ; the two grind cells, above and below the ship

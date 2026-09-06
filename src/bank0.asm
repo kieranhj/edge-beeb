@@ -479,6 +479,14 @@ ENDIF
     \\ Into the finale. comp_flag stops being the completion flag here and
     \\ becomes the index the bangs are placed from, which is what the C64
     \\ does with it too.
+IF MUSIC_AKL
+    \\ And the tune changes, where the CPC changes it: GCPCPauseDone sets
+    \\ ChangeMusic to 2 as the end sequence is set up, having played the
+    \\ message and the bonus over the in-game tune. rupt_vsync does the
+    \\ re-init, because that is where HAZEL and bank 3 are paged.
+    lda #2
+    sta music_change
+ENDIF
     lda #0
     sta comp_flag
     sta finale_slot
@@ -551,6 +559,10 @@ ENDIF
     ldx #KEY_FIRE
     jsr keydown
     bpl out
+IF MUSIC_AKL
+    lda #1                      \\ the CPC's CWFWaitOver: back to the main theme
+    sta music_change            \\ on the way to the titles
+ENDIF
     inc to_titles
     .out
     rts

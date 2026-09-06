@@ -117,6 +117,68 @@ in-game figure is larger than the simulated worst-case delta of 477 cycles becau
 frame is far more likely to coincide with the music's *mean* than with its single worst field, and
 the mean difference is 1,182 cycles.
 
+## Two tunes, and the trap in the second one
+
+**Done 2026-09-06.** The CPC port has two songs and this build now ships both: `EDGEA.SKS` in game
+and `WON4.SKS` for the finale, 66 seconds that plays once and that nobody had ever heard on a BBC.
+
+The mechanism is the CPC's, unchanged in shape. There, the game writes `ChangeMusic` and the
+interrupt acts on it (`Compiled_Main3.asm` sets it, `EG_Interrupts2.asm`'s `IR2_StartMain` /
+end-game branch re-inits the replay with `&29c3` or `&26d7`). Here, `music_change` at `&086A` is
+written by the game and acted on in `rupt_vsync`:
+
+| where | what | the CPC's |
+|---|---|---|
+| `comp_mess`, entering the finale | `music_change = 2` | `GCPCPauseDone` |
+| `finale_tick`, fire pressed | `music_change = 1` | `CWFWaitOver` |
+| `rupt_vsync`, before the play call | `akl_init` at the other address | `IR2_Common` |
+
+**It has to happen in the interrupt**, and not because of the CPC. `akl_init` reads the song's
+header, and the player's code is in HAZEL while the finale's tune is in bank 3 - `rupt_vsync` is
+the one place that has both paged, and it already pages them for the music every field.
+
+### Where the second tune lives
+
+Not in HAZEL: 379 bytes are free there and the tune is 695. It is at `MUSIC_AKL_WIN = &9100` in
+**sideways bank 3**, whose code ends at `&9008` and which has 11,337 bytes free above the tune. The
+in-game arrangement did not move a byte. See [`memory-map.md`](memory-map.md).
+
+### The trap: AT2's exporter loses the win tune's transposition
+
+**WON4 played 216 frames in the wrong key, and nothing in the register stream said so.**
+
+AKL's linker encodes a transposition only when it CHANGES, and the player starts at zero - so a song
+whose FIRST position is transposed depends on the exporter writing it there. Arkos's own AKM export
+of WON4 says what position 0 should be:
+
+```
+; Position 0
+    db 131    ; New track (0) for channel 1, as a reference (index 3).
+    db -3     ; New transposition on channel 2.
+    db 131    ; New track (0) for channel 2, as a reference (index 3).
+    db -7     ; New transposition on channel 3.
+```
+
+All three channels share one track and are pulled apart by transposition. AT2's
+`SongToLightweight.exe` wrote no transposition at all, so all three played the same note: a chord
+came out as unison, in tune with itself, for as long as the first pattern lasted.
+
+`akl_init` clears `t_transp` and does **not** read the linker, so three stores straight after it are
+the whole fix - `WIN_TRANSP0..2` in `main.asm`, applied in `rupt_vsync`.
+`tools/export_music_akl.py --check` reads the true triple out of `SongToAkm.exe` and **fails the
+build** if the tune ever changes underneath it. The whole account, and the sweep that says one song
+in 62 is affected, is in `../arkos-player-bbc/docs/format-akl.md`.
+
+**Measured on the machine**, jsbeeb, Master 128, `EDGE-AKL.SSD`, poking `music_change = 2` and
+capturing the SN76489 writes:
+
+| | channel 0 | channel 1 | channel 2 |
+|---|--:|--:|--:|
+| SN period captured | 972 | **576** | **724** |
+| what it would be untransposed | 972 | 972 | 972 |
+
+Three different notes is the fix working. Three of the same would have been the bug.
+
 ## The catch: the conversion, not the replay
 
 The offline chain and a runtime converter are not doing the same job. `ym2sn.py` does **whole-song
