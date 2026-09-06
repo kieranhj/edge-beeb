@@ -154,9 +154,37 @@ the chip: `CH3: noise=3 vol=9` with `CH2` silent, which is the bass holding tone
 at about 46 Hz.
 
 **It costs 332 cycles a call more than the build that had no bass** - 664 per 25 Hz game frame,
-against a budget of 79,872, so about 0.8% of the frame. The cache pays back part of the bass and not
-all of it. If that ever matters more than the bass does, `BASS_MODE = 0` is one constant and comes
-in at **1,851** a call, cheaper than the build this replaced, with the low notes back up an octave.
+against a budget of 79,872, so about 0.8% of the frame. The cache pays back part of the bass and
+not all of it. What that comes to in dropped frames is the next section, and it is less than the
+arithmetic suggests.
+
+### Frame drops at peak load, measured 2026-09-06
+
+The brutal test, unchanged, and re-run for all three on the same day so that nothing is compared
+against a remembered number: jsbeeb, Master 128, `DEBUG_TIMING`, boot to the titles, **fire held
+down for 5,000 fields** (100 s, 2,500 game frames) with the ship never moved, so it dies over and
+over with the screen full of explosions. `tim_over` counts the frames that missed their flip and is
+the definitive reading; `tim_max_total` is the worst single frame, microseconds against 39,936.
+
+| build | worst frame | of budget | **missed flips** |
+|---|--:|--:|--:|
+| VGI (what ships) | 42,581 | 106.6% | **7** |
+| Arkos, `BASS_MODE = 0` | 42,802 | 107.2% | **8** |
+| **Arkos, `BASS_MODE = 2` - this build** | 43,045 | 107.8% | **9** |
+| *Arkos, the old copy: no bass, no cache* | *42,975* | *108%* | *9* |
+
+**Nine missed flips in 2,500 game frames is 0.36% of them, and it is exactly what the old copy cost
+with no bass at all.** The write cache and the periodic-noise bass very nearly cancel: this build
+gains the third of the tune that lies below the chip's floor for one extra dropped frame per 2,500
+against `BASS_MODE = 0`, and for none at all against the player it replaces.
+
+The lead-in matters and was made identical - fire pressed 2,900 fields after boot in every run,
+because when it is pressed sets the phase of everything after it. The VGI control reproduced its
+historical 7 exactly, and that is what says the rows can be compared at all.
+
+If the bass ever costs more than it is worth, `BASS_MODE = 0` is one constant, measures **8**, and
+comes in at 1,851 cycles a call - one dropped frame better than this build, one worse than VGI, with
+the low notes back up an octave.
 
 ## Two tunes, and the trap in the second one
 
