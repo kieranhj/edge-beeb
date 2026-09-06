@@ -117,6 +117,47 @@ in-game figure is larger than the simulated worst-case delta of 477 cycles becau
 frame is far more likely to coincide with the music's *mean* than with its single worst field, and
 the mean difference is 1,182 cycles.
 
+## The library is upstream's, verbatim, with the periodic-noise bass
+
+**Done 2026-09-06.** `src/aklplayer.asm` and `src/ay2sn.asm` are gone. `lib/aklplayer.asm`,
+`lib/aklplayer.h.asm`, `lib/ay2sn.asm`, `lib/ay2sn_tables.asm` and `lib/akl_periods.asm` are
+**byte-for-byte copies** of `../arkos-player-bbc/lib/`, and are never edited here - that repo is
+upstream and this is decision 70 (its own decision 4). Their `INCLUDE "lib/..."` lines are written
+relative to a repo root, so they resolve here unchanged, which is what makes a straight copy
+possible rather than a fork.
+
+Two constants come with that, both set in `main.asm` because neither is the library's to default:
+
+- **`ENV_BASE = 12`.** AKL stores one BIT of envelope shape. Both tunes are envelope 12 throughout -
+  measured with upstream's `tools/survey_envelopes.py`, not assumed - so one constant serves the
+  pair. Had they differed, no single build could have played both.
+- **`BASS_MODE = 2`**, the periodic-noise bass and nothing else assembled.
+
+### What the update brought
+
+| | before | after |
+|---|--:|--:|
+| player + converter | 2,930 bytes | **3,468** |
+| SN76489 writes a field | 10, unconditionally | **~1.9**, measured on the machine |
+| notes below the chip's 122 Hz floor | shifted up an octave | **played** |
+| cycles a 50 Hz call, EDGEA | ~2,162 | **2,494** |
+
+The write cache is the second row: the chip's tone and volume registers latch, so a byte a register
+already holds is audibly nothing, and 87% of what this build used to send was exactly that. Captured
+out of jsbeeb: **375 writes over 200 fields** where the old build sent 2,000.
+
+The bass is the third, and it is why this build now sounds different rather than merely cheaper. A
+third of EDGEA is below the SN76489's lowest note. `BASS_MODE 2` synthesises those notes on the
+noise generator with its feedback bit clear, clocked by tone generator 3 - `ym2sn.py`'s own trick,
+which the VGI build gets offline and this one now does per frame. Verified on the machine by reading
+the chip: `CH3: noise=3 vol=9` with `CH2` silent, which is the bass holding tone slot 2 as its clock
+at about 46 Hz.
+
+**It costs 332 cycles a call more than the build that had no bass** - 664 per 25 Hz game frame,
+against a budget of 79,872, so about 0.8% of the frame. The cache pays back part of the bass and not
+all of it. If that ever matters more than the bass does, `BASS_MODE = 0` is one constant and comes
+in at **1,851** a call, cheaper than the build this replaced, with the low notes back up an octave.
+
 ## Two tunes, and the trap in the second one
 
 **Done 2026-09-06.** The CPC port has two songs and this build now ships both: `EDGEA.SKS` in game

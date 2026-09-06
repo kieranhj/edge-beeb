@@ -20,9 +20,54 @@
 \ * in the per-frame path.
 \ ******************************************************************
 
-ENV_BASE = 12       \ AKL encodes only envelope 8 or 10; EDGEA is 12 throughout
+\ ******************************************************************
+\ * ENV_BASE IS THE HOST'S TO DEFINE, before it INCLUDEs this file.
+\ *
+\ * AKL stores ONE BIT of envelope shape, and it means shape ENV_BASE or
+\ * ENV_BASE + 2. The format defines those as 8 and 10, so ENV_BASE = 8
+\ * is right for any tune that really uses 8 or 10 - which is most of
+\ * them. A tune whose real envelope AKL could NOT encode gets a
+\ * substitute on export and the pair has to be shifted back: Edge
+\ * Grinder's EDGEA is envelope 12 throughout and needs ENV_BASE = 12.
+\ *
+\ * It is not defaulted here on purpose. It is a property of the SONG,
+\ * not of the player, and a default is exactly how it came to be 12 -
+\ * right for the one tune it was written for and wrong for every other.
+\ * tools/arkos.py's envelope_base() reads the true shape out of an AKG
+\ * source export and example/build.py passes it through; getting it
+\ * wrong shows up as `env shape` in tools/verify/verify.py.
+\ *
+\ * tools/verify/akl_reference.py has its own copy and the two MUST
+\ * agree, or the harness proves the player right against a reference
+\ * with the same mistake in it.
+\ ******************************************************************
 
 
+
+\ ******************************************************************
+\ * t_transp AFTER akl_init, IF THE EXPORT LOST POSITION 0's.
+\ *
+\ * AKL's linker encodes a transposition only when it CHANGES, and this
+\ * player starts at zero - so a song whose FIRST position is transposed
+\ * depends on AT2's exporter writing it there, and it does not always.
+\ * Edge Grinder's WON4 needs (0, -3, -7) and the export carries nothing:
+\ * 216 frames of notes in the wrong key, in tune with themselves, with
+\ * nothing in the register stream to say so.
+\ *
+\ * akl_init clears t_transp and does NOT read the linker, and a first
+\ * linker entry that sets no transposition leaves it alone - so the fix
+\ * is three stores between akl_init and the first akl_play:
+\ *
+\ *     jsr akl_init
+\ *     lda #0 : sta t_transp+0         \ what export_akl.py --check
+\ *     lda #-3 : sta t_transp+1        \ prints for this song
+\ *     lda #-7 : sta t_transp+2
+\ *
+\ * Proved on WON4: every audible period difference against Arkos's own
+\ * replay goes, over all 3,312 frames. `python tools/export_akl.py
+\ * <song> --check` reports the triple and refuses the export without it;
+\ * example/build.py passes it through. See docs/format-akl.md.
+\ ******************************************************************
 
 \ ******************************************************************
 \ * akl_init - A/X = LO/HI of the song, Y = subsong index
@@ -823,12 +868,11 @@ ENV_BASE = 12       \ AKL encodes only envelope 8 or 10; EDGEA is 12 throughout
 \ ******************************************************************
 \ * tables and state
 \ ******************************************************************
-.tone_bit       equb 1, 2, 4
 .noise_mask     equb &f7, &ef, &df
 
 \ The CPC period table, 128 notes, split into low and high bytes.
 \ Generated from PlayerLightweight.asm's own table by tools-side Python.
-INCLUDE "src/data/akl_periods.asm"
+INCLUDE "lib/akl_periods.asm"
 
 .state_start
 .t_wait         skip 3
@@ -875,5 +919,6 @@ INCLUDE "src/data/akl_periods.asm"
 .arp_tbl        skip 2
 .pit_tbl        skip 2
 
-.ay_regs        skip 14
+\ ay_regs itself lives in lib/ay2sn.asm - it is the library's boundary
+\ and every player in this repo fills the same fourteen bytes.
 .akl_end

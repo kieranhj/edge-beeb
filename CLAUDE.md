@@ -125,10 +125,14 @@ so the two builds run the same code path and their frame meters compare.
 by simulating the emitted 6502. `docs/layer-8a-gfx-cpc.md`. It used not to assemble at all without `-Akl`; decisions 47-49 gave
 bank 3 and main RAM the room, and **all six flag combinations build now**.
 
-`MUSIC_AKL=1` (`.\build.ps1 -Akl`) swaps the whole music subsystem: `src/aklplayer.asm` replays
-the Arkos tracker data and `src/ay2sn.asm` converts to the SN76489 every frame, in place of
-`lib/vgiplayer.asm` and a pre-converted register log. The whole 349-second tune then fits in HAZEL
-alone and bank 3's copy of the tune disappears. **It is the only build with BOTH of the CPC's
+`MUSIC_AKL=1` (`.\build.ps1 -Akl`) swaps the whole music subsystem: `lib/aklplayer.asm` replays
+the Arkos tracker data and `lib/ay2sn.asm` converts to the SN76489 every frame, in place of
+`lib/vgiplayer.asm` and a pre-converted register log. **Both are VERBATIM copies of
+`../arkos-player-bbc/lib/` and are never edited here** (decision 70); `ENV_BASE` and `BASS_MODE`
+are set in `main.asm`, because the library defaults neither. This build takes `BASS_MODE = 2`,
+the periodic-noise bass, so the third of the tune below the chip's 122 Hz floor is played
+rather than shifted up an octave. HAZEL holds the player alone and BOTH tunes are in bank 3 -
+the current library plus the in-game tune is seventeen bytes more than HAZEL takes. **It is the only build with BOTH of the CPC's
 tunes**: the 66-second win tune is 695 bytes of tracker data at `MUSIC_AKL_WIN` in bank 3 (HAZEL
 has 379 left, so it could not go there), and `music_change` switches to it in `rupt_vsync` the way
 the CPC's `ChangeMusic` does. It needs `WIN_TRANSP0..2` set into `t_transp` after `akl_init`,
@@ -197,9 +201,9 @@ Single-pass flat build, everything included from `main.asm`, labels global.
 | `bank0.asm` | the SWRAM data bank, plus the run-once and out-of-room code: `setup_display`, `clear_play`, `panel_init`, `score_boot`, `status_call`, `title_page`, `pause_check`, `comp_mess`, `finale_tick`, the frame meter |
 | `bank1.asm` | the SWRAM sprite bank for pixel shift 0, and after it **the titles' zoom scroller** (Layer 6e): its font, its message, its four-cycle rupture and the code that drives them. There because nothing on the titles reads a sprite, and reached through `bank_call` in main RAM. Then **the starfield** (Layer 9c, decisions 50 and 51): its tables in what used to be dead space below the tune's B1 stream, its code in the bank's tail. And the completion sequence's **"MEGA HERO" message** (Layer 9c), split the same way: its data and `mega_one` in the same hole, `mega_mess` and `mega_plot` in the tail. The 240-field loop is up here too, because `comp_mess` in bank 0 has sixteen bytes left |
 | `bank2.asm` | the SWRAM sprite bank for pixel shift 1; then **`fade_pal` and the titles' credit crossfade** (Layers 9d and 9e), split either side of the tune stream at `&BA00` because neither the hole below it nor the tail above it would take both. Here because main RAM below `SPR_SAVE` had 68 bytes and bank 3 has 45 in a `-Cpc` build, and because nothing on the titles reads a sprite - the same reason bank 1 holds the zoom scroller |
-| `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3). Default: region A of the tune from `&C000`, the generated stream map and `lib/vgiplayer.asm` at `&D300`, its 11-page ring workspace at `&D500`. Under `MUSIC_AKL`: `aklplayer.asm` + `ay2sn.asm` at `&C000` and the whole tune as tracker data at `&CC00`. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
-| `aklplayer.asm` | `MUSIC_AKL` only: a 6502 port of Arkos Tracker 2's "lightweight" (AKL) replay, producing the fourteen AY registers a frame. X is the channel throughout, Y the byte offset being read. Byte-exact against Arkos's own player over all 17,446 frames |
-| `ay2sn.asm` | `MUSIC_AKL` only: the runtime AY-3-8912 -> SN76489 conversion and `akl_silence`. SN period = 2 x AY period exactly (1 MHz AY, 4 MHz SN), octave-clamped to ten bits; a 32-entry volume LUT; the envelope **sampled**, not averaged |
+| `music.asm` | the HAZEL image (`&C000-&DFFF`, ACCCON bit 3). Default: region A of the tune from `&C000`, the generated stream map and `lib/vgiplayer.asm` at `&D300`, its 11-page ring workspace at `&D500`. Under `MUSIC_AKL`: `lib/aklplayer.asm` + `lib/ay2sn.asm` at `&C000` and nothing else - BOTH tunes are tracker data in bank 3. SAVEd as `MUSIC` and loaded LAST, because HAZEL is the filing system's own workspace |
+| `lib/aklplayer.asm` | `MUSIC_AKL` only, and a VERBATIM copy of arkos-player-bbc's (decision 70): a 6502 port of Arkos Tracker 2's "lightweight" (AKL) replay, producing the fourteen AY registers a frame. X is the channel throughout, Y the byte offset being read. Byte-exact against Arkos's own player over all 17,446 frames |
+| `lib/ay2sn.asm` | `MUSIC_AKL` only, and a VERBATIM copy (decision 70): the runtime AY-3-8912 -> SN76489 conversion and `akl_silence`. SN period = 2 x AY period exactly (1 MHz AY, 4 MHz SN), octave-clamped to ten bits; a 32-entry volume LUT; the envelope sampled, not averaged; a **write-through cache** so only bytes the chip does not already hold go out (ten a field became about two); and `BASS_MODE 2`, the **periodic-noise bass** for the third of the tune below the chip's 122 Hz floor |
 | `bank3.asm` | compiled sprite bodies; the titles' font, credits and text plotter; **the memorial's message and `mem_page`** (Layer 9d), which is the half of it that needs the font; the HUD glyphs and `status_decode`; then region A of the tune from `&9100` to the join at `&C000`. Reached from main RAM through `bank3_call` |
 
 `src/data/` (from Layer 1) is generated by the exporters in `tools/` and **is committed**;

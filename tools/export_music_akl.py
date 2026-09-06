@@ -69,14 +69,12 @@ AKM_EXPORTER = os.path.join(AT3, 'tools', 'SongToAkm.exe')
 # proves it against the song rather than trusting this comment.
 WIN_TRANSPOSE = (0, -3, -7)
 
-# &CC00 to &E000: what is left of HAZEL once the player and converter are in.
-DEFAULT_ADDR = 0xCC00
-HAZEL_TOP = 0xE000
-
-# The win tune does not fit in what is left of HAZEL - 379 bytes free against
-# its 695 - so it lives in sideways bank 3, which has 12,280 free in this
-# build and which rupt_vsync already pages in for the music every field.
-WIN_ADDR = 0x9100
+# BOTH tunes live in sideways bank 3, above its code, because the current
+# library plus the in-game tune is seventeen bytes more than HAZEL holds.
+# rupt_vsync pages that bank in for the music every field already. These must
+# match MUSIC_AKL_SONG and MUSIC_AKL_WIN in src/main.asm.
+DEFAULT_ADDR = 0x9100
+WIN_ADDR = 0xA400
 BANK3_TOP = 0xC000
 
 
@@ -158,7 +156,7 @@ def main():
         raise SystemExit('SongToLightweight.exe not found at %s' % EXPORTER)
 
     out = args.out
-    export(SKS, out, addr, HAZEL_TOP, 'in game, HAZEL')
+    export(SKS, out, addr, WIN_ADDR, 'in game, bank 3')
     if args.check:
         check(out, addr)
 

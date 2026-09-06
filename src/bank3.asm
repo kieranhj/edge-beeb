@@ -506,22 +506,30 @@ ENDIF
 
 IF MUSIC_AKL
 
-\ No music_lo in the Arkos build - the in-game tune is tracker data and lives
-\ in HAZEL with the player - but the FINALE's tune is here, because HAZEL has
-\ 379 bytes left and WON4 is 695. rupt_vsync pages this bank in for the music
-\ every field already, so the replay reads it exactly as it reads HAZEL. The
-\ address is absolute because AKL data is; tools/export_music_akl.py exports
-\ it at MUSIC_AKL_WIN and main.asm is where that constant lives.
-PRINT "BANK 3 code/data ends at", ~P%, "- the win tune at", ~MUSIC_AKL_WIN
-ASSERT P% <= MUSIC_AKL_WIN
+\ No music_lo in the Arkos build. BOTH tunes are here instead - the in-game one
+\ and the finale's - because the current library and the in-game tune together
+\ are seventeen bytes more than HAZEL holds, so HAZEL keeps the player and
+\ this bank keeps the music. rupt_vsync pages this bank in for the music every
+\ field already, so the replay reads them exactly as it reads HAZEL. The
+\ addresses are absolute because AKL data is; tools/export_music_akl.py exports
+\ each tune at the address main.asm names.
+PRINT "BANK 3 code/data ends at", ~P%, "- the tunes at", ~MUSIC_AKL_SONG
+ASSERT P% <= MUSIC_AKL_SONG
+
+ORG MUSIC_AKL_SONG
+.akl_song
+INCBIN "src/data/music_akl.bin"
+.akl_song_end
+ASSERT akl_song_end <= MUSIC_AKL_WIN
 
 ORG MUSIC_AKL_WIN
 .akl_win_song
 INCBIN "src/data/music_akl_win.bin"
 .akl_win_song_end
 ASSERT akl_win_song_end < &C000
+PRINT "IN-GAME TUNE size =", ~akl_song_end - akl_song
 PRINT "WIN TUNE size =", ~akl_win_song_end - akl_win_song
-PRINT "BANK 3 FREE ABOVE IT =", ~&C000 - P%
+PRINT "BANK 3 FREE ABOVE THEM =", ~&C000 - P%
 
 ELSE
 

@@ -282,9 +282,39 @@ VGI_SPLIT = 1
 \ The whole subsystem then fits inside HAZEL - player, converter, tables and
 \ the WHOLE 349-second tune - so bank 3's music_lo disappears and its 8,960
 \ bytes come free. The tune is not truncated in this build.
-MUSIC_AKL_SONG = &CC00      ; the tracker data; tools/export_music_akl.py
-ASSERT MUSIC_AKL_SONG > HAZEL_BASE
-ASSERT MUSIC_AKL_SONG < &E000
+\ BOTH TUNES ARE IN BANK 3, and HAZEL holds nothing but the player. That is
+\ forced arithmetic rather than taste: the current library - the write-through
+\ SN cache and the periodic-noise bass, neither of which the first copy had -
+\ is 3,468 bytes, and 3,468 + the in-game tune's 4,741 is 8,209 against
+\ HAZEL's 8,192. Seventeen bytes over, so the tune moved rather than the
+\ library being held back.
+\
+\ Bank 3 costs nothing to reach: rupt_vsync pages it in for the music every
+\ field already. The addresses are absolute because AKL data is;
+\ tools/export_music_akl.py exports each tune at the one named here.
+MUSIC_AKL_SONG = &9100      ; the in-game tune, 4,741 bytes
+MUSIC_AKL_WIN  = &A400      ; the finale's, 695
+ASSERT MUSIC_AKL_SONG >= &9100
+ASSERT MUSIC_AKL_WIN > MUSIC_AKL_SONG
+ASSERT MUSIC_AKL_WIN < &C000
+
+\ ENV_BASE and BASS_MODE are the HOST'S to define and neither is defaulted by
+\ the library - a default is a choice this file did not make, and BeebASM
+\ cannot ask whether a symbol exists. See lib/ay2sn.asm's header.
+\
+\ ENV_BASE: AKL stores one BIT of envelope shape, meaning ENV_BASE or
+\ ENV_BASE + 2. Both Edge Grinder tunes are envelope 12 throughout - measured
+\ with arkos-player-bbc's tools/survey_envelopes.py, not assumed - so one
+\ constant serves the pair. Had they differed, no single build could play both.
+ENV_BASE = 12
+
+\ BASS_MODE 2: the periodic-noise bass, and nothing else assembled. The
+\ SN76489's lowest note is 122 Hz and a third of EDGEA is below it; mode 2
+\ synthesises those notes on the noise generator clocked by tone 3, which is
+\ what ym2sn.py does offline for the VGI build. It needs no timer and no
+\ interrupt of its own, which is why it and not the software voice: this
+\ game has no spare VIA and its worst frame is already at 108%.
+BASS_MODE = 2
 
 \ THE SECOND TUNE. The CPC has two - EDGEA in game and WON4 for the finale -
 \ and re-inits the replay with the other address when the end sequence starts
@@ -296,10 +326,6 @@ ASSERT MUSIC_AKL_SONG < &E000
 \ which rupt_vsync already pages in for the music every single field - so
 \ the replay reads it with no paging change at all. The address is absolute
 \ because AKL data is: tools/export_music_akl.py exports it there.
-MUSIC_AKL_WIN = &9100       ; the finale's tune, in bank 3 above its code
-ASSERT MUSIC_AKL_WIN >= &8000
-ASSERT MUSIC_AKL_WIN < &C000
-
 \ AKL's linker encodes a transposition only when it CHANGES and the player
 \ starts at zero, so a song whose FIRST position is transposed depends on
 \ AT2's exporter writing it there - and for WON4 it does not. Without these
@@ -587,23 +613,13 @@ GUARD &9F
 .rupt_state     skip 1      ; 0 = fire 1 pending, 1 = fire 2 pending, 2 = done
 
 IF MUSIC_AKL
-\ src/aklplayer.asm's working pointers. Everything else it keeps - the
-\ per-channel state, the tables, the register file - is absolute, up in
-\ HAZEL with the code, so only the indirect reads need to be down here.
-.ptr            skip 2      ; the track / linker pointer being read
-.iptr           skip 2      ; the instrument pointer being read
-.tptr           skip 2      ; scratch indirect: the table lookups
-.cell           skip 1      ; the byte being decoded
-.iofs           skip 1      ; Y, parked while Y is needed for a table
-.per            skip 2      ; the period being computed
-.tmp            skip 2
-.mixer          skip 1      ; R7 as the three channels build it up
-.akl_tick       skip 1      ; ticks until the next line
-.akl_speed      skip 1
-.akl_height     skip 1      ; lines left in this pattern
-.akl_prevh      skip 1      ; the height to reuse when a pattern does not say
-.lnk            skip 2      ; the linker pointer
-.jvec           skip 2      ; the effect dispatch vector
+\ The player's working pointers, 22 bytes, from the library's own header -
+\ this file is a VERBATIM copy of arkos-player-bbc's lib/aklplayer.h.asm and
+\ is never edited here (decision 4 there, decision 70 here). Everything else
+\ the player keeps - the per-channel state, the tables, the register file -
+\ is absolute, up in HAZEL with the code, so only the indirect reads are down
+\ here.
+INCLUDE "lib/aklplayer.h.asm"
 ELSE
 \ The VGI music player's four bytes (lib/vgiplayer.h.asm): two indirect
 \ pointers. Everything else it keeps is absolute, up in HAZEL with the code.

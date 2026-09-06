@@ -257,16 +257,18 @@ it has to be about twenty seconds of one.
 
 ### What it actually cost, now it is built
 
-**It did not go in HAZEL.** 379 bytes are free there once the player, the converter and the whole
-in-game tune are in, and the win tune is 695. It went into **sideways bank 3 at `MUSIC_AKL_WIN` =
-`&9100`**, above that bank's code, which ends at `&9008`:
+**Neither tune is in HAZEL any more.** The win tune never fitted there - 379 bytes were free and it
+is 695 - and when the player was updated to upstream's current library (decision 70) the in-game
+tune stopped fitting either: 3,468 bytes of player and converter plus 4,741 of tune is 8,209 against
+HAZEL's 8,192. Seventeen bytes. So **HAZEL holds the player alone and bank 3 holds the music**:
 
 | | |
 |---|--:|
 | bank 3 code/data ends | `&9008` |
-| the win tune at `&9100` | 695 bytes |
-| bank 3 still free above it | **11,337 bytes** |
-| HAZEL | untouched |
+| the in-game tune at `&9100` | 4,741 bytes |
+| the win tune at `&A400` | 695 bytes |
+| bank 3 still free above them | **6,473 bytes** |
+| HAZEL: player + converter | 3,468 bytes, **4,724 free** |
 
 Bank 3 costs nothing to reach: `rupt_vsync` already pages it in for the music **every field**, in
 this build as in the VGI one, so the replay reads the tune there exactly as it reads HAZEL. Nothing

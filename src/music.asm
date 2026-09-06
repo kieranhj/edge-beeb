@@ -42,10 +42,12 @@ IF MUSIC_AKL
 \ ******************************************************************
 \ *	The Arkos build. Everything the music needs is in HAZEL:
 \ *
-\ *	  &C000  src/aklplayer.asm, the AKL tracker replay, and
-\ *	         src/ay2sn.asm, the AY -> SN76489 conversion, with their
-\ *	         tables and per-channel state
-\ *	  &CC00  the WHOLE tune as Arkos tracker data, 4,741 bytes
+\ *	  &C000  lib/aklplayer.asm, the AKL tracker replay, and
+\ *	         lib/ay2sn.asm, the AY -> SN76489 conversion, with their
+\ *	         tables, per-channel state and the periodic-noise bass
+\ *	         (BASS_MODE 2). Nothing else: BOTH tunes are in bank 3,
+\ *	         because this library plus the in-game tune is seventeen
+\ *	         bytes more than HAZEL holds
 \ *
 \ *	No ring workspace, no half in bank 3, and no truncation: the
 \ *	tune is 349 seconds instead of 203. What it costs is that the
@@ -56,11 +58,16 @@ IF MUSIC_AKL
 
 CLEAR 0, &FFFF
 ORG HAZEL_BASE
-GUARD MUSIC_AKL_SONG
+GUARD &E000
 .hazel_start
 
-INCLUDE "src/aklplayer.asm"
-INCLUDE "src/ay2sn.asm"
+\ VERBATIM copies of arkos-player-bbc's lib/, never edited here: that repo is
+\ upstream and this is decision 70. Their own INCLUDEs are written relative to
+\ a repo root and resolve here unchanged, which is what makes a straight copy
+\ possible at all. ENV_BASE and BASS_MODE are set in main.asm, because they
+\ are properties of the SONG and of this host, not of the library.
+INCLUDE "lib/aklplayer.asm"
+INCLUDE "lib/ay2sn.asm"
 .akl_code_end
 
 \ One frame of music: replay the tracker, then convert what it produced.
@@ -72,12 +79,6 @@ INCLUDE "src/ay2sn.asm"
 }
 .akl_frame_end
 
-CLEAR MUSIC_AKL_SONG, MUSIC_AKL_SONG + 1
-ORG MUSIC_AKL_SONG
-GUARD &E000
-.akl_song
-INCBIN "src/data/music_akl.bin"
-.akl_song_end
 .hazel_end
 
 HAZEL_LOAD_PAGES = (hazel_end - hazel_start + 255) DIV 256
@@ -88,8 +89,8 @@ PRINT "------"
 PRINT "HAZEL - the Arkos replay and the whole tune"
 PRINT "------"
 PRINT "PLAYER+CONVERTER size =", ~akl_frame_end - hazel_start
-PRINT "PLAYER ROOM LEFT =", ~MUSIC_AKL_SONG - akl_frame_end
-PRINT "TUNE size =", ~akl_song_end - akl_song
+PRINT "HAZEL ROOM LEFT =", ~&E000 - akl_frame_end
+PRINT "BOTH TUNES are in bank 3 -", ~MUSIC_AKL_SONG, "and", ~MUSIC_AKL_WIN
 PRINT "LOAD PAGES =", HAZEL_LOAD_PAGES
 PRINT "HIGH WATERMARK =", ~P%
 PRINT "FREE =", ~&E000 - P%
