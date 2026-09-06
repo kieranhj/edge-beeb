@@ -90,6 +90,12 @@ IKN_space = 98              ; measured 2026-09-04, alongside L to prove the
 IKN_ctrl = 1
 IKN_r = 51
 
+\ And Layer 9i's, which is not a new measurement: A is kr_keys' first entry
+\ (src/panel.asm), measured in the same OSBYTE 121 run as the other
+\ thirty-four on 2026-09-06. It is written out here because CTRL+A is read
+\ in src/bank1.asm and a reader of that wants the number, not a table index.
+IKN_a = 65                  ; CTRL+A on the titles toggles auto-fire
+
 \ Which control is which, in read_joystick's order - which is the C64's own
 \ $dc00 bit order, so player_manage's LSR/BCS chain stays the original's.
 JOY_UP = 0
@@ -145,6 +151,32 @@ KEY_MUTE = IKN_q            ; decision 39. Read in the VSync handler, so it
                             ; works wherever the foreground happens to be.
                             ; CTRL+Q since decision 72, tested in that handler
                             ; the same way pause_check tests CTRL+P
+\ ---- the auto-fire message, and the one build that cannot show it -------
+\ It is 174 bytes of BANK 3 - three 38-glyph lines and the plotter entry that
+\ draws them - and a VGI -Cpc build has 24: bank 3's tail is region A of the
+\ tune (decision 48), the Amstrad's compiled sprite bodies are bigger than the
+\ C64's, and the whole VGI music layout has 32 bytes of slack in it, measured
+\ across all four of its regions. There is nothing to reclaim.
+\
+\ VGI IS RETIRED FROM THE CONFIGURATION SET (KC, 2026-09-06), so rather than
+\ hold the feature back for it, the MESSAGE is built wherever bank 3 has the
+\ room and THE TOGGLE ITSELF IS IN EVERY BUILD: af_latch is in zero page and
+\ player.asm never sees this switch. Only the words on the titles are missing,
+\ and only in the one retired combination. HERE rather than in bank3.asm
+\ because bank 2 tests it too and this file is assembled first.
+TTL_AUTO_SHOW = MUSIC_AKL OR (1 - GFX_CPC)
+
+\ How long the message holds, in FIELDS: three seconds at 50 Hz. Counted down
+\ by ttl_auto_key in bank 2, which runs once a field while the titles are up,
+\ and read by title_auto in bank 3, for which 0 means "draw the blank line".
+TTL_AUTO_HOLD = 150
+
+KEY_AUTO = IKN_a            ; decision 73. CTRL+A on the TITLES, not in play:
+                            ; ttl_frame_titles in bank 1 already tests CTRL
+                            ; once a field for R, so the test is free of both
+                            ; main RAM and bank 0, neither of which had the
+                            ; room - and the titles are where the state can
+                            ; be SHOWN. See ttl_frame_titles in src/bank1.asm
 
 \ ******************************************************************
 \ *	MACROS
@@ -320,9 +352,15 @@ VGI_SPLIT = 1
 \ Bank 3 costs nothing to reach: rupt_vsync pages it in for the music every
 \ field already. The addresses are absolute because AKL data is;
 \ tools/export_music_akl.py exports each tune at the one named here.
-MUSIC_AKL_SONG = &9100      ; the in-game tune, 4,741 bytes
-MUSIC_AKL_WIN  = &A400      ; the finale's, 695
-ASSERT MUSIC_AKL_SONG >= &9100
+MUSIC_AKL_SONG = &9200      ; the in-game tune, 4,741 bytes
+MUSIC_AKL_WIN  = &A500      ; the finale's, 695
+\ BOTH MOVED UP A PAGE IN LAYER 9i, from &9100 and &A400: the auto-fire
+\ indicator is 136 bytes of this bank's code and data and a -Cpc build had
+\ not got them below &9100. There are 6,217 bytes above the two tunes, so
+\ the page came from there. AKL DATA IS ABSOLUTE, so the tunes have to be
+\ RE-EXPORTED at the new addresses - tools/export_music_akl.py carries the
+\ same two numbers and its --check proves them.
+ASSERT MUSIC_AKL_SONG >= &9200
 ASSERT MUSIC_AKL_WIN > MUSIC_AKL_SONG
 ASSERT MUSIC_AKL_WIN < &C000
 
@@ -671,6 +709,28 @@ GUARD &9F
 \\ and never again, so a redefinition survives a game, the finale and the
 \\ return to the titles for nothing. key_init fills it, after the wipe.
 .joy_keys       skip JOY_COUNT
+
+\\ Auto-fire (Layer 9i, decision 73), and it is IN ZERO PAGE FOR THE SAME
+\\ REASON joy_keys is: this byte is what fire_bullet writes into fire_latch,
+\\ so `lda af_latch` stands where `lda #1` stood at the same two bytes and
+\\ the same two cycles. 1 = auto-fire OFF, the latch set and a release
+\\ needed before the next shot, which is the C64's behaviour exactly; 0 =
+\\ ON, the latch never set, so holding fire shoots as fast as the single
+\\ bullet slot comes free - which is the maximum rate the game has.
+\\ key_init sets it to 1, and zero page is wiped once at boot and never
+\\ again, so the choice survives a game, the finale and the titles.
+.af_latch       skip 1
+
+\\ And auto-fire's other two bytes, HERE rather than in the &0800 block
+\\ beside mute_was, which is what they otherwise look like. Bank 2's tail is
+\\ the tightest ground in the build - 43 bytes in a DEV -Nula one and
+\\ ttl_auto_key wanted 45 of them - and zero page had 66 going spare, so
+\\ each `sta`, `eor` and `dec` being a byte shorter here is what made the
+\\ routine fit. Both are wiped to 0 at boot, which is the right start for
+\\ each: no key held, and no message on the clock.
+.auto_was       skip 1      ; CTRL+A's edge state: &80 both down, else 0
+.ttl_auto_tmr   skip 1      ; fields the message has left, TTL_AUTO_HOLD down
+                            ; to 0; bank 3's title_auto reads 0 as "blank"
 .coll_row       skip 1      ; play-area character row being sampled
 .coll_col       skip 1      ; and screen character column, 0-39
 .coll_base      skip 1      ; coll_map slot holding screen column 0
@@ -1601,6 +1661,11 @@ ENDIF
     sta joy_keys, x
     dex
     bpl copy
+
+    \\ Auto-fire defaults OFF (KC, decision 73): 1 is what fire_bullet
+    \\ writes into fire_latch, which is the C64's own `lda #1`.
+    lda #1
+    sta af_latch
     rts
 }
 
@@ -2077,6 +2142,7 @@ ORG GAME_STATE
 .ttl_c_set      skip 1      ; 0 the C64's credits, 1 this port's
 .ttl_fade_on    skip 1      ; the credit raster stands down while this is set
 .ttl_redraw     skip 1      ; bank 2 asks main RAM for a bank 3 call
+
 .ttl_cred_ptr   skip 2      ; where title_text reads its five lines from
 
 \ The redefine screen (Layer 9h, decision 71). Its code, its text and its

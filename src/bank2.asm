@@ -72,6 +72,27 @@ TTL_C_LOW  = 8                  ; the credits' own logical colours, 8-15
 \ ---- ttl_cred_step: one field of it ------------------------------
 .ttl_cred_step
 {
+    \\ CTRL+A, and BEFORE the NuLA return below: the option is not the
+    \\ crossfade's. The key test is in this bank's TAIL and the message's
+    \\ clock is HERE, in the hole, because the tail is four bytes short of
+    \\ both - and the two halves are one bank, so the jsr costs nothing.
+    jsr ttl_auto_key
+IF TTL_AUTO_SHOW
+{
+    \\ And the clock, every field, whether anything was pressed or not. At
+    \\ the tick that takes it to 0 the message is rubbed out - one more
+    \\ repaint, and title_auto draws the blank line because the timer is
+    \\ what it reads. Nothing polls it after that: 0 stays 0.
+    lda ttl_auto_tmr
+    beq done
+    dec ttl_auto_tmr
+    bne done
+    lda #&ff
+    sta ttl_redraw
+    .done
+}
+ENDIF
+
 IF GFX_NULA
     \\ The crossfade does not run in a NuLA build (decision 63). It works by
     \\ owning three palette entries nothing else on the page uses, and under
@@ -198,6 +219,67 @@ IF NOT(GFX_NULA)
 .fade_tmp  EQUB 0
 ENDIF
 
+\ ******************************************************************
+\ *	ttl_auto_key - CTRL+A toggles auto-fire (Layer 9i, decision 73)
+\ ******************************************************************
+\ *	IN BANK 2's TAIL because it is the titles' bank and this is the
+\ *	part of it with the room: the hole below the tune stream has 38
+\ *	bytes in a VGI -Cpc build and this is 40, and the two halves of
+\ *	the bank are one bank, so the jsr from ttl_cred_step reaches it
+\ *	with nothing paged. Bank 1 was tried first, hung off the CTRL test
+\ *	ttl_frame_titles already makes for CTRL+R, which would have been
+\ *	free - and bank 1's tail is nine bytes short of it in a VGI build.
+\ *	Main RAM below SPR_SAVE has fourteen bytes in a -Akl build and
+\ *	bank 0 has nine, so neither of those could hold it either. Here it
+\ *	costs one extra keydown a field, about 69 cycles, on a page whose
+\ *	whole job is to wait for a key.
+\ *
+\ *	A sideways bank may call main RAM as long as it pages nothing, and
+\ *	keydown pages nothing - bank 1's redefine screen calls it the same
+\ *	way. af_latch is zero page and ttl_redraw is the &0800 block; both
+\ *	are readable and writable from here with this bank in.
+\ *
+\ *	EDGE-TRIGGERED ON THE PRESS, and on the COMBINATION - letting go
+\ *	of either key arms the next press. This is rupt_vsync's CTRL+Q
+\ *	detector exactly, and for the same reason: holding the two down
+\ *	would otherwise toggle fifty times a second.
+\ *
+\ *	The repaint is ASKED FOR, not done: ttl_redraw is this bank's own
+\ *	signal to ttl_cred_tick in main RAM, which makes the bank 3 call -
+\ *	and title_text draws the indicator with the credits since Layer
+\ *	9i, so setting it is the whole of the display side. Repainting the
+\ *	credits underneath with the set that is already up is invisible.
+\ ******************************************************************
+
+.ttl_auto_key
+{
+    ldx #IKN_ctrl               ; CTRL first, as CTRL+P and CTRL+Q do: it is
+    jsr keydown                 ; up in almost every field, and A is then
+    beq state                   ; already the 0 the edge detector wants
+    ldx #KEY_AUTO
+    jsr keydown
+
+    .state
+    tax                         ; &80 both down, 0 otherwise
+    eor auto_was
+    beq out                     ; unchanged
+    stx auto_was
+    txa
+    beq out                     ; the release edge, not the press
+    lda af_latch                ; 1 off, 0 on - it is the value fire_bullet
+    eor #1                      ; writes into fire_latch, not a flag
+    sta af_latch
+IF TTL_AUTO_SHOW
+    lda #TTL_AUTO_HOLD          ; the message goes up and starts its clock
+    sta ttl_auto_tmr
+    lda #&ff
+    sta ttl_redraw
+ENDIF
+
+    .out
+    rts
+}
+
 \ ---- ttl_cred_init: the crossfade's own starting state -----------
 \ Called through the ttl_cred_start shim in main RAM. Here rather than
 \ there since Layer 9h (decision 72): it is nothing but stores into the
@@ -213,6 +295,9 @@ ENDIF
     lda #HI(title_lines_data) : sta ttl_cred_ptr+1
     lda #TTL_C_LOW  : sta fade_low      ; the credits' own logicals, 8-15
     lda #0
+IF TTL_AUTO_SHOW
+    sta ttl_auto_tmr                    ; no auto-fire message on the clock -
+ENDIF                                   ; fire may have started a game with one
     sta ttl_c_set                       ; the C64's credits are what is up
     sta ttl_fade_on
     sta ttl_redraw

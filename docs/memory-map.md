@@ -33,7 +33,7 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 
 | Range | Bytes | Contents | Free |
 |---|---|---|---|
-| `&0000-&009F` | 160 | zero page, ours, wiped at boot, `GUARD &9F` | **85** — high water `&4B`. Under `MUSIC_AKL` the Arkos player's pointers take it to `&5C`, **68** free. Layer 9h spent five on `joy_keys`, the five bindings, and spent them HERE so that `ldx joy_keys + JOY_FIRE` is the same two bytes `ldx #KEY_FIRE` was and bank 0 does not grow (decision 71) |
+| `&0000-&009F` | 160 | zero page, ours, wiped at boot, `GUARD &9F` | **85** — high water `&4B`. Under `MUSIC_AKL` the Arkos player's pointers take it to `&5C`, **68** free. Layer 9h spent five on `joy_keys`, the five bindings, and spent them HERE so that `ldx joy_keys + JOY_FIRE` is the same two bytes `ldx #KEY_FIRE` was and bank 0 does not grow (decision 71). Layer 9i spent three more: `af_latch`, which is what `fire_bullet` writes into `fire_latch`, so `lda af_latch` stands where `lda #1` stood at the same two bytes and cycles; and `auto_was` and `ttl_auto_tmr`, which look like `&0800` block variables and are here because bank 2's tail is the tightest ground in the build and a byte a reference is what made `ttl_auto_key` fit (decision 73) |
 | `&00A0-&00FF` | 96 | MOS zero page | — |
 | `&0100-&01FF` | 256 | stack | — |
 | `&0200-&03FF` | 512 | MOS vectors and workspace. `IRQ1V` (`&0204`) is ours outright | — |
@@ -186,11 +186,11 @@ Layer 9f traded bank 1's hole for two thirds of `&3C80`. What remains, largest f
 |---|---|---|---|
 | `&0800` game-state block | **378** | 378 | uninitialised RAM for variables, not for anything loaded |
 | bank 1's hole below `&B900` | **23** | 17 | paged, `SWRAM_SPRITES0`. Layer 9h's redefine screen took 431 (decision 71) |
-| bank 3 below the tune | **237** | **29** | paged, `SWRAM_COMPILED`; the tightest bank in a `-Cpc` build |
+| bank 3 below the tune | **21** | **24** | paged, `SWRAM_COMPILED`. Layer 9i's auto-fire message is 174 bytes of it and **is not built in a VGI `-Cpc` one**, which had 29: `TTL_AUTO_SHOW` in `src/main.asm` says so, and the toggle itself is in every build (decision 73) |
 | `&3C80` in each bank | **32** | 32 | main copy directly addressable, shadow needs ACCCON. Layer 9h took 196: 152 of text and the 44 bytes of tables its code had no room for |
 | bank 2's hole below `&BA00` | **220** | **38** | paged, `SWRAM_SPRITES1` |
 | page `&0C00` | **160** | 160 | main RAM, no paging |
-| bank 2's tail | **56** | 56 | paged. Layer 9h put `ttl_cred_init` here, out of main RAM (decision 72) |
+| bank 2's tail | **16** (**3** with `-Nula`) | **16** | paged, and **the tightest region in the machine now**. Layer 9h put `ttl_cred_init` here, out of main RAM (decision 72); Layer 9i put `ttl_auto_key`, CTRL+A's 42 bytes, here too - bank 1, where it would have ridden free on the CTRL test `ttl_frame_titles` already makes, is nine bytes short in its tail - and had to put that routine's countdown in the HOLE, four bytes not fitting (decision 73) |
 | ANDY | **98** | 98 | ROMSEL bit 7, overlays the low 4K of the selected bank |
 | bank 1's tail | **16** | 16 | paged. Two of Layer 9h's leaf routines, 57 bytes, because its hole could not hold the whole screen |
 | main RAM below `SPR_SAVE` | **52** | 52 | **14 in a DEV `-Akl` build, where it was 7 before Layer 9h**; the only place executable main-RAM code can go. Layer 9h ran out of it twice and ended with MORE than it started: moving `ttl_cred_start`'s body to bank 2's tail gave back 26 (decision 72) |

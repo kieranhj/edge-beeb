@@ -73,8 +73,10 @@ WIN_TRANSPOSE = (0, -3, -7)
 # library plus the in-game tune is seventeen bytes more than HAZEL holds.
 # rupt_vsync pages that bank in for the music every field already. These must
 # match MUSIC_AKL_SONG and MUSIC_AKL_WIN in src/main.asm.
-DEFAULT_ADDR = 0x9100
-WIN_ADDR = 0xA400
+# Moved up a page in Layer 9i to make bank 3 room for the auto-fire
+# indicator; these must match MUSIC_AKL_SONG and MUSIC_AKL_WIN in main.asm.
+DEFAULT_ADDR = 0x9200
+WIN_ADDR = 0xA500
 BANK3_TOP = 0xC000
 
 

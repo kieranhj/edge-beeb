@@ -48,6 +48,7 @@ import sheets      # noqa: E402
 OUT = os.path.join(ROOT, 'src', 'data', 'title.bin')
 OUT_EXTRA = os.path.join(ROOT, 'src', 'data', 'title_extra.bin')
 OUT_KR = os.path.join(ROOT, 'src', 'data', 'title_kr.bin')
+OUT_AUTO = os.path.join(ROOT, 'src', 'data', 'title_auto.bin')
 
 GLYPHS = mechanical.TITLE_GLYPHS
 
@@ -119,6 +120,21 @@ KR_MSGS = ['PRESS A KEY', 'ALREADY USED']
 # centres thirteen glyphs in thirty-eight bar half a cell.
 KR_HEAD = 'REDEFINE KEYS'
 KR_HEAD_REC = 16
+
+# The auto-fire message (Layer 9i, decision 73). It pops up CENTRED on credit
+# row 1 - the gap the C64's own credit spacing leaves and title_rows skips, so
+# it displaces no credit - holds for TTL_AUTO_HOLD fields, and goes again. It
+# is not a standing label: KC's call, and it keeps the page as it was.
+#
+# THREE WHOLE LINES, the blank included, rather than a value drawn at a
+# column: the plotter draws a fixed 38 glyphs from one pointer and nothing
+# else, so three lines makes both the draw AND the erase a pointer choice
+# instead of a special case, and 114 bytes is nothing in a bank with six
+# kilobytes free. The blank is what rubs the message out again.
+#
+# BLANK FIRST, so title_auto's default pointer is the erase.
+AUTO_LINES = [line.center(LINE_LEN)
+              for line in ('', 'auto fire off', 'auto fire on')]
 
 # The multicolour bit pair -> our MODE 2 logical colour. Pair 0 is the
 # background and stays black; the glyphs use 3 for the body and 1 and 2 for the
@@ -209,6 +225,11 @@ def main(c64=False, use_nula=False, cpc=False):
     kr += encode_fixed(KR_MSGS, KR_MSG_REC, drawn=KR_MSG_DRAWN)
     kr += encode_fixed([KR_HEAD], KR_HEAD_REC)
 
+    # The auto-fire message's three lines: blank, OFF, ON. title_auto in bank
+    # 3 takes the blank when the hold timer has run out, and otherwise OFF or
+    # ON as af_latch says - which is 1 with auto-fire off.
+    auto = encode(AUTO_LINES)
+
     suffix = ('-nula' if use_nula else '') + ('-cpc' if cpc else '')
     out_path = OUT.replace('title.bin', 'title%s.bin' % suffix)
     with open(out_path, 'wb') as f:
@@ -217,6 +238,8 @@ def main(c64=False, use_nula=False, cpc=False):
         f.write(extra)
     with open(OUT_KR, 'wb') as f:
         f.write(kr)
+    with open(OUT_AUTO, 'wb') as f:
+        f.write(auto)
     print('%s: %d bytes (%d glyphs, %d lines of %d)'
           % (out_path, len(out), GLYPHS, len(CREDITS), LINE_LEN))
     print('%s: %d bytes (%d lines of %d)'
@@ -225,6 +248,8 @@ def main(c64=False, use_nula=False, cpc=False):
           'heading %r at %d)'
           % (OUT_KR, len(kr), len(KR_LABELS), len(KR_NAMES), KR_REC,
              len(KR_MSGS), KR_MSG_REC, KR_HEAD, KR_HEAD_REC))
+    print('%s: %d bytes (%d lines of %d, blank then OFF then ON)'
+          % (OUT_AUTO, len(auto), len(AUTO_LINES), LINE_LEN))
 
 
 if __name__ == '__main__':

@@ -78,14 +78,84 @@ title_lines_data = title_font + 32 * TITLE_GLYPH_BYTES
 .title_rows
     EQUB 0, 2, 3, 4, 5          ; the credits: ttl_rows_ofs = 0
     EQUB 0, 1, 2, 3, 4, 5       ; the redefine screen: ttl_rows_ofs = TITLE_LINES
+    EQUB 1                      ; the auto-fire indicator: TTL_ROWS_AUTO
+TTL_ROWS_AUTO = TITLE_LINES + KR_LINES
 
 \ 38 characters is 152 of the 160 pixels, so one byte column of margin.
 TITLE_COL0 = 2
 
+\ ******************************************************************
+\ *	The auto-fire indicator (Layer 9i, decision 73)
+\ ******************************************************************
+\ *	Two whole 38-glyph lines, OFF then ON, from tools/export_title.py.
+\ *	They go on CREDIT ROW 1, which is the gap the C64's own credit
+\ *	spacing leaves - title_rows' credit list is 0, 2, 3, 4, 5 - so the
+\ *	line sits inside the block without displacing a word of it.
+\ *
+\ *	AND IT MUST NOT FADE, which is the whole point of an indicator:
+\ *	the credits either side of it cross-fade to black and back every
+\ *	few seconds, and a state that is legible only half the time is no
+\ *	state at all. The crossfade is the palette and it touches logicals
+\ *	8-15 alone (fade_low = TTL_C_LOW, src/bank2.asm), while the title
+\ *	font is painted in 12, 14 and 15 - which setup_display maps to the
+\ *	SAME RGB as 4, 6 and 7 (decision 53). So the indicator is the same
+\ *	glyphs with the top bit of every logical taken off: identical on
+\ *	screen, and outside the range the fade walks.
+\ *
+\ *	TTL_AUTO_MASK is what takes it off. In MODE 2 a byte is two fat
+\ *	pixels and a logical's bit 3 lands in bit 7 for the left pixel and
+\ *	bit 6 for the right - PROVED against tools/bbc.py's own mode2_byte,
+\ *	not recalled: 12, 14 and 15 pack to &A0, &A8, &AA on the left and
+\ *	&50, &54, &55 on the right, and 4, 6 and 7 to &20, &28, &2A and
+\ *	&10, &14, &15. Clearing bits 7 and 6 turns each into the other and
+\ *	leaves logical 0, the background, at 0.
+\ *
+\ *	AND IT IS &FF IN A NuLA BUILD, where all sixteen palette entries
+\ *	are real colours of the source palette, 12/14/15 are not aliases
+\ *	of 4/6/7, and the crossfade does not run at all (decision 63). No
+\ *	fade to dodge, and dodging it would recolour the line.
+\ ******************************************************************
+IF GFX_NULA
+TTL_AUTO_MASK = &ff
+ELSE
+TTL_AUTO_MASK = &3F
+ENDIF
+
+\ TTL_AUTO_SHOW is in main.asm: bank 2 tests it too, and that file is
+\ assembled first. It is 0 in a VGI -Cpc build alone, where this bank has
+\ not got the 174 bytes - see the comment there.
+IF TTL_AUTO_SHOW
+
+.title_auto_blank
+INCBIN "src/data/title_auto.bin"
+title_auto_off = title_auto_blank + TITLE_LINE_LEN
+title_auto_on  = title_auto_blank + 2 * TITLE_LINE_LEN
+ENDIF
+
+\ What the copy loop below ANDs every glyph byte with. &FF for the credits
+\ and the redefine screen; TTL_AUTO_MASK for the one line title_auto draws.
+.ttl_and    EQUB &ff
+
 \ The zero page it borrows: write_ptr and read_ptr are the generic pair, and
 \ spr_tmp is the sprite engine's scratch. Nothing is drawing sprites while the
 \ titles are up, and clear_play has finished with write_ptr before this runs.
+\
+\ TWO ENTRIES SINCE LAYER 9i: title_text is what everything calls, and it is
+\ title_body followed by title_auto - so the indicator is redrawn by every
+\ paint of the block and NOTHING IN MAIN RAM HAD TO CHANGE, which mattered:
+\ main RAM below SPR_SAVE has fourteen bytes in a -Akl build. title_body is
+\ the plotter itself and title_auto calls it a second time for its one line.
+\ Bank 1 asks for a repaint by setting ttl_redraw, which is the mechanism
+\ bank 2's crossfade already had.
+IF TTL_AUTO_SHOW
 .title_text
+{
+    jsr title_body
+    jmp title_auto              ; its rts
+}
+ENDIF
+
+.title_body
 {
     ldx #0                      \\ line
     .line_loop
@@ -154,6 +224,7 @@ TITLE_COL0 = 2
     ldy #TITLE_GLYPH_BYTES-1
     .copy
     lda (spr_tmp), y
+    and ttl_and                 ; &FF for everything but the auto-fire line
     sta (write_ptr), y
     dey
     bpl copy
@@ -184,6 +255,72 @@ TITLE_COL0 = 2
     .line_no EQUB 0
     .char_no EQUB 0
 }
+
+IF TTL_AUTO_SHOW = 0
+title_text = title_body         ; no indicator in this build - see
+ENDIF                           ; TTL_AUTO_SHOW above
+
+IF TTL_AUTO_SHOW
+\ ******************************************************************
+\ *	title_auto - the indicator's own line, on credit row 1
+\ ******************************************************************
+\ *	Called from title_text after every paint of the block, and it is
+\ *	title_body a second time with three variables pointed elsewhere:
+\ *	one line, row 1, and whichever of the two 38-glyph lines af_latch
+\ *	says. The mask goes on for that one call so the line lands in
+\ *	logicals 4, 6 and 7 and the credits' crossfade cannot touch it.
+\ *
+\ *	IT REFUSES TO DRAW ON THE REDEFINE SCREEN. That screen uses all
+\ *	six rows - a heading and the five controls - and row 1 is LEFT.
+\ *	ttl_rows_ofs is 0 for the credits and TITLE_LINES for it, which is
+\ *	the test. kr_cred_back paints the six blank on the way out and
+\ *	then comes back through here, so the indicator returns with them.
+\ *
+\ *	The three variables are put back to the credits' own values rather
+\ *	than saved and restored: the test above means those are the only
+\ *	values that can have reached here. ttl_cred_ptr is the exception
+\ *	and IS restored, because ttl_c_set decides it and this cannot see
+\ *	which set is up.
+\ ******************************************************************
+
+.title_auto
+{
+    lda ttl_rows_ofs
+    bne out                     ; the redefine screen owns row 1
+
+    lda ttl_cred_ptr   : sta save
+    lda ttl_cred_ptr+1 : sta save+1
+
+    ldx #LO(title_auto_blank)   ; the timer has run out, or never ran: the
+    ldy #HI(title_auto_blank)   ; blank line, which is also the erase
+    lda ttl_auto_tmr
+    beq pick
+    ldx #LO(title_auto_off)     ; af_latch is 1 with auto-fire OFF
+    ldy #HI(title_auto_off)
+    lda af_latch
+    bne pick
+    ldx #LO(title_auto_on)
+    ldy #HI(title_auto_on)
+    .pick
+    stx ttl_cred_ptr
+    sty ttl_cred_ptr+1
+
+    lda #TTL_ROWS_AUTO : sta ttl_rows_ofs
+    lda #1             : sta ttl_lines
+    lda #TTL_AUTO_MASK : sta ttl_and
+    jsr title_body
+
+    lda #0             : sta ttl_rows_ofs   ; the credits' own row list,
+    lda #TITLE_LINES   : sta ttl_lines      ; five lines, and no mask
+    lda #&ff           : sta ttl_and
+    lda save   : sta ttl_cred_ptr
+    lda save+1 : sta ttl_cred_ptr+1
+    .out
+    rts
+
+    .save EQUW 0
+}
+ENDIF
 
 \ ******************************************************************
 \ *	The memorial's page - "IN MEMORY OF T.M.R." (Layer 9d)

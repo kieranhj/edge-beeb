@@ -341,6 +341,16 @@ ENDIF
 
     \\ The latch stops fire autorepeating: it is set when a bullet goes
     \\ out and only cleared when the button is seen released.
+    \\
+    \\ AUTO-FIRE IS THE VALUE THAT GOES INTO IT (Layer 9i, decision 73).
+    \\ The C64 writes `lda #1` below; we write af_latch, which is 1 with
+    \\ auto-fire off and 0 with it on. A latch left clear means the test
+    \\ above falls straight through to fire_bullet on the next frame, and
+    \\ the rate cap is then the one the game already has - fire_bullet
+    \\ fires only when sprite_pos+3 is 0, i.e. when the single bullet
+    \\ slot is free. af_latch is in ZERO PAGE, so this costs nothing at
+    \\ all: the same two bytes and the same two cycles as the immediate
+    \\ it replaces, and player_manage stays the original's LSR/BCS chain.
     .player_fire
     ldy fire_latch
     beq fire_bullet
@@ -365,7 +375,7 @@ ENDIF
     sta enemy_spds+2
     lda #0
     sta enemy_spds+3
-    lda #1
+    lda af_latch                ; the C64's `lda #1`, made a variable
     sta fire_latch
     lda #BUL_ANIM_START
     sta sprite_dp+1
