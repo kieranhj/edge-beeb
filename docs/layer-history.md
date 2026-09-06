@@ -485,6 +485,37 @@ the next thing wanting main-RAM code would have to do: `load_stream`, `unpack_to
 which costs the loading screen headroom: `LOADSC2`'s stream has 252 bytes to `&3000` rather than
 764, and `tools/make_disc.py` refuses an image that overruns it.
 
+## Layer 9h — CTRL+R redefines the five keys (2026-09-06, decisions 71 and 72)
+
+The port's own; the C64 reads a joystick. `Paradroid/src/keyredef.asm` is where the shape came
+from. **The screen is a third credit set** — five lines of 38 glyph numbers through the
+`ttl_cred_ptr` decision 53 already made a variable — so it costs no plotter, no palette work, no
+bank 3 and no change to the rupture. Thirty-four keys bind (26 letters, four cursor keys, SHIFT,
+RETURN, `/`, `:`), every internal number measured, and the candidate table is the scan as well as
+the naming. `joy_keys` moved to zero page so that reading a binding is the same two bytes reading a
+constant was.
+
+**Then pause and mute became CTRL+P and CTRL+Q** (decision 72), which is what made P and Q
+bindable - they had been refused because a control bound to either would pause or mute the game -
+and the screen gained a `REDEFINE KEYS` heading and a sixth line, its five controls together. SPACE
+went in as a thirty-fifth candidate: it starts a game from the titles, but the screen owns the
+keyboard while it is up and will not exit until SPACE is released, so the two never meet. Nothing
+is refused any more.
+
+**It did not fit where it was specced, twice.** The code came in 69 bytes over bank 1's hole: the
+tables went to `&3C80`, two leaf routines to bank 1's tail past the tune stream, and four call
+pairs were folded up. Then the trigger — 24 bytes in `key_start` — broke
+`ASSERT code_end <= SPR_SAVE` in the four DEV `-Akl` builds *only*, and moved into
+`ttl_frame_titles` in bank 1, riding on a `bank_call` `title_page` was already making. `bank_call`
+gained a `bank_restore` byte, which is the whole of the layer's main-RAM cost.
+
+Two bugs the emulator caught are in that file and worth not rediscovering: a main-RAM routine that
+started PAGING while a bank-1 caller went on treating it as though it only stored, and the credits'
+inability to clear credit row 1 - their row list skips it - which left the redefine screen's second
+line sitting on top of them.
+
+Detail, the measured key table and the twenty checks: [`layer-9h-keyredef.md`](layer-9h-keyredef.md).
+
 ## Two things built and taken out again
 
 Both are worth not rediscovering.

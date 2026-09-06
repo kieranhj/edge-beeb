@@ -347,15 +347,13 @@ ENDIF
 
 .pause_check
 {
-    ldx #KEY_PAUSE
-    jsr keydown
+    jsr key_pause
     bpl out
 
     \\ Wait for P to be let go, or holding it would toggle every frame
     .p_release
     jsr field_wait
-    ldx #KEY_PAUSE
-    jsr keydown
+    jsr key_pause
     bmi p_release
 
     \\ The tune stops with the game (KC, decision 43) - the C64 leaves it
@@ -378,18 +376,17 @@ ENDIF
     \\ P comes back out as well as fire (KC). The C64 has only its fire
     \\ button here, having no second key to spare; P is the one that got
     \\ us in, so it is the one a player reaches for.
-    ldx #KEY_PAUSE
-    jsr keydown
+    jsr key_pause
     bmi p_out
 
-    ldx #KEY_FIRE
+    ldx joy_keys + JOY_FIRE
     jsr keydown
     bpl paused
 
     \\ Fire is down: wait for it to come up before playing on
     .f_release
     jsr field_wait
-    ldx #KEY_FIRE
+    ldx joy_keys + JOY_FIRE
     jsr keydown
     bmi f_release
     jmp resume
@@ -399,8 +396,7 @@ ENDIF
     \\ again on the spot.
     .p_out
     jsr field_wait
-    ldx #KEY_PAUSE
-    jsr keydown
+    jsr key_pause
     bmi p_out
 
     .resume
@@ -556,7 +552,7 @@ ENDIF
 
     jsr anim_step
 
-    ldx #KEY_FIRE
+    ldx joy_keys + JOY_FIRE
     jsr keydown
     bpl out
 IF MUSIC_AKL
@@ -639,8 +635,8 @@ ENDIF
     .wait
     jsr field_wait
     lda #SWRAM_SPRITES0
-    ldx #LO(ttl_frame)
-    ldy #HI(ttl_frame)
+    ldx #LO(ttl_frame_titles)
+    ldy #HI(ttl_frame_titles)
     jsr bank_call
     jsr ttl_cred_tick
     jsr key_start               ; fire or SPACE (KC)

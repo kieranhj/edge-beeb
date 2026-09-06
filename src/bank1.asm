@@ -286,6 +286,48 @@ EQUB 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
 
 \ ******************************************************************
+\ *	ttl_frame_titles - a field of the page, and CTRL+R
+\ ******************************************************************
+\ *	What title_page calls; ttl_frame itself is what the redefine
+\ *	screen's own loop calls, which is the whole reason there are two
+\ *	entries. Putting the test inside ttl_frame would have had the
+\ *	screen re-enter itself once a field.
+\ *
+\ *	THE TRIGGER IS HERE because everywhere else was full: bank 0,
+\ *	where title_page's loop is, has nine bytes, and main RAM below
+\ *	SPR_SAVE - where key_start is, and where this was first written -
+\ *	has 45 and needs 24 of them, which breaks the DEV -Akl builds.
+\ *	title_page was already bank_call'ing into this bank once a field,
+\ *	so the test is free of both, and kr_run is a plain jsr from here.
+\ *
+\ *	It runs BEFORE key_start does, which is what stops a fire bound
+\ *	to R from starting a game on the way in: by the time key_start is
+\ *	reached the screen has been and gone and kr_wait_up has left the
+\ *	keyboard clear.
+\ *
+\ *	FIRE AND SPACE ARE NOT TESTED HERE. They were, for an hour, to buy
+\ *	main RAM back when that was the region in trouble; moving
+\ *	ttl_cred_start's body to bank 2 gave main RAM 65 bytes and left
+\ *	THIS bank as the tight one, so key_start went back where it was
+\ *	and the sixteen bytes came back here.
+\ ******************************************************************
+
+.ttl_frame_titles
+{
+    jsr ttl_frame
+    ldx #IKN_ctrl
+    jsr keydown
+    bpl out
+    ldx #IKN_r
+    jsr keydown
+    bpl out
+    jmp kr_run                  ; same bank: no paging, and its rts
+    .out
+    rts
+}
+
+
+\ ******************************************************************
 \ *	The credits raster (Layer 6e, decisions 2 and 3 of the layer)
 \ ******************************************************************
 \ *	The C64's `ttl_pulse` is a HORIZONTAL colour-RAM cycle along the
@@ -662,6 +704,395 @@ mega_bits2 = mega_data + 47     ; "HERO", stored back to front
     rts
 }
 
+\ ******************************************************************
+\ *	Layer 9h: CTRL+R on the titles redefines the five keys
+\ ******************************************************************
+\ *	The C64 reads a joystick and has nothing of the kind, so all of
+\ *	this is the port's own (decision 71). The Paradroid port built it
+\ *	first - Paradroid/src/keyredef.asm, its 11f decision 15 - and the
+\ *	refusals, the wait-for-a-clear-keyboard and the message hold are
+\ *	that file's, with its reasons.
+\ *
+\ *	THE SCREEN IS A THIRD CREDIT SET, and that is the whole design.
+\ *	title_text in bank 3 draws five lines of 38 glyph numbers through
+\ *	ttl_cred_ptr, which Layer 9e already made a variable so the
+\ *	crossfade could point it at a second set. Point it at a block we
+\ *	compose in main RAM instead and the redefine screen costs NO new
+\ *	plotter, NO new palette work, NO sixth T1 fire, not a byte of bank
+\ *	3 - which has 43 left in a -Cpc build - and no change to the
+\ *	rupture, so the page cannot pick up another switch flicker
+\ *	(BUGS.md #14). Everything below follows from staying at five
+\ *	lines of 38.
+\ *
+\ *	THE PROMPT IS ON THE LINE IT CONCERNS, unlike Paradroid's, which
+\ *	has a message row of its own. Five rows is what there is; and it
+\ *	reads better, the eye being on that line already.
+\ *
+\ *	WHY IT IS IN BANK 1. It needs its own field loop, so it must be
+\ *	able to call field_wait and keydown - which a sideways bank may
+\ *	do, both being main-RAM routines that touch no bank. What it may
+\ *	not do is call main-RAM code that pages a different bank in and
+\ *	restores somebody else's, and bank_call's bank_restore byte
+\ *	(Layer 9h, main.asm) is what fixes that for the one call it
+\ *	needs: bank 3, to paint the block. Bank 0, where title_page is,
+\ *	has NINE bytes; main RAM below SPR_SAVE has 45; this is a few
+\ *	hundred and bank 1's hole is the only place it fits.
+\ ******************************************************************
+
+\ KR_CANDS, and kr_keys / kr_order / kr_rows themselves, are in src/panel.asm
+\ with the rest of the screen's data: they wanted to be here and this bank's
+\ hole was 69 bytes short of holding the code alone.
+KR_LETTERS = 26                 ; the first 26 candidates, whose glyph is their
+                                ; index plus one - which is why there is no
+                                ; name table for all but eight
+KR_COL_LBL = 1                  ; the label's column in the 38
+KR_COL_KEY = 26                 ; and the value's: twelve cells to column 37
+KR_MSG_ASK  = 0
+KR_MSG_USED = 1
+KR_MSG_DRAWN = 12               ; of a message's sixteen stored glyphs
+KR_HEAD_COL = 12                ; REDEFINE KEYS, centred in the thirty-eight
+
+\ Fields a refusal stands for, after the key that caused it is let go.
+\ NOTHING IS READ DURING IT, so a press inside the hold is dropped - which is
+\ why it is not longer. Forty fields is 0.8s: long enough to read two words,
+\ short enough that a fast player does not lose the key he presses next.
+\ Paradroid's KR_MSG_HOLD, and its measurement.
+KR_MSG_HOLD = 40
+
+\ ---- kr_build: the whole block, from the current state -----------
+\ Blank all 190, then per line the label at column 1 and a value at column
+\ 26: the prompt or a refusal on the line being asked for, and on every
+\ other the key it is bound to. Cheap - 190 bytes - so it is done whole
+\ every time and only the PAINT is expensive.
+.kr_build
+{
+    lda #0
+    ldx #TITLE_LINE_LEN * KR_LINES
+    .clr
+    dex                         ; sta does not touch the flags, so the
+    sta kr_block, x             ; branch tests the dex
+    bne clr
+
+    \ The heading, on row 0 of the six, from column KR_HEAD_COL - which
+    \ centres its thirteen glyphs in the thirty-eight bar half a cell.
+    ldy #KR_HEAD_OFF
+    ldx #KR_HEAD_COL
+    lda #KR_HEAD_REC : sta kr_cnt
+    jsr kr_copy
+
+    lda #0
+    sta kr_line                 ; and the five controls, on rows 1 to 5
+    .line
+    ldx kr_line
+    lda kr_rows, x
+    sta kr_base
+    clc                         ; and where this line's VALUE goes, worked
+    adc #KR_COL_KEY             ; out once: both arms below want it
+    sta kr_dst
+
+    lda kr_line                 ; the label: record kr_line of kr_text
+    asl a : asl a : asl a
+    tay
+    lda kr_base
+    clc
+    adc #KR_COL_LBL
+    tax
+    lda #KR_REC : sta kr_cnt
+    jsr kr_copy
+
+    lda kr_line
+    cmp kr_cur
+    bne binding
+    lda kr_msg
+    bmi binding                 ; &ff: no prompt, show the binding
+    asl a : asl a : asl a : asl a
+    clc
+    adc #KR_MSG_OFF
+    tay
+    ldx kr_dst
+    lda #KR_MSG_DRAWN : sta kr_cnt
+    jsr kr_copy
+    jmp next
+
+    .binding
+    ldx kr_line
+    ldy kr_order, x
+    lda joy_keys, y
+    jsr kr_showkey
+
+    .next
+    inc kr_line
+    lda kr_line
+    cmp #TITLE_LINES
+    bne line
+    rts
+}
+
+\ ---- kr_bank: bank_call, but come back to THIS bank --------------
+.kr_bank
+{
+    sta bnk
+    lda #SWRAM_SPRITES0
+    sta bank_restore
+    lda bnk                     ; X and Y are untouched: bank_call wants them
+    jsr bank_call
+    lda #SWRAM_DATA             ; and the resting state back, for everyone else
+    sta bank_restore
+    rts
+    .bnk EQUB 0
+}
+
+\ ---- kr_paint: the block onto the screen, out of bank 3 ----------
+\ The CPU is looking at SHADOW here - title_page set it that way to draw the
+\ credits and never set it back - which is the bank cycle C displays.
+\
+\ IT COSTS MORE THAN A FIELD: 190 glyphs at sixteen bytes is 3,040, and the
+\ scroller therefore misses one field of travel on every key press. That is
+\ measured, accepted and written up; the fix, if it ever reads badly, is a
+\ per-line entry in bank 3, which is the one thing here that would have to
+\ spend that bank's last 43 bytes.
+.kr_paint
+{
+    lda #LO(kr_block) : sta ttl_cred_ptr
+    lda #HI(kr_block) : sta ttl_cred_ptr+1
+}
+\ ---- and the bank 3 call itself, which kr_cred_back shares -------
+.kr_draw
+{
+    ldx #LO(title_text)
+    ldy #HI(title_text)
+    lda #SWRAM_COMPILED
+    jmp kr_bank                 ; its rts
+}
+
+\ ---- kr_show: compose the block and put it on the screen ---------
+\ The pair is never done singly, so it is one call: five sites at three
+\ bytes each rather than six, which in a bank with a hundred left is a
+\ saving worth making.
+.kr_show
+{
+    jsr kr_build
+    jmp kr_paint                ; its rts
+}
+
+\ ---- one field, with the page still running ----------------------
+\ field_wait leaves frame_ready alone, so nothing flips; ttl_frame is this
+\ bank's own, so it is a plain jsr rather than title_page's bank_call.
+.kr_field
+{
+    jsr field_wait
+    jmp ttl_frame               ; its rts
+}
+
+\ Nothing is asked for until the keyboard is clear. On the way IN that is R,
+\ still held; on the way out it is the key that ended the screen, and if it
+\ were still down when title_page's undebounced key_start next ran it would
+\ start a game on the spot. Paradroid's BmKrWaitUp, and its reason.
+\ CTRL IS NOT WAITED ON, and that is deliberate rather than an oversight: it
+\ is not a candidate, so holding it changes nothing here, and key_start
+\ already refuses to start a game for as long as it is down. Testing it
+\ would be seven bytes in a bank that had three to spare.
+.kr_wait_up
+{
+    .again
+    jsr kr_field
+    jsr kr_scan
+    cmp #&ff
+    bne again
+    ldx #IKN_escape             ; not a candidate, so kr_scan does not see it
+    jsr keydown
+    bmi again
+    rts
+}
+
+\ ---- kr_scan: which candidate is down?  A = index, or &FF --------
+\ keydown tests a key we NAME; this asks the other question by naming all
+\ thirty-four. That is ~2,600 cycles a field on a page whose foreground does
+\ one ttl_frame and nothing else - against Paradroid's 112 tests and ~6,200,
+\ which it needs because it looks the answer up in a table of the whole
+\ matrix and we do not.
+\
+\ Y IS NOT THE COUNTER: keydown loads its own Y for the keyboard latch.
+.kr_scan
+{
+    lda #0
+    sta kr_i
+    .loop
+    ldy kr_i
+    ldx kr_keys, y
+    jsr keydown
+    bmi hit
+    inc kr_i
+    lda kr_i
+    cmp #KR_CANDS
+    bne loop
+    lda #&ff
+    rts
+    .hit
+    lda kr_i
+    rts
+}
+
+\ A message, or the final state, stands for KR_MSG_HOLD fields AND until the
+\ key that caused it is let go - in that order, and never one without the
+\ other, so it is one routine.
+.kr_hold_msg
+{
+    jsr kr_wait_up
+    lda #KR_MSG_HOLD
+    sta kr_hold
+    .loop
+    jsr kr_field
+    dec kr_hold
+    bne loop
+    rts
+}
+
+\ ---- and back to the credits -------------------------------------
+\ ttl_cred_init puts ttl_cred_ptr back on the C64's set, restores the
+\ credits' own five-row list, stands the raster back up and restarts the
+\ crossfade's clock from a hold - exactly the state title_page leaves it in.
+.kr_cred_back
+{
+    jsr kr_blank                ; row 1 first - see kr_blank
+
+    \ bank 2's ttl_cred_init DIRECTLY, and not through the ttl_cred_start
+    \ shim in main RAM, because that shim PAGES: it is a bank_call now, and
+    \ bank_call restores bank_restore - which is SWRAM_DATA out here - so
+    \ calling it would return to this bank's addresses with bank 0 under
+    \ them. kr_bank is the wrapper that sets bank_restore to this bank
+    \ first. Caught in jsbeeb: the screen stayed up, the credits never came
+    \ back, and fire did nothing afterwards.
+    lda #SWRAM_SPRITES1
+    ldx #LO(ttl_cred_init)
+    ldy #HI(ttl_cred_init)
+    jsr kr_bank                 ; and the credits' own row list is back
+    jmp kr_draw                 ; its rts
+}
+
+\ ******************************************************************
+\ *	kr_run - the whole screen
+\ ******************************************************************
+\ *	Entered from key_start in main RAM with CTRL and R both down, and
+\ *	returns with the credits back up and no key held.
+\ ******************************************************************
+
+.kr_run
+{
+    ldx #JOY_COUNT-1            ; ESCAPE puts these back
+    .save
+    lda joy_keys, x
+    sta kr_save, x
+    dex
+    bpl save
+
+    \ The crossfade holds where it is, and the palette goes back to full
+    \ whatever rung it had reached - CTRL+R can be pressed in the middle of
+    \ the eight-rung fade, and without this the screen would come up in
+    \ whatever green-and-red the fade had got to. ttl_cred_off is the
+    \ existing "logicals 8-15 back" and clears ttl_fade_on, so the raster is
+    \ stood down again after it: it pulses logicals 15 and 14 on credit rows
+    \ 0 and 5, which are the LEFT and FIRE lines.
+    lda #17
+    sta ttl_c_step
+
+    \ Six rows, not the credits' five (decision 72): a heading and the five
+    \ controls all together, where the credits keep the C64's gap at row 1.
+    \ kr_cred_back puts both back.
+    lda #TITLE_LINES
+    sta ttl_rows_ofs
+    lda #KR_LINES
+    sta ttl_lines
+    lda #SWRAM_SPRITES1
+    ldx #LO(ttl_cred_off)
+    ldy #HI(ttl_cred_off)
+    jsr kr_bank
+    lda #&ff                    ; ttl_cred_off clears it; the raster has to
+    sta ttl_fade_on             ; stay down for as long as we are up
+    jsr kr_wait_up
+
+    lda #0
+    sta kr_cur
+    .ask
+    lda #KR_MSG_ASK
+    sta kr_msg
+    jsr kr_show
+
+    .wait
+    jsr kr_field
+    ldx #IKN_escape
+    jsr keydown
+    bmi cancel
+    jsr kr_scan
+    cmp #&ff
+    beq wait
+
+    tay
+    lda kr_keys, y
+    sta kr_key
+
+    \ NOTHING IS REFUSED any more. P and Q were, because a control bound to
+    \ either would have paused or muted the game every time it was used; both
+    \ are CTRL+P and CTRL+Q now (decision 72) and CTRL is never held in play,
+    \ so the reason went and the refusal went with it. ESCAPE is this
+    \ screen's cancel and SPACE starts a game, and neither is a candidate at
+    \ all, so neither can be reached; CTRL is never scanned.
+        \ Taken by one already set THIS run? The ones still on their defaults are
+    \ fair game - they may be about to change. Paradroid's rule.
+    ldx kr_cur
+    beq take
+    .dup
+    dex
+    ldy kr_order, x
+    lda joy_keys, y
+    cmp kr_key
+    beq used
+    cpx #0
+    bne dup
+
+    .take
+    ldx kr_cur
+    ldy kr_order, x
+    lda kr_key
+    sta joy_keys, y
+    lda #&ff                    ; the line shows what it is now bound to
+    sta kr_msg
+    jsr kr_show
+    jsr kr_wait_up
+    inc kr_cur
+    lda kr_cur
+    cmp #KR_LABELS
+    beq done
+    jmp ask
+
+    .used
+    lda #KR_MSG_USED
+    sta kr_msg
+    jsr kr_show
+    jsr kr_hold_msg
+    jmp ask                     ; which redraws the prompt over it
+
+    \ ESCAPE is never a binding: it abandons the run and gives the five
+    \ back. It then falls into the same ending the finish has, which shows
+    \ the five as they now stand - and what they now stand at is the whole
+    \ difference between the two, so neither needs a word saying so.
+    .cancel
+    ldx #JOY_COUNT-1
+    .undo
+    lda kr_save, x
+    sta joy_keys, x
+    dex
+    bpl undo
+
+    .done
+    lda #KR_LABELS              ; no line is current: every one shows its
+    sta kr_cur                  ; binding and none shows a prompt
+    jsr kr_show
+    jsr kr_hold_msg
+    jmp kr_cred_back            ; its rts
+}
+
+
 IF MUSIC_AKL = 0
 \ The tune's B1 streams (decision 48). Nothing in this bank reads them:
 \ they are here because the .vgi's eleven register streams do not have to be
@@ -676,6 +1107,89 @@ INCBIN "src/data/music_b1.bin"
 .music_b1_end
 ASSERT music_b1_end <= &C000
 ENDIF
+
+\ ******************************************************************
+\ *	Layer 9h's two leaf routines, up here in the tail
+\ ******************************************************************
+\ *	They belong with the rest of the redefine screen and they are
+\ *	here because the hole below the tune could not hold all of it:
+\ *	the code came in 69 bytes over, the tables went to &3C80 and
+\ *	these 55 bytes came here. The two halves of this bank are one
+\ *	bank - only the tune stream at MUSIC_B1_BASE is between them -
+\ *	so a jsr from the hole reaches them with nothing paged.
+\ ******************************************************************
+
+\ ---- kr_blank: the six rows wiped, row 1 included -----------------
+\ THE CREDITS CANNOT CLEAR ROW 1. Their own row list is the C64's spacing -
+\ 0, 2, 3, 4, 5, with a gap - so title_text never writes credit row 1 at
+\ all, and the redefine screen's second line sat there behind them: LEFT on
+\ the left and its binding on the right, over the top of the credits.
+\ Caught in jsbeeb the moment ESCAPE first worked.
+\ So the way out paints the whole six blank before the credits go back over
+\ five of them. It costs a second full paint, which is two fields on a page
+\ that is about to change anyway.
+.kr_blank
+{
+    lda #0
+    ldx #TITLE_LINE_LEN * KR_LINES
+    .clr
+    dex
+    sta kr_block, x
+    bne clr
+    jmp kr_paint                ; its rts
+}
+
+\ ---- kr_copy: one fixed-width field into the block ----------------
+\ Y = the source glyph in kr_text (main RAM, at &3C80 behind the credits),
+\ X = the destination in kr_block (main RAM, in the &0800 block), kr_cnt =
+\ how many. Both tables are read and written from this bank with nothing
+\ paged: a sideways bank reads and writes main RAM freely.
+.kr_copy
+{
+    .loop
+    lda kr_text, y
+    sta kr_block, x
+    iny
+    inx
+    dec kr_cnt
+    bne loop
+    rts
+}
+
+\ ---- kr_showkey: name the key at kr_dst --------------------------
+\ A = an internal key number. A letter is one glyph - its index in kr_keys
+\ plus one, the font being blank, A-Z, then ! . , - ? - and the other eight
+\ are an 8-glyph name record, which follows the five labels in kr_text. A
+\ number that is not a candidate at all leaves the field blank rather than
+\ drawing a wild glyph; nothing can currently produce one, the five defaults
+\ all being letters, but a future default that was not would be silent.
+.kr_showkey
+{
+    ldy #KR_CANDS-1
+    .find
+    cmp kr_keys, y
+    beq got
+    dey
+    bpl find
+    rts
+    .got
+    cpy #KR_LETTERS
+    bcs named
+    iny
+    tya
+    ldx kr_dst
+    sta kr_block, x
+    rts
+    .named
+    tya
+    sec
+    sbc #KR_LETTERS - KR_LABELS
+    asl a : asl a : asl a       ; * KR_REC
+    tay
+    ldx kr_dst
+    lda #KR_REC : sta kr_cnt
+    jmp kr_copy                 ; its rts
+}
 
 \ ******************************************************************
 \ *	Layer 9c: the parallax starfield

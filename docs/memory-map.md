@@ -33,20 +33,20 @@ Zero page has no `PRINT` of its own; the two figures below came from a temporary
 
 | Range | Bytes | Contents | Free |
 |---|---|---|---|
-| `&0000-&009F` | 160 | zero page, ours, wiped at boot, `GUARD &9F` | **90** — high water `&46`. Under `MUSIC_AKL` the Arkos player's pointers take it to `&57`, **73** free |
+| `&0000-&009F` | 160 | zero page, ours, wiped at boot, `GUARD &9F` | **85** — high water `&4B`. Under `MUSIC_AKL` the Arkos player's pointers take it to `&5C`, **68** free. Layer 9h spent five on `joy_keys`, the five bindings, and spent them HERE so that `ldx joy_keys + JOY_FIRE` is the same two bytes `ldx #KEY_FIRE` was and bank 0 does not grow (decision 71) |
 | `&00A0-&00FF` | 96 | MOS zero page | — |
 | `&0100-&01FF` | 256 | stack | — |
 | `&0200-&03FF` | 512 | MOS vectors and workspace. `IRQ1V` (`&0204`) is ours outright | — |
 | `&0400-&049F` | 160 | column buffer | 0 |
 | `&04A0-&07BF` | 800 | collision character map, 40 × 20 | 0 |
 | `&07C0-&07FF` | 64 | the collision map's overrun slack | 64, spent on purpose |
-| `&0800-&0991` | 402 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **623** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends 12 lower - the frame meter is the difference. The last two things in it are the starfield's 92 bytes (decisions 50 and 51) - 40 for the stars and 52 for where each bank last plotted them - and the "MEGA HERO" message's 15, which are up here because bank 1, where its code is, had tens of bytes left and this has hundreds |
+| `&0800-&0A5E` | 606 | the game state block — the C64's `$0340`. Declared after the SAVEs, so it is not in the image | **418** to `GAME_STATE_TOP` = `&0C00`. A RELEASE build ends 12 lower - the frame meter is the difference. The last two things in it are the starfield's 92 bytes (decisions 50 and 51) - 40 for the stars and 52 for where each bank last plotted them - and the "MEGA HERO" message's 15, which are up here because bank 1, where its code is, had tens of bytes left and this has hundreds. **Layer 9h added 202**: the redefine screen's 190-byte glyph block and its dozen bytes of state, here for the same reason and because bank 3 has to be able to read the block with itself paged in (decision 71) |
 | `&0C00-&0C5F` | 96 | **`VGI_STATE`**: the VGI player's decode state, eleven streams' worth (decision 49). Not in the image - nothing in it needs initialising | 160 to `&0D00` |
 | `&0D00-&0DFF` | 256 | paged-ROM extended vectors. Not claimed, not tested | 256, unverified — see below |
 | `&0E00-&2221` | 5,666 | code to `code_end` = `&1FD3`, then the boot-only data, **the loader**, **the memorial's fade** and `src/zx0depack.asm`. `GUARD CODE_TOP` = `LOAD_STREAM` = `&2400` | **478** to `LOAD_STREAM`, of which **45** are usable by anything read in play (74 in a RELEASE build, where `code_end` is `&1FB6`). Layer 9d moved the loader above `code_end` and `LOAD_STREAM` from `&2200` to `&2400` (decision 52); `!BOOT` left in Layer 9 (decision 49) |
 | `&2000-&2FFF` | 4,096 | `SPR_SAVE`: 8 slots × 256 B × 2 banks, exactly. At assembly time `&2600` is where `!BOOT` is built, which costs the run nothing: it is a disc file, never loaded here | 0 by construction |
 | `&3000-&3C7F` × 2 | 3,200 each | the status panel, in BOTH shadow banks | 0 |
-| `&3C80-&3FFF` × 2 | 896 each | above the panel, below the play buffer, fetched by neither rupture cycle. **Layer 9e spends the first 190**: the titles' second credit set (decision 53). **Layer 9f spends 469 more**: `assets/scrolltext.txt`, which had eleven bytes of headroom behind the font in bank 1 and has hundreds here (decision 54). Both ride on the end of the `PANEL` file, which is unpacked into both banks at boot | **237** in each bank — the build prints it as SCROLLTEXT HEADROOM. It was 706 before Layer 9f |
+| `&3C80-&3FFF` × 2 | 896 each | above the panel, below the play buffer, fetched by neither rupture cycle. **Layer 9e spends the first 190**: the titles' second credit set (decision 53). **Layer 9f spends 469 more**: `assets/scrolltext.txt`, which had eleven bytes of headroom behind the font in bank 1 and has hundreds here (decision 54). Both ride on the end of the `PANEL` file, which is unpacked into both banks at boot | **32** in each bank — the build prints it as SCROLLTEXT HEADROOM. It was 706 before Layer 9f and 237 before Layer 9h, which put the redefine screen's text and tables here (decision 71) |
 | `&4000-&7FFF` × 2 | 16,384 each | the play buffers, main and shadow, hardware-wrapped at 16K | 0 |
 | `&E000-&FFFF` | 8,192 | MOS ROM. `&FFFE` on this Master reads `&E59E` — measured — so paging HAZEL in cannot break IRQ dispatch | — |
 
@@ -174,7 +174,7 @@ survived a run of the game, the way `&04A0-&07FF` and `&0800-&0BFF` were cleared
   loading picture, shadow by `DEPK_STREAM` — so anything living there has to be built after the
   load, which is exactly what riding on the end of the `PANEL` file does. **Layer 9f then spent 469
   more on the scrolltext** (decision 54), which is what a region that is easy to reach and easy to
-  grow into gets used for. **237 free in each bank**, and the build prints the figure.
+  grow into gets used for. **32 free in each bank**, and the build prints the figure - Layer 9h spent 205 more on the redefine screen's text and its three tables (decision 71).
 
 ## Where the room actually is
 
@@ -184,27 +184,30 @@ Layer 9f traded bank 1's hole for two thirds of `&3C80`. What remains, largest f
 
 | Where | Bytes | `-Cpc` | Notes |
 |---|---|---|---|
-| `&0800` game-state block | **623** | 623 | uninitialised RAM for variables, not for anything loaded |
-| bank 1's hole below `&B900` | **475** | 469 | paged, `SWRAM_SPRITES0` |
-| bank 3 below the tune | **251** | **43** | paged, `SWRAM_COMPILED`; the tightest bank in a `-Cpc` build |
-| `&3C80` in each bank | **237** | 237 | main copy directly addressable, shadow needs ACCCON |
+| `&0800` game-state block | **378** | 378 | uninitialised RAM for variables, not for anything loaded |
+| bank 1's hole below `&B900` | **23** | 17 | paged, `SWRAM_SPRITES0`. Layer 9h's redefine screen took 431 (decision 71) |
+| bank 3 below the tune | **237** | **29** | paged, `SWRAM_COMPILED`; the tightest bank in a `-Cpc` build |
+| `&3C80` in each bank | **32** | 32 | main copy directly addressable, shadow needs ACCCON. Layer 9h took 196: 152 of text and the 44 bytes of tables its code had no room for |
 | bank 2's hole below `&BA00` | **220** | **38** | paged, `SWRAM_SPRITES1` |
 | page `&0C00` | **160** | 160 | main RAM, no paging |
-| bank 2's tail | **106** | 106 | paged |
+| bank 2's tail | **56** | 56 | paged. Layer 9h put `ttl_cred_init` here, out of main RAM (decision 72) |
 | ANDY | **98** | 98 | ROMSEL bit 7, overlays the low 4K of the selected bank |
-| bank 1's tail | **86** | 86 | paged |
-| main RAM below `SPR_SAVE` | **45** | 45 | 74 in a RELEASE build; the only place executable main-RAM code can go |
+| bank 1's tail | **16** | 16 | paged. Two of Layer 9h's leaf routines, 57 bytes, because its hole could not hold the whole screen |
+| main RAM below `SPR_SAVE` | **52** | 52 | **14 in a DEV `-Akl` build, where it was 7 before Layer 9h**; the only place executable main-RAM code can go. Layer 9h ran out of it twice and ended with MORE than it started: moving `ttl_cred_start`'s body to bank 2's tail gave back 26 (decision 72) |
 | HAZEL above the player | **38** | 38 | ACCCON bit 3 |
 | region A | **32** | 32 | the tune's own slack |
-| bank 0 | **9** | 9 | 175 in a RELEASE build |
+| bank 0 | **29** | 29 | 19 in a DEV `-Akl` build; Layer 9h GAVE it eight by moving `key_pause` to main RAM (decision 72) |
 | `&0D00-&0DFF` | *256* | *256* | **unproved** — paged-ROM extended vectors, see above |
 
 Excluding the game-state block, which is variable space rather than somewhere loaded data can go,
-and excluding the unproved `&0D00`, that is **1,757 bytes with the C64 artwork and 1,361 with the
-CPC's** — and spread over twelve holes, none of them larger than 475.
+and excluding the unproved `&0D00`, that is **993 bytes with the C64 artwork and 597 with the
+CPC's** — and spread over twelve holes, **none of them larger than bank 3's 237**, which was bank
+1's 475 until Layer 9h.
 
-**With the CPC artwork the tight ones are tighter**: bank 3 has 43 below the tune and bank 2's hole
-has 38. Those two, and bank 0's 9 in a DEV build, are what the next layer will hit first.
+**With the CPC artwork the tight ones are tighter**: bank 1's hole has 17, bank 3 has 29 below the
+tune and bank 2's hole has 38. Those three, and **main RAM's 14 under `SPR_SAVE` in a DEV `-Akl`
+build**, are what the next layer will hit first. Bank 0 is no longer among them - Layer 9h left it
+with 29, up from 21, by moving `key_pause` INTO main RAM rather than beside its four callers.
 
 `&0D00` is still unproved. Under `MUSIC_AKL` none of this is the constraint: bank 3 alone has 12,280
 bytes free, because region A of the tune is not in it.
@@ -225,6 +228,9 @@ of them 494 bytes.**
 
 **In the default VGI build it does not fit**, and the totals understate the problem. 2,889 against
 1,757 free with the C64 artwork is bad enough, but each stream has to be contiguous on its own, and
+**this whole section was costed on 2026-09-05, before Layer 9h spent 764 of that 1,757** (decision
+71); the figures below are left as they were measured, and every "does not fit" in them is now
+further from fitting rather than nearer, so the conclusion is unchanged.
 **the largest stream is 494 bytes while the largest hole in the map is bank 1's 475** — so the
 biggest stream of the full tune has nowhere at all to go, whatever the totals say.
 Best-fit-decreasing the eleven streams into the twelve holes above:

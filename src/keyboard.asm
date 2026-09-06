@@ -30,6 +30,12 @@
 \ Bit 0 up, 1 down, 2 left, 3 right, 4 fire, and a CLEAR bit is pressed,
 \ which is the C64's $dc00 exactly - so player_manage's LSR/BCS chain is
 \ the original's, unaltered. keydown clobbers X and Y, hence joy_idx.
+\
+\ joy_keys IS IN ZERO PAGE (Layer 9h, decision 71) - it used to be the EQUB
+\ table that stood where joy_mask still does. It moved because CTRL+R on the
+\ titles writes it, and it moved to ZERO PAGE rather than to the &0800 block
+\ because `ldx joy_keys, y` is then zero-page,Y, which LDX has and which is
+\ a byte shorter and a cycle cheaper than the absolute,Y this was.
 
 .read_joystick
 {
@@ -52,5 +58,9 @@
     rts
 }
 
-.joy_keys EQUB KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_FIRE
 .joy_mask EQUB &fe, &fd, &fb, &f7, &ef
+
+\ The defaults, in the same order, copied into joy_keys by key_init at boot.
+\ Up here beside joy_mask because they are the same five things in the same
+\ order and a reader who finds one wants the other.
+.joy_defaults EQUB KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_FIRE

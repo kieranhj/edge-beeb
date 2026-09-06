@@ -27,6 +27,10 @@ Output: src/data/title.bin
               the screen, because our byte columns are 8 bytes apart and
               consecutive.
     512..701  five lines of 38 glyph numbers, the C64's ttl_credits.
+
+Also src/data/title_extra.bin (this port's credit set) and
+src/data/title_kr.bin (the redefine screen's labels, key names and
+messages, Layer 9h). Both ride to &3C80 on the end of the PANEL file.
 """
 
 import os
@@ -43,6 +47,7 @@ import sheets      # noqa: E402
 
 OUT = os.path.join(ROOT, 'src', 'data', 'title.bin')
 OUT_EXTRA = os.path.join(ROOT, 'src', 'data', 'title_extra.bin')
+OUT_KR = os.path.join(ROOT, 'src', 'data', 'title_kr.bin')
 
 GLYPHS = mechanical.TITLE_GLYPHS
 
@@ -72,6 +77,48 @@ CREDITS_BBC = [
     "released by                bitshifters",
 ]
 LINE_LEN = 38
+
+# ---------------------------------------------------------------------------
+# The redefine screen's text (Layer 9h, decision 71), written to
+# src/data/title_kr.bin and carried to &3C80 behind the credits by the PANEL
+# file. Here rather than in 6502 for the reason the credits are: beebasm
+# cannot turn an EQUS into glyph numbers, so hand-assembling these would mean
+# a table of magic numbers nobody can proof-read - and the assertion that a
+# word CAN be drawn is the same assertion the credits already get.
+#
+# EVERY RECORD IS A FIXED WIDTH so that the composer in bank 1 is three
+# straight copies with no length arithmetic and no terminators. A line is 38
+# blanks, an 8-glyph label at column 1 and a value at column 26: eight glyphs
+# if it is a key name, twelve if it is a message.
+KR_REC = 8            # a label or a key name
+KR_MSG_REC = 16       # a message record...
+KR_MSG_DRAWN = 12     # ...of which this many are drawn, into columns 26-37
+
+# The five, in the order the screen asks for them - which is the order a
+# player thinks in, not read_joystick's C64 bit order. kr_order in bank 1 is
+# what maps one to the other.
+KR_LABELS = ['LEFT', 'RIGHT', 'UP', 'DOWN', 'FIRE']
+
+# The nine bindable keys that are not letters, in kr_keys' order. A letter
+# needs no name at all - its glyph IS its index in that table plus one - which
+# is what keeps the whole naming scheme to sixty-four bytes.
+KR_NAMES = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'SHIFT', 'RETURN', 'SPACE', 'SLASH',
+             'COLON']
+
+# 0 is the prompt, 1 the one refusal left. There is no "keys set": the screen
+# ends by showing all five bindings with no prompt on any line and holding,
+# which says the same thing with the information in it.
+#
+# 'RESERVED' went when pause and mute became CTRL+P and CTRL+Q: nothing a
+# player can press here is refused any more. P and Q were refused because a
+# control bound to either would pause or mute the game every time it was used,
+# and CTRL-gating both is what removed the reason.
+KR_MSGS = ['PRESS A KEY', 'ALREADY USED']
+
+# The heading, on its own line above the five. Drawn from column 12, which
+# centres thirteen glyphs in thirty-eight bar half a cell.
+KR_HEAD = 'REDEFINE KEYS'
+KR_HEAD_REC = 16
 
 # The multicolour bit pair -> our MODE 2 logical colour. Pair 0 is the
 # background and stays black; the glyphs use 3 for the body and 1 and 2 for the
@@ -130,6 +177,23 @@ def main(c64=False, use_nula=False, cpc=False):
                 block.append(g)
         return block
 
+    def encode_fixed(words, width, drawn=None):
+        """One fixed-width record a word, blank-padded. `drawn` says how many
+        of the record's glyphs the 6502 ever copies - which is what the word
+        actually has to fit in, and is narrower than the record for a
+        message."""
+        block = bytearray()
+        for w in words:
+            assert len(w) <= (drawn or width), (
+                '%r is %d characters and only %d are drawn'
+                % (w, len(w), drawn or width))
+            for ch in w:
+                g = dec[screen_code(ch) & 63]
+                assert g or ch == ' ', '%r has no glyph in this font' % ch
+                block.append(g)
+            block += b'\0' * (width - len(w))
+        return block
+
     out += encode(CREDITS)
 
     # The second set goes in its own file, which src/panel.asm puts on the end
@@ -138,16 +202,29 @@ def main(c64=False, use_nula=False, cpc=False):
     # the plotter are, has 45 bytes left in a -Cpc build and this is 190.
     extra = encode(CREDITS_BBC)
 
+    # And the redefine screen's, in kr_text's order: the five labels and the
+    # eight key names as one flat run of 8-glyph records (bank 1 indexes them
+    # as thirteen records of one table), then the three messages at sixteen.
+    kr = encode_fixed(KR_LABELS + KR_NAMES, KR_REC)
+    kr += encode_fixed(KR_MSGS, KR_MSG_REC, drawn=KR_MSG_DRAWN)
+    kr += encode_fixed([KR_HEAD], KR_HEAD_REC)
+
     suffix = ('-nula' if use_nula else '') + ('-cpc' if cpc else '')
     out_path = OUT.replace('title.bin', 'title%s.bin' % suffix)
     with open(out_path, 'wb') as f:
         f.write(out)
     with open(OUT_EXTRA, 'wb') as f:
         f.write(extra)
+    with open(OUT_KR, 'wb') as f:
+        f.write(kr)
     print('%s: %d bytes (%d glyphs, %d lines of %d)'
           % (out_path, len(out), GLYPHS, len(CREDITS), LINE_LEN))
     print('%s: %d bytes (%d lines of %d)'
           % (OUT_EXTRA, len(extra), len(CREDITS_BBC), LINE_LEN))
+    print('%s: %d bytes (%d labels + %d names at %d, %d messages at %d, '
+          'heading %r at %d)'
+          % (OUT_KR, len(kr), len(KR_LABELS), len(KR_NAMES), KR_REC,
+             len(KR_MSGS), KR_MSG_REC, KR_HEAD, KR_HEAD_REC))
 
 
 if __name__ == '__main__':

@@ -198,6 +198,29 @@ IF NOT(GFX_NULA)
 .fade_tmp  EQUB 0
 ENDIF
 
+\ ---- ttl_cred_init: the crossfade's own starting state -----------
+\ Called through the ttl_cred_start shim in main RAM. Here rather than
+\ there since Layer 9h (decision 72): it is nothing but stores into the
+\ &0800 block, main RAM below SPR_SAVE had one byte too few, and this
+\ bank's tail had a hundred spare. Its own state machine is above.
+.ttl_cred_init
+{
+    lda #0                      ; the credits' own row list - 0/2/3/4/5, the
+    sta ttl_rows_ofs            ; C64's spacing - and five lines of it. The
+    lda #TITLE_LINES            ; redefine screen sets six and comes back
+    sta ttl_lines               ; through here (decision 72)
+    lda #LO(title_lines_data) : sta ttl_cred_ptr
+    lda #HI(title_lines_data) : sta ttl_cred_ptr+1
+    lda #TTL_C_LOW  : sta fade_low      ; the credits' own logicals, 8-15
+    lda #0
+    sta ttl_c_set                       ; the C64's credits are what is up
+    sta ttl_fade_on
+    sta ttl_redraw
+    sta ttl_c_tmr+1
+    lda #17 : sta ttl_c_step            ; holding
+    lda #TTL_C_FIRST : sta ttl_c_tmr    ; and a shorter first hold, so the
+    rts                                 ; page is seen to do something
+}
 \ ******************************************************************
 \ *	fade_pal - one rung of the ladder, on the palette alone
 \ ******************************************************************

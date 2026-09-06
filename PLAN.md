@@ -19,7 +19,7 @@ memory outline, and is loaded every session, so this file does not repeat them.
 
 ## Where we are
 
-**Layers 0–5, 6a–6e, 7, 8, 8a, 8b, 9a–9f are done (2026-09-05). One defect is open:
+**Layers 0–5, 6a–6e, 7, 8, 8a, 8b, 9a–9f and 9h are done (2026-09-06). One defect is open:
 `BUGS.md` #14.**
 
 The game assembles from `src/` through `build.ps1` into `build/EDGE.SSD` and boots in jsbeeb and
@@ -28,8 +28,8 @@ C64's own status panel, held by a two-cycle CRTC rupture with IRQ1V owned; eight
 the player, his bullet and the original's 201 attack waves; three lives, the six-piece explosion,
 game over and the completion sequence; the HUD; the whole 349-second tune on the SN76489; a
 parallax starfield; a loading screen with every data file ZX0-compressed; a memorial to T.M.R.
-between the two; and a titles page with the zoom scroller running across it twice over and the
-credits cross-fading. Four artwork builds exist behind flags, and the artist can repaint any of
+between the two; and a titles page with the zoom scroller running across it twice over, the
+credits cross-fading, and CTRL+R to redefine the five play keys onto any of thirty-five. Four artwork builds exist behind flags, and the artist can repaint any of
 it — including the level itself — through `assets/art/`.
 
 **What each finished layer did, and what it cost, is in**
@@ -38,6 +38,18 @@ it — including the level itself — through `assets/art/`.
 ## What is left
 
 Anything that deviates from the C64 original is a numbered decision agreed with KC first.
+
+### The numbers to watch before the next layer starts
+
+**Bank 1's hole has 23 bytes (17 with the CPC artwork), bank 3 has 29 below the tune in a `-Cpc`
+build, and main RAM below `SPR_SAVE` has 14 in a DEV `-Akl` one.** Those are the four walls Layer
+9h hit, and it hit two of them by surprise: **a change can assemble cleanly in the four
+C64-artwork builds and fail only in the `-Akl` ones**, where the Arkos player's own zero page and
+code leave the least main RAM. **Assemble all eight combinations before believing anything fits.**
+
+Main RAM and bank 0 both ended that layer with *more* room than they began it — 52 and 29 against
+45 and 21 — because twice the answer to running out was to move something that had no business
+being there. `docs/memory-map.md` has the rest.
 
 ### The one open defect — 9g, the titles switch flicker
 
@@ -239,6 +251,7 @@ HUD — and all four carry a piece of the tune, which is what a `-Akl` build wou
 | 9e — the credits crossfade | [`docs/layer-9e-credits.md`](docs/layer-9e-credits.md) | done 2026-09-04, decision 53. Its three-colour limit is flagged for revisiting |
 | 9f — SPACE starts, an editable scrolltext | [`docs/layer-6e-titles.md`](docs/layer-6e-titles.md) | done 2026-09-04, decision 54 |
 | 9g — the titles switch flicker | [`BUGS.md`](BUGS.md) #14 | **open 2026-09-05**: measured and diagnosed, not fixed |
+| 9h — CTRL+R redefines the keys | [`docs/layer-9h-keyredef.md`](docs/layer-9h-keyredef.md) | done 2026-09-06, decisions 71 and 72. Pause and mute became CTRL+P and CTRL+Q with it |
 | 9 — polish and release | | real-hardware test, a `-Release` build, publish |
 
 *9c.5 and 9c.6 were built as 9d and 9e. The 2026-09-04 survey that found the seven 9c features is

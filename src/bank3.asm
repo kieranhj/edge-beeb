@@ -70,7 +70,14 @@ title_lines_data = title_font + 32 * TITLE_GLYPH_BYTES
 \
 \ These are rows of the CREDITS BLOCK, not of the play area: cycle C starts
 \ at TTL_CRED and play row 7 is its row 0.
-.title_rows EQUB 0, 2, 3, 4, 5
+\ TWO row lists, end to end, chosen by ttl_rows_ofs in main RAM (decision 72).
+\ The credits keep the C64's spacing - a gap at row 1 - and the redefine
+\ screen uses all six rows, a heading and the five controls, because five
+\ controls and a heading is six lines and there is nowhere else to put them.
+\ ttl_lines says how many to draw.
+.title_rows
+    EQUB 0, 2, 3, 4, 5          ; the credits: ttl_rows_ofs = 0
+    EQUB 0, 1, 2, 3, 4, 5       ; the redefine screen: ttl_rows_ofs = TITLE_LINES
 
 \ 38 characters is 152 of the 160 pixels, so one byte column of margin.
 TITLE_COL0 = 2
@@ -85,7 +92,12 @@ TITLE_COL0 = 2
     stx line_no
 
     \\ write_ptr = screen_start + row * 640 + TITLE_COL0 * 8
-    ldy title_rows, x
+    txa                         ; the row this line lands on, through
+    clc                         ; whichever list ttl_rows_ofs selects. X is
+    adc ttl_rows_ofs            ; the line and stays it: times_loop below
+    tay                         ; counts down on it
+    lda title_rows, y
+    tay
     lda #LO(screen_start + TITLE_COL0 * 8)
     sta write_ptr
     lda #HI(screen_start + TITLE_COL0 * 8)
@@ -163,7 +175,7 @@ TITLE_COL0 = 2
 
     ldx line_no
     inx
-    cpx #TITLE_LINES
+    cpx ttl_lines
     beq done
     jmp line_loop
     .done

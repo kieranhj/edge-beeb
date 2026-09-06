@@ -81,6 +81,24 @@ IKN_space = 98              ; measured 2026-09-04, alongside L to prove the
                             ; method: INKEY(-n) gave 86 for L, which is what
                             ; IKN_l already said
 
+\ Layer 9h's two, measured the same way on 2026-09-06 (docs/layer-9h-keyredef.md):
+\ CTRL and R are the redefine screen's trigger. CTRL is BELOW the OSBYTE 121
+\ scan's floor - the MOS scan will not report keys 0-2 - so it was measured
+\ through INKEY instead and calibrated on Z: SHIFT is INKEY -1, CTRL is INKEY
+\ -2 and Z is INKEY -98, and Z's internal number is 97, so internal = the
+\ INKEY index less one. That makes SHIFT 0 and CTRL 1.
+IKN_ctrl = 1
+IKN_r = 51
+
+\ Which control is which, in read_joystick's order - which is the C64's own
+\ $dc00 bit order, so player_manage's LSR/BCS chain stays the original's.
+JOY_UP = 0
+JOY_DOWN = 1
+JOY_LEFT = 2
+JOY_RIGHT = 3
+JOY_FIRE = 4
+JOY_COUNT = 5
+
 \ ******************************************************************
 \ *	GAME defines
 \ ******************************************************************
@@ -102,6 +120,12 @@ SPRITE_PIX_3 = MODE2_PIXEL_03 OR MODE2_PIXEL_30 ; yellow (white on C64)
 
 GAME_LIVES = 3                  ; the C64's main_init
 
+\ The five play controls are DEFAULTS now, not constants the code tests
+\ (Layer 9h, decision 71): key_init copies them into joy_keys in zero page at
+\ boot and CTRL+R on the titles writes them. Everything that reads a control
+\ goes through joy_keys - in zero page precisely so that `ldx joy_keys +
+\ JOY_FIRE` is the same two bytes `ldx #KEY_FIRE` was, and bank 0, which has
+\ nine of them left, does not grow.
 KEY_LEFT = IKN_z
 KEY_RIGHT = IKN_x
 KEY_UP = IKN_k
@@ -109,14 +133,18 @@ KEY_DOWN = IKN_m
 KEY_FIRE = IKN_l
 KEY_START = IKN_space       ; SPACE starts a game as well as fire (KC). Only
                             ; on the titles: it does not unpause
-KEY_PAUSE = IKN_p           ; decision 32
+KEY_PAUSE = IKN_p           ; decision 32, and CTRL+P since decision 72 - see
+                            ; key_pause in src/bank0.asm for why the CTRL is
+                            ; tested first and what it costs (nothing)
 KEY_ABORT = IKN_escape      ; and only while paused, as the C64 has it.
                             ; Tried at any time and reverted (KC): it is
                             ; polled every frame, so holding it re-entered
                             ; life_lost and rebuilt the player's explosion
                             ; pieces on the spot. It would need a debounce
 KEY_MUTE = IKN_q            ; decision 39. Read in the VSync handler, so it
-                            ; works wherever the foreground happens to be
+                            ; works wherever the foreground happens to be.
+                            ; CTRL+Q since decision 72, tested in that handler
+                            ; the same way pause_check tests CTRL+P
 
 \ ******************************************************************
 \ *	MACROS
@@ -413,7 +441,43 @@ TTL_EXTRA      = PANEL_ADDR + PANEL_BYTES   ; &3C80
 TITLE_GLYPH_BYTES = 16              ; 2 byte columns x 8 scanlines, one cell
 TITLE_LINE_LEN = 38                 ; the C64's own cpx #$26
 TITLE_LINES   = 5
-TTL_SCROLL     = TTL_EXTRA + TITLE_LINE_LEN * TITLE_LINES
+\ And after the second credit set, the redefine screen's text (Layer 9h,
+\ decision 71) - the five labels, the eight key names and the three messages,
+\ as GLYPH NUMBERS, written by tools/export_title.py. Here rather than in
+\ bank 1 with the code that reads them for the reason decision 53 put the
+\ credits here: it is data, it is loaded, it rides into both banks on the
+\ PANEL file for nothing, and bank 1's hole is where the code has to go.
+\
+\ EVERY RECORD IS A FIXED WIDTH, which is what makes the composer three
+\ straight copies with no length arithmetic and no terminators. A screen line
+\ is built by filling 38 blanks, copying an 8-byte label to column 1 and
+\ copying the value to column 26 - eight bytes if it is a key name, twelve if
+\ it is a message. The longest name is RETURN at six and the longest message
+\ is ALREADY USED at twelve; export_title.py asserts both.
+KR_REC         = 8                  ; a label or a key name
+KR_LABELS      = 5                  ; LEFT RIGHT UP DOWN FIRE, in ASK order
+KR_NAMES       = 9                  ; the nine keys that are not letters
+KR_MSG_REC     = 16                 ; a message, of which twelve are drawn
+KR_MSGS        = 2                  ; PRESS A KEY / ALREADY USED. There is no
+                                    ; RESERVED any more: pause and mute are
+                                    ; CTRL+P and CTRL+Q, so nothing a player
+                                    ; can press on that screen is refused
+KR_HEAD_REC    = 16                 ; REDEFINE KEYS, the heading line
+KR_MSG_OFF     = (KR_LABELS + KR_NAMES) * KR_REC
+KR_HEAD_OFF    = KR_MSG_OFF + KR_MSGS * KR_MSG_REC
+KR_TEXT_BYTES  = KR_HEAD_OFF + KR_HEAD_REC
+TTL_KRTEXT     = TTL_EXTRA + TITLE_LINE_LEN * TITLE_LINES
+
+\ And its three tables, which are here rather than in bank 1 beside the code
+\ that reads them for one reason: the code came in 69 bytes over what bank
+\ 1's hole has, and these are 44 of them. They are assembled here, not
+\ generated, because the key numbers are MEASURED HARDWARE FACTS and belong
+\ in the source a person reads, not in a .bin.
+KR_CANDS       = 35                 ; bindable keys: 26 letters and nine more
+KR_LINES       = TITLE_LINES + 1     ; the heading, then the five controls
+KR_TAB_BYTES   = KR_CANDS + KR_LABELS + KR_LABELS
+
+TTL_SCROLL     = TTL_KRTEXT + KR_TEXT_BYTES + KR_TAB_BYTES
                                     ; and after them the zoom scroller's
                                     ; message, from assets/scrolltext.txt.
                                     ; It was behind the font in bank 1,
@@ -421,7 +485,7 @@ TTL_SCROLL     = TTL_EXTRA + TITLE_LINE_LEN * TITLE_LINES
                                     ; no use for a file meant to be edited
 TTL_CRED_C64   = 0                  ; which set: an index, not a pointer
 TTL_CRED_BBC   = 1
-ASSERT TTL_EXTRA + TITLE_LINE_LEN * TITLE_LINES <= screen_start
+ASSERT TTL_SCROLL <= screen_start
 
 \ The starfield (Layer 9c): ten stars standing still on the screen while
 \ the level scrolls under them. The code and the tables are in bank 1;
@@ -597,6 +661,16 @@ GUARD &9F
 \\ Player and collisions (src/player.asm)
 .joy            skip 1      ; the C64's joystick byte: a CLEAR bit is pressed
 .joy_idx        skip 1      ; which key read_joystick is asking about
+
+\\ The five bindings, UP DOWN LEFT RIGHT FIRE, and IN ZERO PAGE ON PURPOSE
+\\ (Layer 9h, decision 71). Three things follow from it and the third is the
+\\ reason: read_joystick's `ldx joy_keys, y` becomes zero-page,Y, which is a
+\\ legal mode for LDX and one byte shorter than it was; every `ldx #KEY_FIRE`
+\\ becomes `ldx joy_keys + JOY_FIRE` at the SAME two bytes, so bank 0 - which
+\\ has nine bytes left - does not grow; and zero page is wiped once at boot
+\\ and never again, so a redefinition survives a game, the finale and the
+\\ return to the titles for nothing. key_init fills it, after the wipe.
+.joy_keys       skip JOY_COUNT
 .coll_row       skip 1      ; play-area character row being sampled
 .coll_col       skip 1      ; and screen character column, 0-39
 .coll_base      skip 1      ; coll_map slot holding screen column 0
@@ -645,6 +719,12 @@ IF DEBUG_TIMING
 .tim_prev       skip 2      ; and what it was at the mark before that
 .tim_phase      skip 2      ; the difference: one phase of the loop
 ENDIF
+
+\ joy_keys HAS to be in zero page and not merely happen to be: every
+\ `ldx joy_keys + JOY_FIRE` is sized on the first pass, and if one ever
+\ assembled as absolute it would grow bank 0 - which has nine bytes - by a
+\ byte a site, silently, in a build that still looked right here.
+ASSERT joy_keys + JOY_COUNT <= &100
 
 \ ******************************************************************
 \ *	CODE START
@@ -695,6 +775,11 @@ GUARD CODE_TOP
     inx
     cpx #&a0
     bcc zp_loop
+
+    \\ And the five key bindings, which live in the zero page just wiped
+    \\ (Layer 9h, decision 71). Key 0 is SHIFT, so a wiped joy_keys is not
+    \\ merely wrong, it is five controls all bound to the same key.
+    jsr key_init
 
 
     \\ Mode change FIRST now, not last: the loading screen is a MODE 2
@@ -957,6 +1042,21 @@ ENDIF
 \ *	X = LO, Y = HI of the routine in bank 3. Self-modifying rather than
 \ *	one entry a routine: main RAM has tens of bytes left, not hundreds.
 \ *	Not re-entrant, and nothing calls it from an interrupt.
+\ *
+\ *	WHAT IT PAGES BACK IS bank_restore, NOT A CONSTANT (Layer 9h,
+\ *	decision 71). SWRAM_DATA is the resting state and stays the
+\ *	default; the one caller that changes it is the redefine screen,
+\ *	which lives in bank 1 and calls this to have its block painted
+\ *	out of bank 3. The narrow rule that makes that legal is worth
+\ *	stating, because the wide one in CLAUDE.md is not quite it: a
+\ *	sideways bank may jsr main-RAM code freely - field_wait and
+\ *	keydown touch no bank and are called from bank 1 all day - and
+\ *	what it may not do is call main-RAM code that pages a DIFFERENT
+\ *	bank in and then restores somebody else's. With bank_restore that
+\ *	is exactly what this no longer does.
+\ *
+\ *	One byte of state, so this is still not re-entrant and still not
+\ *	callable from an interrupt. Both were already true.
 
 .bank3_call
     lda #SWRAM_COMPILED
@@ -968,12 +1068,15 @@ ENDIF
     sta &f4
     sta &fe30
     jsr bank_call_t
-    lda #SWRAM_DATA
+    lda bank_restore
     sta &f4
     sta &fe30
     rts
 .bank_call_t
     jmp &ffff                   ; written above
+.bank_restore
+    EQUB SWRAM_DATA             ; the resting state, and what every caller
+                                ; but kr_run leaves it at
 
 \ ******************************************************************
 \ *	field_wait - one field, WITHOUT handing a frame over
@@ -1338,23 +1441,21 @@ ENDIF
 \ ******************************************************************
 
 \ The C64's set is up and the clock starts. title_page has just drawn it.
-\ The state itself is set here rather than in bank 2 because it is nothing
-\ but stores into the &0800 block, and bank 2 had 191 bytes for the state
-\ machine in a -Cpc build and wanted 195 of them.
+\ THE BODY IS IN BANK 2 NOW (decision 72), beside the state machine it
+\ starts, and only this nine-byte shim is here. It was written in main RAM
+\ because bank 2's HOLE had 191 bytes in a -Cpc build and this wanted 195 of
+\ them; what it has gone into is bank 2's TAIL, which had 106. The move gave
+\ 26 bytes back to the ground below SPR_SAVE, which is what CTRL+Q's seven
+\ and CTRL+P's thirteen are paid for out of - that region was ONE BYTE over
+\ in a DEV -Akl build before it.
 .ttl_cred_start
 {
-    lda #LO(title_lines_data) : sta ttl_cred_ptr
-    lda #HI(title_lines_data) : sta ttl_cred_ptr+1
-    lda #TTL_C_LOW  : sta fade_low      ; the credits' own logicals, 8-15
-    lda #0
-    sta ttl_c_set                       ; the C64's credits are what is up
-    sta ttl_fade_on
-    sta ttl_redraw
-    sta ttl_c_tmr+1
-    lda #17 : sta ttl_c_step            ; holding
-    lda #TTL_C_FIRST : sta ttl_c_tmr    ; and a shorter first hold, so the
-    rts                                 ; page is seen to do something
+    lda #SWRAM_SPRITES1
+    ldx #LO(ttl_cred_init)
+    ldy #HI(ttl_cred_init)
+    jmp bank_call               ; its rts
 }
+
 
 \ One field. Bank 2 does the work; if it asks for the other set, the
 \ bank 3 call that paints it is ours, because bank 2 cannot make one.
@@ -1399,9 +1500,13 @@ ENDIF
 \ ******************************************************************
 
 \ Fire OR space starts a game. Returns with N set if either is down.
+\ CTRL is not tested here, and does not need to be: ttl_frame_titles in bank 1
+\ runs first in the same field and takes CTRL+R away to the redefine screen,
+\ which does not come back until the keyboard is clear. So a fire bound to R
+\ cannot also start a game on the way in.
 .key_start
 {
-    ldx #KEY_FIRE
+    ldx joy_keys + JOY_FIRE
     jsr keydown
     bmi down
     ldx #KEY_START
@@ -1412,6 +1517,41 @@ ENDIF
 
 \ And on the way out, whether the crossfade had finished or not:
 \ logical 8 is the second black the sprite engine draws with.
+\ ******************************************************************
+\ *	key_pause - CTRL+P, and why the CTRL is tested first
+\ ******************************************************************
+\ *	Pause is CTRL+P, not P (decision 72), which is what freed P to be
+\ *	a bindable control on the redefine screen: it was refused there
+\ *	because a control bound to it would have paused the game every
+\ *	time it was used.
+\ *
+\ *	CTRL FIRST, AND THAT MAKES IT FREE. This is called once a game
+\ *	frame and CTRL is up in all but a handful of them, so the common
+\ *	path is one keydown - exactly what the single P test used to
+\ *	cost. Only the frame someone is actually pausing pays for two.
+\ *
+\ *	IN MAIN RAM, not in bank 0 beside pause_check, and that is the
+\ *	way round that is cheaper for BOTH: bank 0 has four sites, and
+\ *	each drops from `ldx #KEY_PAUSE : jsr keydown` to `jsr key_pause`,
+\ *	so bank 0 GAINS eight bytes - which the DEV -Akl -Nula build had
+\ *	overrun by two - while main RAM pays thirteen out of the
+\ *	twenty-six ttl_cred_start's move to bank 2 gave back.
+\ *
+\ *	Returns N set if both are down. keydown clobbers X and Y and none
+\ *	of the callers wants either.
+\ ******************************************************************
+
+.key_pause
+{
+    ldx #IKN_ctrl
+    jsr keydown
+    bpl up                      ; CTRL up: A = 0, so N is clear already
+    ldx #KEY_PAUSE
+    jmp keydown                 ; its N, and its rts
+    .up
+    rts
+}
+
 .ttl_cred_end
 {
     lda #SWRAM_SPRITES1
@@ -1445,6 +1585,24 @@ ENDIF
 \ *	panel_init comes with it: setup_display calls it, and
 \ *	setup_display runs once.
 \ ******************************************************************
+
+\\ ---- key_init: the five bindings, after the zero-page wipe ----------
+\\
+\\ BOOT CODE, up here for the same reason as the rest of it: `main` calls it
+\\ once, immediately after the wipe that would otherwise leave every binding
+\\ as key 0 - which is SHIFT, and would have moved the player left, right, up,
+\\ down and fired all at once. joy_defaults is beside joy_mask in
+\\ src/keyboard.asm, where the other four bytes of that table already are.
+.key_init
+{
+    ldx #JOY_COUNT-1
+    .copy
+    lda joy_defaults, x
+    sta joy_keys, x
+    dex
+    bpl copy
+    rts
+}
 
 \\ ---- the loader: OSFILE a ZX0 stream in, unpack it out --------------
 \\
@@ -1920,6 +2078,34 @@ ORG GAME_STATE
 .ttl_fade_on    skip 1      ; the credit raster stands down while this is set
 .ttl_redraw     skip 1      ; bank 2 asks main RAM for a bank 3 call
 .ttl_cred_ptr   skip 2      ; where title_text reads its five lines from
+
+\ The redefine screen (Layer 9h, decision 71). Its code, its text and its
+\ tables are all elsewhere - bank 1's hole and the PANEL file - but the
+\ block it composes has to be main RAM that bank 3 can read with itself
+\ paged in, which is what ttl_cred_ptr points at, and this block is the
+\ only ground in the machine with hundreds of bytes going spare.
+\
+\ THE SCREEN IS A THIRD CREDIT SET and that is the whole design: five lines
+\ of 38 glyphs, the same shape title_text already draws through the same
+\ pointer, so bank 3 - which has 43 bytes left in a -Cpc build - is not
+\ touched at all, and neither is the rupture, so the page cannot pick up
+\ another switch flicker (BUGS.md #14).
+.ttl_rows_ofs   skip 1      ; which row list title_text reads: 0 for the
+                            ; credits' 0/2/3/4/5, TITLE_LINES for the redefine
+                            ; screen's 0/1/2/3/4/5 (decision 72)
+.ttl_lines      skip 1      ; and how many of them - 5 or 6
+.kr_block       skip TITLE_LINE_LEN * KR_LINES
+.kr_save        skip JOY_COUNT      ; what ESCAPE puts back
+.kr_cur         skip 1              ; which control is being asked for, 0-4;
+                                    ; 5 means "none", and no line shows a prompt
+.kr_msg         skip 1              ; message index, or &ff for the binding
+.kr_key         skip 1              ; the internal number of the answer
+.kr_line        skip 1              ; kr_build's counter
+.kr_base        skip 1              ; and its offset to that line in kr_block
+.kr_cnt         skip 1              ; bytes left in a field copy
+.kr_dst         skip 1              ; where kr_showkey writes
+.kr_i           skip 1              ; kr_scan's counter, because keydown owns Y
+.kr_hold        skip 1              ; fields a message has left to stand
 
 \ The frame meter (src/timing.asm). Microseconds, worst case since boot;
 \ double them for 2 MHz cycles. tim_over is the one that matters.

@@ -80,7 +80,7 @@
     lda #0
     sta rupt_state
 
-    \ Q mutes and unmutes the tune. HERE, in the VSync handler, and not in
+    \ CTRL+Q mutes and unmutes the tune. HERE, in the VSync handler, and not in
     \ the main loop, because it has to work wherever the foreground happens
     \ to be: playing, sitting on the titles, or watching the finale. The
     \ handler runs in all of them.
@@ -93,11 +93,17 @@
     \ php/sei/plp, so this can never land inside one, and between the five
     \ calls read_joystick makes the latch is already handed back.
     \
-    \ Edge-triggered on the PRESS, so holding Q does not toggle every field.
+    \ Edge-triggered on the PRESS, so holding it does not toggle every field.
+    \ The edge is on the COMBINATION: letting go of either key arms the next
+    \ press, which is what a player expects and is free here.
     lda music_pause
     bne no_q
-    ldx #KEY_MUTE
-    jsr keydown                 ; A = &80 down, 0 up
+    ldx #IKN_ctrl               ; CTRL+Q, not Q (decision 72), and CTRL is
+    jsr keydown                 ; tested FIRST so the common field costs one
+    beq q_state                 ; keydown, as it always did: A is already 0
+    ldx #KEY_MUTE               ; here, which is the "not pressed" the edge
+    jsr keydown                 ; detector below wants. A = &80 down, 0 up
+    .q_state
     tax
     eor mute_was
     beq mute_done               ; unchanged
