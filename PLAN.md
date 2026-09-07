@@ -182,7 +182,9 @@ Four builds exist — the C64 conversion, `-Cpc`, the artist's PNGs, and the two
 ### Release
 
 Real-hardware test, a `-Release` build, publish. `publish-wip` puts the current disc on
-bitshifters.github.io for testing. `-Cpc` needs the same three.
+bitshifters.github.io for testing. `-Cpc` needs the same three. **The disc published so far is
+a DEV build**: the frame meter is compiled in and running, but it only writes to memory and shows
+nothing, so it plays like a release build and `!BOOT` is the only thing that says otherwise.
 
 ## What the next job is working against
 
