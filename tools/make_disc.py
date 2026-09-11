@@ -137,8 +137,13 @@ def build_image(files, title, cycle, opt):
         img[a + 3] = (f["exec"] >> 8) & 0xFF
         img[a + 4] = length & 0xFF
         img[a + 5] = (length >> 8) & 0xFF
-        img[a + 6] = (((f["exec"] >> 16) & 3) << 6 | ((length >> 16) & 3) << 4
-                      | ((f["load"] >> 16) & 3) << 2 | (start >> 8) & 3)
+        # The two high bits of load and exec are both set for every file: DFS
+        # sign-extends them to &FFFFxxxx, the HOST. A high word of 0 is the
+        # second processor, and with one attached *RUN Edge and every OSFILE
+        # would load into it instead - measured in jsbeeb, 2026-09-11: the
+        # host never saw the code and sat in the Tube idle loop.
+        img[a + 6] = (3 << 6 | ((length >> 16) & 3) << 4
+                      | 3 << 2 | (start >> 8) & 3)
         img[a + 7] = start & 0xFF
 
     if sector > total:

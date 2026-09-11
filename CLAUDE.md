@@ -222,6 +222,11 @@ regenerate with the tool rather than editing it. `build.ps1` does not run the ex
   logical colour mapping (`&FE22 = &11`). Its NuLA scrolling and attribute modes are NOT
   emulated; we use neither. **So a `-Nula` build is tested here like any other**, and the belief
   that it could not be is what let decision 63's `&FE21` mistake reach real hardware.
+- **A load address whose high word is 0 goes to the second processor.** Measured 2026-09-11,
+  jsbeeb Master + 65C102 Turbo: with the catalogue at `&00000E00`, `*RUN Edge` put the game in the
+  co-processor and the host sat in the Tube idle loop at `&0036` with `&0E00` empty. Every catalogue
+  address (`tools/make_disc.py`) and the loader's OSFILE block (`load_stream`) carry `&FFFF` in the
+  high word now, and a Tube Master plays. `BUGS.md` #15. Test any loader change with `tube: true`.
 - OSFILE writes a file's catalogue addresses back into its parameter block after a load.
 - **ANDY is 4K at `&8000-&8FFF`, selected by ROMSEL bit 7, and it overlays ONLY that 4K** - measured
   in jsbeeb 2026-09-04, from 6502 in main RAM. Writing `&AA` to `&8000` with bank 4 selected and

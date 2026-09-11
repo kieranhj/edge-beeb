@@ -5,6 +5,7 @@ ruled out. Index first, detail below.
 
 | # | Status | Summary |
 |---|---|---|
+| 15 | fixed (2026-09-11) | With a second processor attached the game never ran: every catalogue address and the loader's OSFILE block had a high word of 0, which is the Tube, so `*RUN Edge` loaded the whole game into the co-processor and the host sat in the Tube idle loop with a black screen. Both are `&FFFF` now, measured on a Master + 65C102 in jsbeeb |
 | 14 | open | The titles-to-game switch costs **one malformed field** — 272 lines against 312, measured — and the game-to-titles one is unmeasured. It is a sync event, not content: both transitions are blanked with R8. The switch has to happen AT VSync, not near it, because the VSync handler schedules the T1 fire sequence from `ttl_active` and the registers and the schedule must change together. Two placements tried and both worse |
 | 13 | fixed (Layer 9c) | The player's six explosion pieces sat where he died instead of flying apart: `explosion_dirs` had drifted above `&2000` into the blitter's sprite save area, so the player's own saved background was being written over the movement vectors his pieces fly on. Main RAM's real ceiling is `SPR_SAVE`, not `LOAD_STREAM`, and nothing was checking it |
 | 1 | gone (Layer 3) | "Double-buffer stash restore reads the wrong buffer" (`eor #1` commented out in `sprite.asm`). The routine it was about no longer exists |
@@ -18,6 +19,36 @@ ruled out. Index first, detail below.
 | 6 | fixed (Layer 5) | The game opened on an empty playfield and the waves did not line up with the level: the C64's start-of-game fast winder was missing |
 | 5 | fixed (Layer 4) | `coll_advance` counted in X and broke the scroll outright: the scroll's tail keeps `char_col + 1` there |
 | 4 | fixed (Layer 2) | The map looped after 256 tiles; `map_read` now wraps at the 302-column end (decision 14) |
+
+## 15. A second processor took the whole game
+
+**Found 2026-09-11**, from the beeb-port-kit: its template, built on a copy of Edge's loader, came up
+black on a B + 65C02 and a Master + 65C102 (`docs/target-portability.md` row 13 there), and KC asked
+for Edge to be measured rather than assumed.
+
+**Measured, jsbeeb `create_machine model: "Master", tube: true`, booting `build/EDGE-200K.SSD`:** the
+Tube banner comes up, `!BOOT` prints its stamp, `*RUN Edge` - and then nothing. Host `&0E00` reads
+all zeros, and the host CPU is parked at `&0036`, `BIT &FEE0 : BPL` - the Tube host code's idle loop,
+waiting for the parasite. `*RUN` had put `Edge` into the co-processor, because its catalogue load
+address was `&00000E00` and a high word of 0 means the parasite. The same Master without a Tube
+boots to the titles, which is why nobody saw it.
+
+There were two of the same mistake, and both had to go:
+
+- **The catalogue.** `tools/make_disc.py` wrote the high two bits of every load and exec address as
+  the top bits of the addresses it was given, which for a 16-bit address is 0. It writes them as 3
+  now - DFS sign-extends the pair to `&FFFF`, the host - for every file on the disc.
+- **The loader's OSFILE block.** `load_stream` reset bytes 2-3 of the block's load address to 0
+  before every call. Even with the catalogue fixed, OSFILE `&FF` with exec low byte 0 loads to the
+  block's address, and 0 there is the Tube again. It stores `&FF` in both now: two bytes more of
+  boot code, above `code_end`.
+
+**Fixed, same session, same test:** the Tube Master reaches the titles, SPACE starts a game and it
+plays. The plain Master still boots. The game makes no filing-system call after `MUSIC` is loaded,
+so overwriting the Tube host code in play is harmless (the kit's row 13). **ANDY was checked on the
+way past** (the kit's second finding, a wrong destination in its `unpack_andy`): Edge's loads the
+destination AFTER paging ANDY in, and the 3,998 bytes at `&8000` after `unpack_andy` are byte for
+byte `src/data/music_andy.bin` - dumped at the `CLI` with `&F4` = `&87`, compared with Python.
 
 ## 14. One malformed field at every titles switch — measured, diagnosed, NOT fixed
 

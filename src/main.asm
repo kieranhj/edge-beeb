@@ -1731,11 +1731,15 @@ ENDIF
     \\ after a load, so the next call would honour the last file's load
     \\ address and land wherever that was. Reset load and exec = 0 (exec
     \\ low byte 0 = "use the block's load address") every call.
+    \ The load address's high word is &FFFF, not 0: to OSFILE a high
+    \ word of 0 means the second processor, and with a Tube attached every
+    \ file went over it instead of into the host (jsbeeb, 2026-09-11).
     lda #0
     sta osfile_loadaddr
+    sta osfile_execaddr
+    lda #&FF
     sta osfile_loadaddr+2
     sta osfile_loadaddr+3
-    sta osfile_execaddr
     lda stream_page
     sta osfile_loadaddr+1
 
