@@ -128,6 +128,42 @@ upper bound, because findings overlap.
 
 None of the four is a bug.
 
+## The review of BANK0 and BANK1 (2026-10-06)
+
+**A review of the annotated code found 129 bytes in the two tightest banks, more than four
+times what the quick report lists for them (30).** It's the method beebgame's README describes
+for Commando. A reviewer agent read each bank's annotations and source and proposed rewrites.
+A separate skeptic agent was told to refute any proposal with a reachable path that changes
+behaviour, in any variant, and to default to refuting when unsure. I then audited six of the
+accepted ones by hand and agreed with all six. **Nothing has been applied.** Each proposal
+still goes through the gate below.
+
+| Bank | Free now | Accepted | Accepted after measurement | Refuted | Detail |
+| --- | ---: | --- | --- | --- | --- |
+| BANK0 | 29 | 17 proposals, **28 bytes** in the release build (34 in DEV, where `DEBUG_TIMING` adds three in `timing.asm`) | none | none | `docs/dataflow-review-bank0.md` |
+| BANK1 below the tune (`&B900`) | 23 (17 CPC) | P7-P13, **46 bytes** | P1-P6, **35 bytes** | none | `docs/dataflow-review-bank1.md` |
+| BANK1 after the tune | 16 | P14-P18, **20 bytes** | none | none | the same |
+
+**BANK1's P1-P6 change the credits raster's timing.** The code they rewrite is exactly
+equivalent, but it sits ahead of `ttl_raster` and `ttl_rupt_timer`, which then move down by up
+to 29 bytes. The skeptic found that the source comment saying the `&FE21` writes realign the
+loop to the 1 MHz bus is wrong: in jsbeeb, as on the real Video ULA, `&FE20-&FE3F` is a 2 MHz
+access. So the palette writes on later scanlines of a credit row would land up to 16 cycles
+earlier, because today's `ttl_pal` loads cross a page and the moved ones don't. NuLA builds are
+unaffected. Each subset of P1-P6 moves the code by a different amount.
+
+So either measure the exact set that ships (the fire-4 and fire-5 interrupts to each of the 16
+`&FE21` writes on credit rows 0 and 5, over all 16 pulse steps, default and `-Cpc` builds) and
+have KC accept how the bars look, or keep today's layout by filling the freed bytes ahead of
+`ttl_pal` with code that sits after `ttl_rupt_timer` now, plus an `ASSERT` that holds it there.
+
+**The comment itself is a finding.** `bank1.asm`'s claim that the `&FE21` writes are on the
+1 MHz bus is worth correcting whether or not any bytes are ever claimed.
+
+Corrections the skeptic made to the reviewer, recorded in the review files: `kr_field` has three
+callers, not two; `bank_call` passes the carry through (harmless where it matters); P16's
+star-offset invariant is verified from `star_init` and `star_frame`, the only writers.
+
 ## Claiming the bytes
 
 ### First, the rules
@@ -176,7 +212,7 @@ built. So the gate is narrower than Paradroid's, and play matters more:
 
 | Order | Batch | Bytes | Why |
 | ---: | --- | ---: | --- |
-| 1 | Whichever of BANK1 and BANK0 is short: BANK1 is mostly `imm_load` (12 of 17 bytes), BANK0 has `finale_tick` and five `reg_xfer` (13 bytes) | up to 30 | The banks have 0-29 bytes free, so a byte there is worth far more than one in main code |
+| 1 | Whichever of BANK1 and BANK0 is short: the review's accepted proposals (BANK0 28 bytes; BANK1 46 below the tune, 20 after it), which include and supersede the quick report's 30 | up to 94 | The banks have 0-29 bytes free, so a byte there is worth far more than one in main code. BANK1's P1-P6 (35 more) only after the raster measurement above |
 | 2 | BANK3 and BANK2 `imm_load` and `reg_xfer` | up to 14 | BANK3 has nothing free |
 | 3 | Main code `imm_load` | 22 | Only if main code ever runs short (447 free today). Leave out `game_rupture`, and `install_irq` unless boot-time bytes are wanted |
 | 4 | Main code: the rest (dead instructions, branch rewrites, `reg_xfer`, `clc_sec`, `tail_call`) | 28 | `enemy_init` is checked above. Each branch rewrite changes a path's cycles, so the frame check matters |
