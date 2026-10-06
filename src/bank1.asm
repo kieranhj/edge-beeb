@@ -384,11 +384,16 @@ TTL_RASTER_ROWS = 8             ; one character row
 \ *	inside the IRQ, so interrupts are already off and the only thing
 \ *	that can move the timing is where the fire landed.
 \ *
-\ *	The loop is padded to one scanline. Every iteration starts with a
-\ *	write to &FE21, which is on the 1 MHz bus, so the CPU stalls to
-\ *	the same phase each time and the loop cannot drift by an odd
-\ *	cycle - which is what makes a padded loop stable enough to do
-\ *	this at all. TTL_RASTER_PAD is tuned by looking at the screen.
+\ *	The loop is padded to one scanline. It was written believing the
+\ *	&FE21 write is on the 1 MHz bus and stalls the CPU to the same
+\ *	phase each pass. It is not: the Video ULA (&FE20-&FE3F) is a 2 MHz
+\ *	access - jsbeeb's is1MHzAccess, on the Master too (read 2026-10-06;
+\ *	not yet measured on hardware). So nothing realigns the loop, and a
+\ *	cycle a pass takes extra (today: the ttl_pal loads cross a page for
+\ *	the later steps) carries into every later write on that line. What
+\ *	TTL_RASTER_PAD was tuned against by looking at the screen is THIS
+\ *	layout: moving ttl_pal or this loop moves the bars
+\ *	(docs/dataflow-review-bank1.md, P1-P6).
 
 TTL_RASTER_PAD = 18
 
