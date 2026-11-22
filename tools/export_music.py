@@ -65,12 +65,12 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-BEEB = os.path.dirname(os.path.dirname(ROOT))          # ...\OneDrive\BEEB
+BEEB = os.path.dirname(os.path.dirname(ROOT))          # D:\beeb (this repo is D:\beeb\mine\edge-beeb)
 
 SKS = os.path.join(ROOT, 'source_cpc', 'Music', 'EDGEA.SKS')
-SONG_TO_YM = os.path.join(BEEB, 'Repos', 'nova-invite', 'bin', 'SongToYm.exe')
-YM2SN = os.path.join(BEEB, 'Repos', 'nova-invite', 'bin', 'ym2sn.py')
-VGIPACKER = os.path.join(BEEB, 'Repos', 'vgm-packer', 'vgipacker.py')
+SONG_TO_YM = os.path.join(BEEB, 'mine', 'nova-invite', 'bin', 'SongToYm.exe')
+YM2SN = os.path.join(BEEB, 'mine', 'nova-invite', 'bin', 'ym2sn.py')
+VGIPACKER = os.path.join(BEEB, 'mine', 'vgm-packer', 'vgipacker.py')
 DATA = os.path.join(ROOT, 'src', 'data')
 
 YM_REGISTERS = 16

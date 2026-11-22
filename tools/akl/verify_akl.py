@@ -49,7 +49,7 @@ import sn2wav                                                   # noqa: E402
 BEEB = os.path.dirname(os.path.dirname(ROOT))
 TRACKERS = os.path.join(os.path.expanduser('~'), 'OneDrive', 'Trackers',
                         'Arkos Tracker 2')
-SONG_TO_YM = os.path.join(BEEB, 'Repos', 'nova-invite', 'bin', 'SongToYm.exe')
+SONG_TO_YM = os.path.join(BEEB, 'mine', 'nova-invite', 'bin', 'SongToYm.exe')
 SKS = os.path.join(ROOT, 'source_cpc', 'Music', 'EDGEA.SKS')
 
 SIM_SONG = 0x4000           # where the sim plays the song from
