@@ -38,7 +38,7 @@ whole strip from the map at the current scroll position and diff it byte for byt
 game drew, at both bank parities.
 
 **The Paradroid port is the reference for process and for code to lift.**
-`C:\Users\khcon\OneDrive\Projects\Paradroid` (its `CLAUDE.md`, `docs/`, `src/sprite.asm`,
+`D:\beeb\mine\Paradroid` (its `CLAUDE.md`, `docs/`, `src/sprite.asm`,
 `src/rupture.asm`, `tools/`). Do not adopt its RAM contortions: it fought a Model B's memory all
 month and this is a Master.
 
@@ -397,11 +397,11 @@ plays happily for thousands of frames before the stream runs off the end of what
 - `data/` — the C64 binaries the port reads today (`tiles.chr/til/map`, `tiles2.map`, `sprites.spr`)
 - `lib/disksys.asm` — DFS loading routines (not currently used; boot uses OSFILE).
   `lib/vgiplayer.asm` and `lib/vgiplayer.h.asm` are the music player, copied unaltered
-- `C:\Users\khcon\OneDrive\BEEB\Projects\llm-beeb-wiki` — BBC hardware knowledge base
-- `C:\Users\khcon\OneDrive\BEEB\Repos\nova-invite` — `bin/SongToYm.exe` and `bin/ym2sn.py`, the
+- `D:\beeb\mine\llm-beeb-wiki` — BBC hardware knowledge base
+- `D:\beeb\mine\nova-invite` — `bin/SongToYm.exe` and `bin/ym2sn.py`, the
   first half of the music chain
-- `C:\Users\khcon\OneDrive\BEEB\Repos\vgm-packer` — `vgipacker.py`, the second half
-- `C:\Users\khcon\OneDrive\BEEB\Repos\vgm-player-bbc` — the VGI and VGC players and their measured
+- `D:\beeb\mine\vgm-packer` — `vgipacker.py`, the second half
+- `D:\beeb\mine\vgm-player-bbc` — the VGI and VGC players and their measured
   comparison (`docs/vgi-player.md`); `lib/vgiplayer.asm` is copied into `lib/` here **unaltered**
 
 ## Assembly conventions
