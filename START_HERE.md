@@ -24,7 +24,7 @@ A port of *Edge Grinder* (Cosine, Commodore 64 horizontal shooter) to the BBC Ma
 - Play online: https://bbc.xania.org/?disc=https://bitshifters.github.io/content/wip/edge-beeb.ssd&autoboot&model=Master (needs a Master).
 
 ## Local changes
-- 2026-11-22 tidy fixes (uncommitted): `build.ps1` b-em path moved off OneDrive to D:\tools; `tools/export_music.py` and `tools/akl/verify_akl.py` now find nova-invite and vgm-packer under `D:\beeb\mine\` (were `BEEB\Repos\`). Arkos Tracker is still looked for in `OneDrive\Trackers`.
+- 2026-11-22 tidy fixes (uncommitted): `build.ps1` b-em path moved off OneDrive to D:\tools; `tools/export_music.py` and `tools/akl/verify_akl.py` now find nova-invite and vgm-packer under `D:\beeb\mine\` (were `BEEB\Repos\`). Arkos Tracker is still looked for in `OneDrive\Retro\Trackers`.
 - No stashes, no snapshot branches.
 
 ## Status and next steps
