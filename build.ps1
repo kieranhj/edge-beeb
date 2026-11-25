@@ -42,7 +42,7 @@ $beebasm = Join-Path $root 'bin\beebasm.exe'
 if (-not (Test-Path $beebasm)) { $beebasm = Join-Path $root '..\..\Bin\beebasm.exe' }
 if (-not (Test-Path $beebasm)) { throw "beebasm.exe not found at $beebasm" }
 
-$bem = 'D:\tools\beeb\B-Em\b-em-42f6597-w64\b-em.exe'
+$bem = 'D:\tools\beeb\B-Em\b-em.exe'
 
 if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-Null }
 
