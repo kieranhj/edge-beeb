@@ -20,7 +20,7 @@ A port of *Edge Grinder* (Cosine, Commodore 64 horizontal shooter) to the BBC Ma
 ## Build and run
 - `make`: runs `build.ps1` -> `build\EDGE.SSD` (+ `EDGE-200K.SSD` padded for jsbeeb, `EDGE-RAW.SSD`, listing). Tested 2026-11-22, works. Other targets: `make release`, `make cpc` (CPC artwork), `make nula` (VideoNuLA build), `make run` (build and launch b-em), `make help`.
 - `make.bat` is the older cmd.exe wrapper (`make run` = `-Run`); still there for cmd.
-- Tools: beebasm via `..\..\Bin\beebasm.exe`; Python 3; `zx0.exe` from `bin\` or `..\..\Bin`. `-Run` uses b-em at `D:\tools\beeb\B-Em\b-em-42f6597-w64\b-em.exe`.
+- Tools: beebasm via `..\..\Bin\beebasm.exe`; Python 3; `zx0.exe` from `bin\` or `..\..\Bin`. `-Run` uses b-em at `D:\tools\beeb\B-Em\b-em.exe`.
 - Play online: https://bbc.xania.org/?disc=https://bitshifters.github.io/content/wip/edge-beeb.ssd&autoboot&model=Master (needs a Master).
 
 ## Local changes
